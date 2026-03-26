@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magnet Harvester</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap');
+
+:root {
+  --bg0:#080a0e;--bg1:#0d1117;--bg2:#131920;--bg3:#1a2333;
+  --line:#1e2d42;--accent:#00e5ff;--accent2:#7c4dff;
+  --green:#00e676;--amber:#ffab00;--red:#ff1744;
+  --text:#b0bec5;--text2:#546e7a;--white:#eceff1;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg0);color:var(--text);font-family:'Space Mono',monospace;overflow:hidden}
+
+.app{display:grid;grid-template-rows:56px 1fr;grid-template-columns:300px 1fr 300px;height:100vh}
+
+header{grid-column:1/-1;background:var(--bg1);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-icon{width:26px;height:26px;background:linear-gradient(135deg,var(--accent),var(--accent2));clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%)}
+.brand h1{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;letter-spacing:2px;color:var(--white);text-transform:uppercase}
+.status-strip{display:flex;gap:8px;align-items:center}
+.pill{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:3px;font-size:10px;background:var(--bg2);border:1px solid var(--line)}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot-on{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2s infinite}
+.dot-off{background:var(--red)}
+.dot-spin{background:var(--amber);animation:blink .8s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* LEFT */
+.left-panel{background:var(--bg1);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.panel-section{padding:14px 16px;border-bottom:1px solid var(--line)}
+.section-label{font-size:9px;letter-spacing:1.5px;color:var(--text2);text-transform:uppercase;margin-bottom:10px}
+.url-input{width:100%;background:var(--bg0);border:1px solid var(--line);border-radius:4px;padding:9px 12px;color:var(--white);font-family:'Space Mono',monospace;font-size:11px;outline:none;transition:border-color .2s}
+.url-input:focus{border-color:var(--accent)}
+.url-input::placeholder{color:var(--text2)}
+.options-row{display:flex;gap:6px;margin-top:8px;align-items:center}
+.depth-select{background:var(--bg0);border:1px solid var(--line);color:var(--text);font-family:'Space Mono',monospace;font-size:10px;padding:5px 8px;border-radius:3px;flex:1;outline:none}
+.toggle-wrap{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)}
+.toggle{width:28px;height:15px;background:var(--bg3);border-radius:8px;position:relative;cursor:pointer;border:1px solid var(--line);transition:background .2s}
+.toggle.on{background:var(--accent2)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:9px;height:9px;border-radius:50%;background:var(--white);transition:left .2s}
+.toggle.on::after{left:15px}
+.crawl-btn{width:100%;margin-top:10px;padding:10px;background:transparent;border:1px solid var(--accent);color:var(--accent);font-family:'Space Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;cursor:pointer;border-radius:4px;transition:all .2s;text-transform:uppercase;position:relative;overflow:hidden}
+.crawl-btn:hover{background:var(--accent);color:#000}
+.crawl-btn:disabled{opacity:.4;cursor:default;pointer-events:none}
+.crawl-btn.loading::after{content:'';position:absolute;bottom:0;left:-100%;width:100%;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scan 1.5s linear infinite}
+@keyframes scan{to{left:100%}}
+.log-label{font-size:9px;letter-spacing:1.5px;color:var(--text2);text-transform:uppercase;padding:10px 16px 6px}
+.log-console{flex:1;overflow-y:auto;padding:0 14px 10px;font-size:10px;line-height:1.8}
+.log-line{display:flex;gap:8px;opacity:0;animation:fadeIn .2s forwards}
+@keyframes fadeIn{to{opacity:1}}
+.log-time{color:var(--text2);flex-shrink:0}
+.log-msg{color:var(--text);word-break:break-all}
+.log-msg.found{color:var(--green)}.log-msg.error{color:var(--red)}.log-msg.info{color:var(--accent)}.log-msg.warn{color:var(--amber)}.log-msg.tool{color:var(--accent2)}
+
+/* CENTER */
+.center-panel{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--line)}
+.toolbar{background:var(--bg1);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.count-badge{background:var(--bg3);border:1px solid var(--line);padding:3px 10px;border-radius:3px;font-size:10px;color:var(--text2);margin-right:auto}
+.count-badge span{color:var(--accent);font-weight:700}
+.toolbar-btn{padding:5px 12px;font-family:'Space Mono',monospace;font-size:10px;border-radius:3px;cursor:pointer;letter-spacing:.5px;transition:all .15s}
+.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text2)}.btn-ghost:hover{border-color:var(--text);color:var(--text)}
+.btn-primary{background:var(--accent2);border:1px solid var(--accent2);color:#fff}.btn-primary:hover{filter:brightness(1.2)}
+.btn-danger{background:transparent;border:1px solid var(--line);color:var(--text2)}.btn-danger:hover{border-color:var(--red);color:var(--red)}
+.btn-download{background:var(--green);border:1px solid var(--green);color:#000;font-weight:700}.btn-download:hover{filter:brightness(.9)}.btn-download:disabled{opacity:.35;cursor:default}
+.filter-tabs{display:flex;border-bottom:1px solid var(--line);background:var(--bg1);padding:0 16px;overflow-x:auto}
+.ftab{padding:8px 12px;font-size:10px;letter-spacing:.5px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s}
+.ftab.active{color:var(--accent);border-bottom-color:var(--accent)}.ftab:hover:not(.active){color:var(--text)}
+.table-wrap{flex:1;overflow-y:auto}
+table{width:100%;border-collapse:collapse}
+thead tr{background:var(--bg2);position:sticky;top:0;z-index:1}
+th{padding:9px 12px;text-align:left;font-size:9px;letter-spacing:1px;color:var(--text2);text-transform:uppercase;border-bottom:1px solid var(--line);font-weight:400}
+td{padding:10px 12px;font-size:11px;border-bottom:1px solid var(--line)}
+tr:hover td{background:rgba(255,255,255,.02)}
+tr.selected td{background:rgba(124,77,255,.06)}
+.cb{width:14px;height:14px;cursor:pointer;accent-color:var(--accent2)}
+.name-td{max-width:200px}.name-main{color:var(--white);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.name-sub{color:var(--text2);font-size:9px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-chip{display:inline-block;padding:2px 8px;border-radius:2px;font-size:9px;letter-spacing:.5px;text-transform:uppercase}
+.cat-电影{background:rgba(0,229,255,.1);color:var(--accent);border:1px solid rgba(0,229,255,.2)}
+.cat-电视剧{background:rgba(124,77,255,.1);color:#b39ddb;border:1px solid rgba(124,77,255,.2)}
+.cat-动漫{background:rgba(255,171,0,.1);color:var(--amber);border:1px solid rgba(255,171,0,.2)}
+.cat-音乐{background:rgba(0,230,118,.1);color:var(--green);border:1px solid rgba(0,230,118,.2)}
+.cat-游戏{background:rgba(255,23,68,.1);color:#ff6090;border:1px solid rgba(255,23,68,.2)}
+.cat-软件{background:rgba(69,90,100,.2);color:#90a4ae;border:1px solid #37474f}
+.cat-综艺{background:rgba(255,64,129,.1);color:#f48fb1;border:1px solid rgba(255,64,129,.2)}
+.cat-纪录片{background:rgba(121,85,72,.2);color:#bcaaa4;border:1px solid #4e342e}
+.cat-其他{background:rgba(84,110,122,.1);color:var(--text2);border:1px solid var(--line)}
+.cat-pending{background:var(--bg3);color:var(--text2);border:1px solid var(--line)}
+.status-icon{font-size:12px}.size-td{color:var(--text2);font-size:10px;white-space:nowrap}.src-td{font-size:9px;color:var(--text2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:var(--text2);gap:12px}
+.empty-icon{font-size:48px;opacity:.3}.empty p{font-size:12px;letter-spacing:.5px}
+
+/* RIGHT: AGENT CHAT */
+.right-panel{background:var(--bg1);display:flex;flex-direction:column;overflow:hidden}
+.chat-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.chat-messages{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:92%;padding:8px 12px;border-radius:6px;font-size:11px;line-height:1.7;word-break:break-word;white-space:pre-wrap}
+.msg-user{align-self:flex-end;background:var(--accent2);color:#fff;border-radius:6px 6px 2px 6px}
+.msg-ai{align-self:flex-start;background:var(--bg3);color:var(--text);border:1px solid var(--line);border-radius:6px 6px 6px 2px}
+.msg-ai.streaming{border-color:var(--accent)}
+.msg-tool{align-self:flex-start;background:rgba(124,77,255,.06);border:1px solid rgba(124,77,255,.2);border-radius:4px;font-size:10px;color:var(--accent2);padding:5px 10px;width:100%}
+.chat-input-row{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-shrink:0}
+.chat-input{flex:1;background:var(--bg0);border:1px solid var(--line);border-radius:4px;padding:8px 12px;color:var(--white);font-family:'Space Mono',monospace;font-size:11px;outline:none;resize:none;transition:border-color .2s}
+.chat-input:focus{border-color:var(--accent2)}.chat-input::placeholder{color:var(--text2)}
+.send-btn{padding:8px 14px;background:var(--accent2);border:none;border-radius:4px;color:#fff;font-family:'Space Mono',monospace;font-size:11px;cursor:pointer;transition:filter .15s;flex-shrink:0}
+.send-btn:hover{filter:brightness(1.2)}.send-btn:disabled{opacity:.4;cursor:default}
+
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
+.progress-bar{height:2px;background:var(--accent);position:fixed;top:55px;left:0;width:0;z-index:99;transition:width .3s;box-shadow:0 0 8px var(--accent)}
+</style>
+</head>
+<body>
+<div class="progress-bar" id="progressBar"></div>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="brand-icon"></div>
+      <h1>Magnet Harvester <span style="font-size:9px;color:var(--text2);font-weight:400">v4</span></h1>
+    </div>
+    <div class="status-strip">
+      <div class="pill"><span class="dot dot-spin" id="dotQbit"></span><span>qBittorrent</span></div>
+      <div class="pill"><span class="dot dot-spin" id="dotMinimax"></span><span>MiniMax</span></div>
+      <div class="pill" id="modelPill" style="display:none"><span style="color:var(--accent2)" id="modelName"></span></div>
+      <div class="pill" id="usagePill" style="display:none;color:var(--text2)">
+        ⚡<span id="usageTokens">0</span>t · ¥<span id="usageCost">0</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="left-panel">
+    <div class="panel-section">
+      <div class="section-label">目标 URL</div>
+      <input class="url-input" id="urlInput" placeholder="https://example.com/torrents/..." />
+      <div class="options-row">
+        <select class="depth-select" id="depthSelect">
+          <option value="1">深度 1 — 仅当前页</option>
+          <option value="2">深度 2 — 跟随子链接</option>
+          <option value="3">深度 3 — 递归爬取</option>
+        </select>
+      </div>
+      <div class="options-row">
+        <div class="toggle-wrap">
+          <div class="toggle" id="autoToggle" onclick="this.classList.toggle('on')"></div>
+          <span>自动下载</span>
+        </div>
+      </div>
+      <button class="crawl-btn" id="crawlBtn" onclick="startCrawl()">▶ 开始爬取</button>
+    </div>
+    <div class="log-label">系统日志</div>
+    <div class="log-console" id="logBox"></div>
+  </div>
+
+  <div class="center-panel">
+    <div class="toolbar">
+      <div class="count-badge">发现 <span id="totalCount">0</span> · 已选 <span id="selCount">0</span></div>
+      <button class="toolbar-btn btn-ghost" onclick="selectAll()">全选</button>
+      <button class="toolbar-btn btn-ghost" onclick="selectNone()">取消</button>
+      <button class="toolbar-btn btn-primary" onclick="reclassifySelected()">重新分类</button>
+      <button class="toolbar-btn btn-download" id="dlBtn" onclick="downloadSelected()" disabled>↓ 下载</button>
+      <button class="toolbar-btn btn-danger" onclick="clearAll()">清空</button>
+    </div>
+    <div class="filter-tabs">
+      <div class="ftab active" data-cat="all" onclick="setFilter('all',this)">全部</div>
+      <div class="ftab" data-cat="电影" onclick="setFilter('电影',this)">电影</div>
+      <div class="ftab" data-cat="电视剧" onclick="setFilter('电视剧',this)">电视剧</div>
+      <div class="ftab" data-cat="动漫" onclick="setFilter('动漫',this)">动漫</div>
+      <div class="ftab" data-cat="音乐" onclick="setFilter('音乐',this)">音乐</div>
+      <div class="ftab" data-cat="游戏" onclick="setFilter('游戏',this)">游戏</div>
+      <div class="ftab" data-cat="软件" onclick="setFilter('软件',this)">软件</div>
+      <div class="ftab" data-cat="其他" onclick="setFilter('其他',this)">其他</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="width:32px"><input type="checkbox" class="cb" onchange="toggleAll(this)"></th>
+          <th>资源名称</th><th style="width:76px">分类</th>
+          <th style="width:56px">大小</th><th style="width:48px">状态</th><th>来源</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="emptyState">
+        <div class="empty-icon">🧲</div><p>输入 URL 开始爬取磁力链接</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="chat-header">
+      <span class="section-label" style="margin:0">AI 助手</span>
+      <button class="toolbar-btn btn-ghost" onclick="clearChat()" style="padding:2px 8px;font-size:9px">清空</button>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg msg-ai">你好！我是 Magnet Harvester 助手。你可以告诉我：&#10;· 爬取某个 URL&#10;· 下载全部或特定分类的资源&#10;· 搜索、修改分类&#10;· 查看统计信息</div>
+    </div>
+    <div class="chat-input-row">
+      <textarea class="chat-input" id="chatInput" rows="2" placeholder="Enter 发送，Shift+Enter 换行"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendChat()">发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const items = new Map(), selected = new Set();
+let filter = 'all', ws, wsChat, aiMsgEl = null;
+
+// ── Main WS ───────────────────────────────────────────────
+function connectWS() {
+  const p = location.protocol==='https:'?'wss:':'ws:';
+  ws = new WebSocket(`${p}//${location.host}/ws`);
+  ws.onmessage = e => handleMsg(JSON.parse(e.data));
+  ws.onclose   = () => setTimeout(connectWS, 2000);
+  ws.onerror   = () => ws.close();
+}
+
+function handleMsg(msg) {
+  switch(msg.type) {
+    case 'init':            msg.items.forEach(i=>items.set(i.hash,i)); renderTable(); break;
+    case 'crawl_start':     setProgress(10); setCrawling(true); addLog(`爬取开始: ${msg.url}`,'info'); break;
+    case 'progress':        addLog(msg.msg+(msg.url?` [${shortUrl(msg.url)}]`:''),'default'); break;
+    case 'magnet_found':    items.set(msg.item.hash,msg.item); updateCounts(); appendRow(msg.item); addLog(`✓ ${esc(msg.item.name.slice(0,50))}`,'found'); setProgress(Math.min(90,10+items.size)); break;
+    case 'classify_start':  addLog(`分类 ${msg.count} 个资源...`,'info'); break;
+    case 'classify_done':   if(items.has(msg.hash)){items.get(msg.hash).category=msg.category;items.get(msg.hash).status='pending';updateRow(msg.hash);} break;
+    case 'classify_all_done': addLog('✅ 分类完成','info'); break;
+    case 'crawl_done':      setProgress(100); setTimeout(()=>setProgress(0),1500); setCrawling(false); addLog(`🏁 完成，${msg.total} 个磁力`,'info'); break;
+    case 'download_start':  addLog(`↑ 发送: ${esc((items.get(msg.hash)||{}).name||'').slice(0,35)}`,'info'); break;
+    case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;updateRow(msg.hash);addLog(`${msg.status==='success'?'✓':'✗'} ${esc(it.name.slice(0,35))}`,msg.status==='success'?'found':'error');} break;
+    case 'items_cleared':   items.clear();selected.clear();renderTable(); break;
+    case 'usage_update':    updateUsage(msg.data); break;   // FIX-P
+    case 'error':           addLog(`⚠ ${msg.msg}`,'error'); break;
+  }
+}
+
+// ── Chat WS ───────────────────────────────────────────────
+function connectChatWS() {
+  const p = location.protocol==='https:'?'wss:':'ws:';
+  wsChat = new WebSocket(`${p}//${location.host}/ws/chat`);
+  wsChat.onmessage = e => handleChatMsg(JSON.parse(e.data));
+  wsChat.onclose   = () => setTimeout(connectChatWS, 2000);
+  wsChat.onerror   = () => wsChat.close();
+}
+
+function handleChatMsg(msg) {
+  switch(msg.type) {
+    case 'token':
+      if(!aiMsgEl) aiMsgEl = addChatBubble('', 'ai', true);
+      aiMsgEl.textContent += msg.text; scrollChat(); break;
+    case 'tool_call':
+      addToolBubble(msg.name, msg.input);
+      addLog(`🔧 ${msg.name}`,'tool'); break;
+    case 'usage':
+      if(msg.data?.total_so_far) updateUsage(msg.data.total_so_far); break;
+    case 'done':
+      if(aiMsgEl){aiMsgEl.classList.remove('streaming');aiMsgEl=null;}
+      setSending(false); break;
+    case 'error':
+      if(aiMsgEl){aiMsgEl.classList.remove('streaming');aiMsgEl=null;}
+      addChatBubble(`❌ ${msg.msg}`,'ai'); setSending(false); break;
+  }
+}
+
+function sendChat() {
+  const el = document.getElementById('chatInput');
+  const txt = el.value.trim();
+  if(!txt || !wsChat || wsChat.readyState !== WebSocket.OPEN) return;
+  addChatBubble(txt, 'user');
+  el.value = ''; aiMsgEl = null; setSending(true);
+  wsChat.send(JSON.stringify({message: txt}));
+}
+
+function addChatBubble(text, role, streaming=false) {
+  const box = document.getElementById('chatMessages');
+  const el  = document.createElement('div');
+  el.className = `msg msg-${role}${streaming?' streaming':''}`;
+  el.textContent = text;
+  box.appendChild(el); scrollChat(); return el;
+}
+
+function addToolBubble(name, input) {
+  const box = document.getElementById('chatMessages');
+  const el  = document.createElement('div');
+  el.className = 'msg-tool';
+  el.textContent = `⚙ ${name}  ${JSON.stringify(input).slice(0,80)}`;
+  box.appendChild(el);
+}
+
+function scrollChat() { const b=document.getElementById('chatMessages'); b.scrollTop=b.scrollHeight; }
+function setSending(v) { document.getElementById('sendBtn').disabled=v; document.getElementById('chatInput').disabled=v; }
+function clearChat() { document.getElementById('chatMessages').innerHTML='<div class="msg msg-ai">对话已清空。</div>'; aiMsgEl=null; if(wsChat) wsChat.close(); }
+
+// ── Crawl & Actions ───────────────────────────────────────
+async function startCrawl() {
+  const url=document.getElementById('urlInput').value.trim(); if(!url) return;
+  await fetch('/api/crawl',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url,depth:+document.getElementById('depthSelect').value,auto_download:document.getElementById('autoToggle').classList.contains('on')})});
+}
+async function downloadSelected() {
+  if(!selected.size) return;
+  await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hashes:[...selected]})});
+  addLog(`发送 ${selected.size} 个任务...`,'info');
+}
+async function reclassifySelected() {
+  const h=selected.size?[...selected]:[...items.keys()];
+  await fetch('/api/reclassify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hashes:h})});
+}
+async function clearAll() { if(confirm('清空所有记录？')) await fetch('/api/items',{method:'DELETE'}); }
+
+// ── Table ─────────────────────────────────────────────────
+const SI={pending:'○',classifying:'⋯',adding:'↑',success:'✓',error:'✗',skipped:'—'};
+const SC={pending:'var(--text2)',classifying:'var(--amber)',adding:'var(--amber)',success:'var(--green)',error:'var(--red)',skipped:'var(--text2)'};
+const catCls = c => c ? `cat-${c}` : 'cat-pending';
+
+function rowHtml(item) {
+  const vis = filter==='all' || item.category===filter;
+  return `<tr id="row-${item.hash}" class="${selected.has(item.hash)?'selected':''}" style="${vis?'':'display:none'}">
+    <td><input type="checkbox" class="cb" ${selected.has(item.hash)?'checked':''} onchange="toggleRow('${item.hash}',this)"></td>
+    <td class="name-td"><div class="name-main" title="${esc(item.name)}">${esc(item.name)}</div><div class="name-sub">${item.hash.slice(0,16)}…</div></td>
+    <td><span class="cat-chip ${catCls(item.category)}">${esc(item.category||'—')}</span></td>
+    <td class="size-td">${esc(item.size||'—')}</td>
+    <td class="status-icon" style="color:${SC[item.status]||SC.pending}">${SI[item.status]||'○'}</td>
+    <td class="src-td" title="${esc(item.source_url||'')}">${esc(shortUrl(item.source_url))}</td>
+  </tr>`;
+}
+
+function appendRow(it) { if(document.getElementById(`row-${it.hash}`)) return; document.getElementById('tbody').insertAdjacentHTML('afterbegin',rowHtml(it)); document.getElementById('emptyState').style.display='none'; updateCounts(); }
+function updateRow(hash) {
+  const it=items.get(hash); if(!it) return;
+  const row=document.getElementById(`row-${hash}`); if(!row) return;
+  row.style.display=(filter==='all'||it.category===filter)?'':'none';
+  const ce=row.querySelector('.cat-chip'); if(ce){ce.className=`cat-chip ${catCls(it.category)}`;ce.textContent=it.category||'—';}
+  const se=row.querySelector('.status-icon'); if(se){se.textContent=SI[it.status]||'○';se.style.color=SC[it.status]||SC.pending;}
+  updateCounts();
+}
+function renderTable() {
+  const tbody=document.getElementById('tbody');
+  if(!items.size){tbody.innerHTML='';document.getElementById('emptyState').style.display='flex';updateCounts();return;}
+  document.getElementById('emptyState').style.display='none';
+  tbody.innerHTML=[...items.values()].reverse().map(rowHtml).join(''); updateCounts();
+}
+function setFilter(cat,el) { filter=cat; document.querySelectorAll('.ftab').forEach(t=>t.classList.toggle('active',t.dataset.cat===cat)); document.querySelectorAll('#tbody tr').forEach(row=>{const it=items.get(row.id.replace('row-',''));if(it)row.style.display=(cat==='all'||it.category===cat)?'':'none';}); }
+
+// ── Selection ─────────────────────────────────────────────
+function toggleRow(hash,cb){if(cb.checked)selected.add(hash);else selected.delete(hash);document.getElementById(`row-${hash}`)?.classList.toggle('selected',cb.checked);updateCounts();}
+function toggleAll(cb){document.querySelectorAll('#tbody input.cb').forEach(el=>{el.checked=cb.checked;const h=el.closest('tr').id.replace('row-','');if(cb.checked)selected.add(h);else selected.delete(h);el.closest('tr').classList.toggle('selected',cb.checked)});updateCounts();}
+function selectAll(){items.forEach((_,h)=>selected.add(h));document.querySelectorAll('#tbody input.cb').forEach(cb=>{cb.checked=true;cb.closest('tr').classList.add('selected')});updateCounts();}
+function selectNone(){selected.clear();document.querySelectorAll('#tbody input.cb').forEach(cb=>{cb.checked=false;cb.closest('tr').classList.remove('selected')});updateCounts();}
+function updateCounts(){document.getElementById('totalCount').textContent=items.size;document.getElementById('selCount').textContent=selected.size;document.getElementById('dlBtn').disabled=selected.size===0;}
+
+// ── Utils ─────────────────────────────────────────────────
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function shortUrl(u){if(!u)return'—';try{const x=new URL(u);return x.hostname+x.pathname.slice(0,18);}catch{return String(u).slice(0,28);}}
+// FIX-L: 函数内变量用 logBox，不再遮蔽 window.console
+function addLog(msg,type='default'){const logBox=document.getElementById('logBox');const now=new Date().toTimeString().slice(0,8);const line=document.createElement('div');line.className='log-line';line.innerHTML=`<span class="log-time">${now}</span><span class="log-msg ${type}">${esc(msg)}</span>`;logBox.appendChild(line);logBox.scrollTop=logBox.scrollHeight;while(logBox.children.length>200)logBox.removeChild(logBox.firstChild);}
+function setCrawling(v){const b=document.getElementById('crawlBtn');b.disabled=v;b.classList.toggle('loading',v);b.textContent=v?'◉ 爬取中...':'▶ 开始爬取';}
+function setProgress(p){document.getElementById('progressBar').style.width=p+'%';}
+function updateUsage(d){if(!d)return;document.getElementById('usagePill').style.display='flex';document.getElementById('usageTokens').textContent=(d.total_tokens||0).toLocaleString();document.getElementById('usageCost').textContent=(d.estimated_cost_cny||0).toFixed(4);}
+
+// ── Status (FIX-O) ────────────────────────────────────────
+async function checkStatus(){
+  try{
+    const d=await fetch('/api/status').then(r=>r.json());
+    const setDot=(id,s)=>document.getElementById(id).className=`dot dot-${s==='online'?'on':s==='checking'?'spin':'off'}`;
+    setDot('dotQbit',d.qbittorrent);
+    setDot('dotMinimax',d.minimax);   // FIX-O: d.ollama → d.minimax
+    if(d.minimax_model){document.getElementById('modelPill').style.display='flex';document.getElementById('modelName').textContent=d.minimax_model;}
+  }catch(e){}
+}
+
+// ── Init ──────────────────────────────────────────────────
+document.getElementById('urlInput').addEventListener('keydown',e=>{if(e.key==='Enter')startCrawl();});
+document.getElementById('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
+connectWS(); connectChatWS(); checkStatus(); setInterval(checkStatus,30000);
+</script>
+</body>
+</html>
