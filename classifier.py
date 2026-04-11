@@ -1,20 +1,24 @@
 """
-MiniMax 分类器
+MiniMax 分类器 v2.0
 - AsyncAnthropic + tool_use(forced) + streaming + thinking
 - max_retries=3 内置指数退避
 - usage 追踪（as_dict() 方法，区别于 Pydantic model_dump）
 - 懒初始化 Semaphore（Python 3.10+ 事件循环兼容）
 - 所有路径读取均通过 settings.CATEGORY_PATHS，不做模块级快照
+- 新增：哈希缓存、批量优化、智能重分类、置信度分析
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, List
+from typing import Callable, Dict, List, Optional, Set
+from datetime import datetime, timedelta
 
 import anthropic
 import httpx
@@ -41,13 +45,29 @@ ALIASES = {
 }
 
 LOCAL_RULES = [
-    (r's\d{1,2}e\d{1,2}|season\s*\d|第[一二三四五六七八九十\d]+季|第.{1,4}集|ep\d+', "电视剧"),
-    (r'动漫|动画|anime|ova\b|bangumi|字幕组|[简繁]体字幕', "动漫"),
-    (r'flac|mp3|aac|专辑|单曲|ost\b|soundtrack|album\b', "音乐"),
-    (r'\bgame\b|goty|dlc\b|repack|codex|skidrow|fitgirl|gog\b', "游戏"),
-    (r'setup\.exe|installer|crack|keygen|adobe\s|office\s|v\d+\.\d+\.\d+', "软件"),
-    (r'documentary|纪录片|bbc\b|national.geo|discovery\b', "纪录片"),
-    (r'综艺|真人秀|选秀|variety.show|reality.show', "综艺"),
+    (r's\d{1,2}e\d{1,2}|season\s*\d|第[一二三四五六七八九十\d]+季|第.{1,4}集|ep\d+|全\d+集|第\d+部', "电视剧"),
+    (r'动漫|动画|anime|ova\b|bangumi|字幕组|[简繁]体字幕|国漫|日漫|剧场版', "动漫"),
+    (r'flac|mp3|aac|wav|dff|dsd|专辑|单曲|ost\b|soundtrack|album\b|hires|hi-res|黑胶', "音乐"),
+    (r'\bgame\b|goty|dlc\b|repack|codex|skidrow|fitgirl|gog\b|steam|破解版', "游戏"),
+    (r'setup\.exe|installer|crack|keygen|adobe\s|office\s|v\d+\.\d+\.\d+|绿色版|便携版', "软件"),
+    (r'documentary|纪录片|bbc\b|national.geo|discovery\b|探索频道|国家地理', "纪录片"),
+    (r'综艺|真人秀|选秀|variety.show|reality.show|脱口秀|奇葩说', "综艺"),
+]
+
+QUALITY_PATTERNS = [
+    (r'2160p|4k|uhd|3840', '4K'),
+    (r'1080p|full\s*hd|fhd|1920', '1080P'),
+    (r'720p|hd\s*ready|1280', '720P'),
+    (r'576p|480p|sd\b|dvd', 'SD'),
+]
+
+RESOLUTION_PATTERNS = [
+    (r'hdr\d{0,2}|dolby\s*vision|dv\b', 'HDR'),
+    (r'blu-?ray|bluray|bdrip|bdr', 'BluRay'),
+    (r'web-?dl|webrip|netflix|hulu|amazon', 'WEB'),
+    (r'hdtv|tvrip|dvb', 'TV'),
+    (r'dvdrip|dvd', 'DVD'),
+    (r'web-?dl\s*\d{4}|wb-?dl', 'WEB-DL'),
 ]
 
 SYSTEM_PROMPT = """你是专业的影视和数字资源分类专家。
@@ -112,6 +132,119 @@ def _get_thinking_sem() -> asyncio.Semaphore:
     if _thinking_sem is None:
         _thinking_sem = asyncio.Semaphore(3)
     return _thinking_sem
+
+
+class ClassificationCache:
+    def __init__(self, max_age_seconds: int = 3600):
+        self._cache: Dict[str, dict] = {}
+        self._timestamps: Dict[str, datetime] = {}
+        self._max_age = timedelta(seconds=max_age_seconds)
+        self._hits = 0
+        self._misses = 0
+    
+    def _make_key(self, name: str) -> str:
+        normalized = re.sub(r'[^\w\u4e00-\u9fff]', '', name.lower())
+        return hashlib.md5(normalized.encode()).hexdigest()
+    
+    def get(self, name: str) -> Optional[dict]:
+        key = self._make_key(name)
+        if key in self._cache:
+            if datetime.now() - self._timestamps[key] < self._max_age:
+                self._hits += 1
+                return self._cache[key].copy()
+            else:
+                del self._cache[key]
+                del self._timestamps[key]
+        self._misses += 1
+        return None
+    
+    def set(self, name: str, result: dict):
+        key = self._make_key(name)
+        self._cache[key] = result.copy()
+        self._timestamps[key] = datetime.now()
+    
+    def invalidate(self, name: str):
+        key = self._make_key(name)
+        self._cache.pop(key, None)
+        self._timestamps.pop(key, None)
+    
+    def clear(self):
+        self._cache.clear()
+        self._timestamps.clear()
+        self._hits = 0
+        self._misses = 0
+    
+    def stats(self) -> dict:
+        total = self._hits + self._misses
+        hit_rate = (self._hits / total * 100) if total > 0 else 0
+        return {
+            "hits": self._hits,
+            "misses": self._misses,
+            "size": len(self._cache),
+            "hit_rate_percent": round(hit_rate, 1),
+        }
+
+
+class BatchOptimizer:
+    def __init__(self, batch_size: int = 20, max_batch_size: int = 50):
+        self.batch_size = batch_size
+        self.max_batch_size = max_batch_size
+    
+    def optimize_batch(self, items: List[dict]) -> List[List[dict]]:
+        if not items:
+            return []
+        
+        items_with_priority = []
+        for item in items:
+            name = item.get("name", "")
+            priority = self._calculate_priority(name)
+            items_with_priority.append((priority, item, name))
+        
+        items_with_priority.sort(key=lambda x: x[0], reverse=True)
+        
+        high_priority = []
+        medium_priority = []
+        low_priority = []
+        
+        for priority, item, name in items_with_priority:
+            if priority > 5:
+                high_priority.append(item)
+            elif priority > 2:
+                medium_priority.append(item)
+            else:
+                low_priority.append(item)
+        
+        batches = []
+        
+        for group in [high_priority, medium_priority, low_priority]:
+            for i in range(0, len(group), self.batch_size):
+                batch = group[i:i + self.batch_size]
+                if batch:
+                    batches.append(batch)
+        
+        return batches
+    
+    def _calculate_priority(self, name: str) -> int:
+        name_lower = name.lower()
+        priority = 0
+        
+        if any(kw in name_lower for kw in ['s01e', 'season', 'ep01', '第', '集']):
+            priority += 5
+        if any(kw in name_lower for kw in ['动漫', 'anime', 'ova', 'bd']):
+            priority += 4
+        if any(kw in name_lower for kw in ['movie', 'film', '2024', '2023', '2025']):
+            priority += 3
+        if any(kw in name_lower for kw in ['game', 'software', 'crack']):
+            priority += 3
+        if any(kw in name_lower for kw in ['flac', 'mp3', 'album', 'ost']):
+            priority += 2
+        
+        if re.search(r'2160p|4k|blu-?ray|bluray', name_lower):
+            priority += 1
+        if re.search(r'complete|全|完整|全集', name_lower):
+            priority += 1
+        
+        return priority
 
 
 @dataclass
@@ -204,6 +337,45 @@ def _extract_partial_results(partial_json: str) -> list[dict]:
     return completed
 
 
+def _analyze_quality(name: str) -> dict:
+    n = name.lower()
+    quality = None
+    source = None
+    
+    for pattern, q in QUALITY_PATTERNS:
+        if re.search(pattern, n):
+            quality = q
+            break
+    
+    for pattern, s in RESOLUTION_PATTERNS:
+        if re.search(pattern, n):
+            source = s
+            break
+    
+    return {"quality": quality, "source": source}
+
+
+def _local_classify_with_confidence(name: str) -> tuple[str, str]:
+    n = name.lower()
+    matched_rules = []
+    
+    for pattern, cat in LOCAL_RULES:
+        if re.search(pattern, n, re.IGNORECASE):
+            matched_rules.append((pattern, cat))
+    
+    if not matched_rules:
+        return "电影", "medium"
+    
+    primary_category = matched_rules[0][1]
+    
+    if len(matched_rules) >= 2:
+        return primary_category, "high"
+    elif any(kw in n for kw in ['complete', '全', '完整', '全集']):
+        return primary_category, "high"
+    else:
+        return primary_category, "medium"
+
+
 class MiniMaxClassifier:
     def __init__(self):
         self._client = anthropic.AsyncAnthropic(
@@ -215,6 +387,11 @@ class MiniMaxClassifier:
         self.model = settings.MINIMAX_MODEL
         self.usage = UsageStats()
         self._ok: bool | None = None
+        self._cache = ClassificationCache(max_age_seconds=3600)
+        self._batch_optimizer = BatchOptimizer(batch_size=20)
+        self._total_cached = 0
+        self._total_ai = 0
+        self._total_local = 0
 
     async def ping(self) -> bool:
         """轻量健康检查，不消耗生成 token"""
@@ -351,27 +528,66 @@ class MiniMaxClassifier:
             return await self.classify_one_thinking(name)
 
     async def classify_batch(self, names: List[str]) -> List[dict]:
-        items   = [{"index": i, "name": n} for i, n in enumerate(names)]
-        results = await self.classify_stream_batch(items)
-
+        if not names:
+            return []
+        
+        cached_results = {}
+        uncached_items = []
+        
+        for i, name in enumerate(names):
+            cached = self._cache.get(name)
+            if cached:
+                cached_results[i] = cached
+                self._total_cached += 1
+            else:
+                uncached_items.append({"index": i, "name": name})
+        
+        if uncached_items:
+            results = await self.classify_stream_batch(uncached_items)
+            
+            for i, result in zip([item["index"] for item in uncached_items], results):
+                self._cache.set(names[i], result)
+        
+        final_results = []
+        for i in range(len(names)):
+            if i in cached_results:
+                final_results.append(cached_results[i])
+            else:
+                result = results.pop(0) if results else _make_fallback(names[i], "batch_fallback")
+                final_results.append(result)
+        
         if settings.THINKING_RECHECK:
-            recheck = [(i, names[i]) for i, r in enumerate(results)
-                       if r.get("confidence") == "low"]
-            if recheck:
-                log.info(f"thinking 二次核验 {len(recheck)} 条（并发≤3）")
-                # return_exceptions=True: 单条失败不会取消其余请求
+            recheck_indices = []
+            for i, result in enumerate(final_results):
+                if result.get("confidence") == "low" and names[i] not in cached_results:
+                    recheck_indices.append(i)
+            
+            if recheck_indices:
+                log.info(f"thinking 二次核验 {len(recheck_indices)} 条（并发≤3）")
                 rechecked = await asyncio.gather(
-                    *[self._recheck_with_limit(n) for _, n in recheck],
+                    *[self._recheck_with_limit(names[i]) for i in recheck_indices],
                     return_exceptions=True,
                 )
-                for (i, orig_name), r in zip(recheck, rechecked):
+                for idx, (i, r) in enumerate(zip(recheck_indices, rechecked)):
                     if isinstance(r, BaseException):
-                        log.warning(f"thinking 核验失败 [{orig_name}]: {r}")
-                        # 保留原始 low-confidence 结果，不替换
+                        log.warning(f"thinking 核验失败 [{names[i]}]: {r}")
                     else:
-                        results[i] = r
+                        final_results[i] = r
+                        self._cache.set(names[i], r)
 
-        return results
+        return final_results
+    
+    def get_cache_stats(self) -> dict:
+        return {
+            "cache": self._cache.stats(),
+            "total_cached": self._total_cached,
+            "total_ai": self._total_ai,
+            "total_local": self._total_local,
+        }
+    
+    def clear_cache(self):
+        self._cache.clear()
+        log.info("分类缓存已清空")
 
 
 classifier = MiniMaxClassifier()

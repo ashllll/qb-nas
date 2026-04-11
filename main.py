@@ -1,20 +1,23 @@
 """
-Magnet Harvester — 主服务
+Magnet Harvester v2.0 — 主服务
 - /ws       : 磁力列表实时推送（WebSocket）
 - /ws/chat  : Agent 自然语言指令（WebSocket）
 - /api/*    : REST 控制接口
+- 健康检查、系统统计、配置管理
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import time
 from collections import Counter
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Set
+from typing import Dict, List, Optional, Set
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -22,11 +25,11 @@ from agent import MagnetAgent
 from classifier import classifier
 from config import settings
 from crawler import crawler
+from errors import error_handler, ErrorCategory, ErrorSeverity
 from models import CrawlRequest, DownloadRequest, MagnetItem, TaskStatus
 from qbit_client import qbit
 from tts_client import tts
 
-# 绝对路径，无论从哪个目录启动都能找到 index.html
 STATIC_DIR = Path(__file__).parent / "static"
 
 logging.basicConfig(
@@ -38,6 +41,51 @@ log = logging.getLogger(__name__)
 
 found_items: Dict[str, MagnetItem] = {}
 active_ws:   Set[WebSocket]        = set()
+task_queue: List[Dict] = []
+_start_time = time.time()
+
+
+class SystemStats:
+    def __init__(self):
+        self.crawl_requests = 0
+        self.download_requests = 0
+        self.api_calls = 0
+        self.start_time = time.time()
+    
+    def record_crawl(self):
+        self.crawl_requests += 1
+    
+    def record_download(self):
+        self.download_requests += 1
+    
+    def record_api_call(self):
+        self.api_calls += 1
+    
+    def as_dict(self) -> dict:
+        uptime = time.time() - self.start_time
+        return {
+            "uptime_sec": round(uptime, 1),
+            "uptime_human": self._format_uptime(uptime),
+            "crawl_requests": self.crawl_requests,
+            "download_requests": self.download_requests,
+            "api_calls": self.api_calls,
+            "active_items": len(found_items),
+            "websocket_clients": len(active_ws),
+            "error_stats": error_handler.get_error_stats(),
+        }
+    
+    def _format_uptime(self, seconds: float) -> str:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m {secs}s"
+        elif minutes > 0:
+            return f"{minutes}m {secs}s"
+        return f"{secs}s"
+
+
+stats = SystemStats()
 
 
 # ── 工具函数 ──────────────────────────────────────────────
@@ -73,19 +121,26 @@ async def broadcast(msg: dict):
     active_ws.difference_update(dead)
 
 
-# ── 生命周期 ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await crawler.start()
     ok = await classifier.ping()
+    
+    disk_info = settings.check_disk_space()
     log.info(
         f"Playwright 已启动 | MiniMax: {'✅' if ok else '❌'} "
         f"| TTS: {'✅' if settings.TTS_ENABLED else '—'}"
+        f"| 磁盘剩余: {disk_info.get('free_gb', 'N/A')}GB"
     )
+    
     yield
+    
     await crawler.stop()
+    await qbit.close()
     if classifier._client:
         await classifier._client.close()
+    
+    log.info("服务已关闭")
 
 
 app = FastAPI(title="Magnet Harvester", lifespan=lifespan)
@@ -340,37 +395,175 @@ async def reclassify(req: DownloadRequest):
 @app.get("/api/status")
 async def system_status():
     qbit_ok = await qbit.ping()
+    disk_info = settings.check_disk_space()
+    
     return {
-        "qbittorrent":      "online" if qbit_ok else "offline",
-        "minimax":          "online" if classifier._ok else ("checking" if classifier._ok is None else "offline"),
-        "minimax_model":    settings.MINIMAX_MODEL,
-        "thinking_model":   settings.MINIMAX_THINKING_MODEL,
+        "qbittorrent": "online" if qbit_ok else "offline",
+        "minimax": "online" if classifier._ok else ("checking" if classifier._ok is None else "offline"),
+        "minimax_model": settings.MINIMAX_MODEL,
+        "thinking_model": settings.MINIMAX_THINKING_MODEL,
         "thinking_recheck": settings.THINKING_RECHECK,
-        "tts_enabled":      settings.TTS_ENABLED,
-        "items_count":      len(found_items),
+        "tts_enabled": settings.TTS_ENABLED,
+        "items_count": len(found_items),
+        "disk_space": disk_info,
+        "qbit_stats": qbit.get_stats(),
+        "classifier_cache": classifier.get_cache_stats(),
     }
+
+
+@app.get("/api/stats")
+async def get_stats():
+    stats.record_api_call()
+    return stats.as_dict()
 
 
 @app.get("/api/usage")
 async def get_usage():
+    stats.record_api_call()
     return {
         "total": classifier.usage.as_dict(),
-        "note":  "分类器 + Agent 对话合计用量",
+        "note": "分类器 + Agent 对话合计用量",
     }
 
 
+@app.get("/api/errors")
+async def get_errors(
+    category: Optional[str] = Query(None, description="错误类别过滤"),
+    severity: Optional[str] = Query(None, description="错误级别过滤"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    stats.record_api_call()
+    
+    cat = ErrorCategory(category) if category else None
+    sev = ErrorSeverity(severity) if severity else None
+    
+    errors = error_handler.get_recent_errors(cat, sev, limit)
+    return {
+        "errors": [e.to_dict() for e in errors],
+        "stats": error_handler.get_error_stats(),
+    }
+
+
+@app.post("/api/errors/clear")
+async def clear_resolved_errors():
+    error_handler.clear_resolved()
+    return {"status": "cleared"}
+
+
+@app.get("/api/health")
+async def health_check():
+    qbit_ok = await qbit.ping()
+    minimax_ok = await classifier.ping()
+    disk_ok = settings.check_disk_space()["healthy"]
+    
+    is_healthy = qbit_ok and minimax_ok and disk_ok
+    
+    return {
+        "healthy": is_healthy,
+        "qbittorrent": qbit_ok,
+        "minimax": minimax_ok,
+        "disk_space": disk_ok,
+        "qbit_healthy": qbit.is_healthy(),
+    }
+
+
+@app.get("/api/disk")
+async def get_disk_info():
+    stats.record_api_call()
+    disk_info = settings.check_disk_space()
+    category_stats = settings.get_category_stats()
+    
+    return {
+        "disk": disk_info,
+        "categories": category_stats,
+    }
+
+
+@app.get("/api/paths/validate")
+async def validate_paths():
+    results = {}
+    for category, path_str in settings.CATEGORY_PATHS.items():
+        valid, message = settings.validate_path(path_str)
+        results[category] = {"valid": valid, "message": message, "path": path_str}
+    
+    return {"results": results}
+
+
 @app.get("/api/items")
-async def get_items():
-    return {"items": [i.model_dump() for i in found_items.values()]}
+async def get_items(
+    category: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    stats.record_api_call()
+    items = list(found_items.values())
+    
+    if category:
+        items = [i for i in items if i.category == category]
+    if status:
+        items = [i for i in items if str(i.status) == status]
+    
+    total = len(items)
+    items = items[offset:offset + limit]
+    
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [i.model_dump() for i in items],
+    }
+
+
+@app.get("/api/items/search")
+async def search_items(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    stats.record_api_call()
+    query = q.lower()
+    
+    hits = [
+        {"hash": i.hash[:16], "name": i.name, "category": i.category, "status": str(i.status)}
+        for i in found_items.values()
+        if query in i.name.lower()
+    ][:limit]
+    
+    return {"count": len(hits), "results": hits}
 
 
 @app.delete("/api/items")
 async def clear_items():
+    count = len(found_items)
     found_items.clear()
     await broadcast({"type": "items_cleared"})
+    return {"status": "cleared", "removed": count}
+
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    classifier.clear_cache()
     return {"status": "cleared"}
+
+
+@app.get("/api/categories")
+async def get_categories():
+    return {
+        "categories": list(settings.CATEGORY_PATHS.keys()),
+        "paths": settings.CATEGORY_PATHS,
+    }
 
 
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host=settings.SERVICE_HOST,
+        port=settings.SERVICE_PORT,
+        reload=False,
+    )
