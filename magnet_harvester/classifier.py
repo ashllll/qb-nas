@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 import anthropic
 import httpx
 
-from config import settings
+from magnet_harvester.config import ClassifierConfig, settings
 
 log = logging.getLogger(__name__)
 
@@ -377,14 +377,23 @@ def _local_classify_with_confidence(name: str) -> tuple[str, str]:
 
 
 class MiniMaxClassifier:
-    def __init__(self):
+    def __init__(self, config: ClassifierConfig = None):
+        if config is not None:
+            self._config = config
+        else:
+            self._config = ClassifierConfig(
+                api_key=settings.MINIMAX_API_KEY,
+                model=settings.MINIMAX_MODEL,
+                thinking_model=settings.MINIMAX_THINKING_MODEL,
+                thinking_recheck=settings.THINKING_RECHECK,
+            )
         self._client = anthropic.AsyncAnthropic(
-            api_key     = settings.MINIMAX_API_KEY,
+            api_key     = self._config.api_key,
             base_url    = MINIMAX_BASE_URL,
             max_retries = 3,
             timeout     = anthropic.Timeout(connect=5, read=120, write=30, pool=5),
         )
-        self.model = settings.MINIMAX_MODEL
+        self.model = self._config.model
         self.usage = UsageStats()
         self._ok: bool | None = None
         self._cache = ClassificationCache(max_age_seconds=3600)
@@ -399,7 +408,7 @@ class MiniMaxClassifier:
             async with httpx.AsyncClient(timeout=5) as c:
                 r = await c.get(
                     f"{MINIMAX_HTTP_BASE}/v1/models",
-                    headers={"Authorization": f"Bearer {settings.MINIMAX_API_KEY}"},
+                    headers={"Authorization": f"Bearer {self._config.api_key}"},
                 )
                 if r.status_code == 401:
                     log.error("MiniMax API Key 无效（401），请检查 .env 中的 MINIMAX_API_KEY")
@@ -503,7 +512,7 @@ class MiniMaxClassifier:
         """开启 thinking 对模糊资源名深度推理"""
         try:
             resp = await self._client.messages.create(
-                model       = settings.MINIMAX_THINKING_MODEL,
+                model       = self._config.thinking_model,
                 max_tokens  = 1024,
                 temperature = 1.0,   # thinking 必须为 1.0
                 system      = SYSTEM_PROMPT,
@@ -556,7 +565,7 @@ class MiniMaxClassifier:
                 result = results.pop(0) if results else _make_fallback(names[i], "batch_fallback")
                 final_results.append(result)
         
-        if settings.THINKING_RECHECK:
+        if self._config.thinking_recheck:
             recheck_indices = []
             for i, result in enumerate(final_results):
                 if result.get("confidence") == "low" and names[i] not in cached_results:
@@ -589,5 +598,3 @@ class MiniMaxClassifier:
         self._cache.clear()
         log.info("分类缓存已清空")
 
-
-classifier = MiniMaxClassifier()

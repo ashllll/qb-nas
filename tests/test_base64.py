@@ -4,8 +4,9 @@ import re
 import base64
 
 # 导入我们改进的正则表达式
+# 与 crawler.py 保持同步的 Base64 磁力正则
 BASE64_MAGNET_RE = re.compile(
-    r'bWJhZ25ldD98YWh0dHA[a-zA-Z0-9+/]{20,200}={0,2}',
+    r'bWFnbmV0[a-zA-Z0-9+/]{10,250}={0,2}',
     re.IGNORECASE,
 )
 
@@ -39,7 +40,7 @@ def test_base64_decode():
          True),
         
         ("正常 Base64 编码的 HTTP URL",
-         base64.b64encode(b'http://example.com/magnet?xt=urn:btih:DEADBEEF1234567890ABCDEFGHIJKL'),
+         base64.b64encode(b'http://example.com/magnet?xt=urn:btih:DEADBEEF1234567890ABCDEFGHIJKL').decode(),
          True),
         
         ("明文磁力链接",
@@ -51,7 +52,7 @@ def test_base64_decode():
          False),
         
         ("超长字符串（应被过滤）",
-         'bWJhZ25ldD98YWh0dHA' + 'a' * 300 + '==',
+         'bWFnbmV0' + 'a' * 300 + '==',
          False),
         
         ("无效 Base64（包含非法字符）",

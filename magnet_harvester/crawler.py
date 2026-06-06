@@ -24,8 +24,8 @@ from urllib.parse import urljoin, urlparse
 from playwright.async_api import BrowserContext, Page, async_playwright
 from playwright_stealth import stealth
 
-from config import settings
-from models import MagnetItem
+from magnet_harvester.config import CrawlerConfig, settings
+from magnet_harvester.models import MagnetItem
 
 log = logging.getLogger(__name__)
 
@@ -417,7 +417,16 @@ class CrawlMetrics:
 
 class MagnetCrawler:
 
-    def __init__(self):
+    def __init__(self, config: CrawlerConfig = None):
+        if config is None:
+            self._config = CrawlerConfig(
+                timeout=settings.CRAWLER_TIMEOUT,
+                max_depth=settings.CRAWLER_MAX_DEPTH,
+                concurrency=settings.CRAWLER_CONCURRENCY,
+                headless=settings.CRAWLER_HEADLESS,
+            )
+        else:
+            self._config = config
         self._playwright = None
         self._browser    = None
         self._metrics    = None
@@ -426,7 +435,7 @@ class MagnetCrawler:
     async def start(self):
         self._playwright = await async_playwright().start()
         self._browser    = await self._playwright.chromium.launch(
-            headless = settings.CRAWLER_HEADLESS,
+            headless = self._config.headless,
             args     = [
                 "--no-sandbox",
                 "--disable-blink-features=AutomationControlled",
@@ -496,8 +505,8 @@ class MagnetCrawler:
                 self._metrics.pages_crawled += 1
 
                 page = await context.new_page()
-                page.set_default_timeout(settings.CRAWLER_TIMEOUT * 1000)
-                page.set_default_navigation_timeout(settings.CRAWLER_TIMEOUT * 1000)
+                page.set_default_timeout(self._config.timeout * 1000)
+                page.set_default_navigation_timeout(self._config.timeout * 1000)
                 
                 try:
                     stealth_config = stealth.Stealth()
@@ -508,7 +517,7 @@ class MagnetCrawler:
                         response = await page.goto(
                             target_url,
                             wait_until = "domcontentloaded",
-                            timeout    = settings.CRAWLER_TIMEOUT * 1000,
+                            timeout    = self._config.timeout * 1000,
                         )
                         
                         if response and response.status >= 400:
@@ -564,5 +573,3 @@ class MagnetCrawler:
         finally:
             await context.close()
 
-
-crawler = MagnetCrawler()

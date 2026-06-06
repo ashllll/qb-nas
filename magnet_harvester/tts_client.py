@@ -13,7 +13,7 @@ from typing import Optional
 
 import httpx
 
-from config import settings
+from magnet_harvester.config import TTSConfig, settings
 
 log = logging.getLogger(__name__)
 
@@ -30,9 +30,14 @@ NOTIFY_TEMPLATES = {
 
 
 class MinimaxTTS:
-    def __init__(self):
-        self._enabled = settings.TTS_ENABLED
-        self._api_key = settings.MINIMAX_API_KEY
+    def __init__(self, config: TTSConfig = None):
+        if config is not None:
+            self._config = config
+            self._enabled = config.enabled
+            self._api_key = config.api_key
+        else:
+            self._enabled = settings.TTS_ENABLED
+            self._api_key = settings.MINIMAX_API_KEY
 
     async def speak(self, text: str) -> bool:
         if not self._enabled:
@@ -121,5 +126,3 @@ class MinimaxTTS:
             except Exception:
                 pass
 
-
-tts = MinimaxTTS()

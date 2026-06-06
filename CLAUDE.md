@@ -31,6 +31,34 @@ Magnet Harvester is a FastAPI-based service that crawls websites for magnet link
 - `tts_client.py` - Voice notifications for completed operations
 - `config.py` - Pydantic settings from `.env` file
 
+## Project Structure
+
+```
+qb-nas/
+├── pyproject.toml              # 项目元数据 + 依赖声明
+├── run.py                      # 入口脚本
+├── magnet_harvester/           # Python 包
+│   ├── __init__.py
+│   ├── main.py                 # FastAPI 应用
+│   ├── agent.py                # Agent 对话循环
+│   ├── classifier.py           # AI 分类器
+│   ├── crawler.py              # Playwright 爬虫
+│   ├── qbit_client.py          # qBittorrent API
+│   ├── tts_client.py           # TTS 语音通知
+│   ├── config.py               # 配置（子配置拆分）
+│   ├── models.py               # Pydantic 模型
+│   ├── errors.py               # 错误处理
+│   ├── store.py                # ItemStore（中央存储）
+│   ├── bus.py                  # MessageBus（事件总线）
+│   └── pipeline.py             # HarvestPipeline（管道编排）
+├── tests/                      # 单元测试
+├── docs/                       # 文档
+├── static/                     # Web UI 静态资源
+├── CLAUDE.md                   # 项目说明
+├── .env.example                # 环境变量模板
+└── requirements.txt
+```
+
 ## Development Commands
 
 **Setup:**
@@ -42,11 +70,18 @@ cp .env.example .env  # Edit with your credentials
 
 **Run:**
 ```bash
-python main.py              # Default: http://0.0.0.0:8899
-uvicorn main:app --reload --host 0.0.0.0 --port 8899
+python run.py                # 推荐：入口脚本
+python -m magnet_harvester   # 或使用包方式
+uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
 ```
 
-**No tests/lint configured** - this is a single-user utility project without CI/CD.
+**Run tests:**
+```bash
+python tests/test_imports.py          # Import verification
+python tests/test_base64.py           # Base64 regex tests
+# Or run all
+python -m pytest tests/ -v
+```
 
 ## Configuration
 

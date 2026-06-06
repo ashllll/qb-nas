@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from config import settings
+from magnet_harvester.config import QBitConfig, settings
 
 log = logging.getLogger(__name__)
 
@@ -44,10 +44,18 @@ class QBittorrentStats:
 
 
 class QBittorrentClient:
-    def __init__(self):
-        self.host     = settings.QBIT_HOST.rstrip("/")
-        self.username = settings.QBIT_USERNAME
-        self.password = settings.QBIT_PASSWORD
+    def __init__(self, config: QBitConfig = None):
+        if config is None:
+            self._config = QBitConfig(
+                host=settings.QBIT_HOST,
+                username=settings.QBIT_USERNAME,
+                password=settings.QBIT_PASSWORD,
+            )
+        else:
+            self._config = config
+        self.host     = self._config.host.rstrip("/")
+        self.username = self._config.username
+        self.password = self._config.password
         self._cookie  = None
         self._client: Optional[httpx.AsyncClient] = None
         self.stats = QBittorrentStats()
@@ -323,5 +331,3 @@ class QBittorrentClient:
     def is_healthy(self) -> bool:
         return self.stats.consecutive_failures < 3
 
-
-qbit = QBittorrentClient()

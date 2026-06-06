@@ -12,8 +12,8 @@ from typing import Any, Callable
 
 import anthropic
 
-from classifier import UsageStats
-from config import settings
+from magnet_harvester.classifier import UsageStats
+from magnet_harvester.config import ClassifierConfig, settings
 
 log = logging.getLogger(__name__)
 
@@ -127,15 +127,17 @@ class MagnetAgent:
         self,
         tool_executor: Callable[[str, dict], Any],
         shared_usage:  UsageStats | None = None,
+        config:        ClassifierConfig | None = None,
     ):
         self._executor = tool_executor
-        self._client   = anthropic.AsyncAnthropic(
-            api_key     = settings.MINIMAX_API_KEY,
+        cfg = config or settings.classifier
+        self._client = anthropic.AsyncAnthropic(
+            api_key     = cfg.api_key,
             base_url    = MINIMAX_BASE_URL,
             max_retries = 3,
             timeout     = anthropic.Timeout(connect=5, read=120, write=30, pool=5),
         )
-        self.model = settings.MINIMAX_MODEL
+        self.model = cfg.model
         self.usage = shared_usage or UsageStats()
 
     async def close(self):

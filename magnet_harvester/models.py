@@ -1,5 +1,8 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -40,3 +43,19 @@ class CrawlRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     hashes: List[str]
+
+
+# ── Metrics 接口 — 统一指标快照 ──────────────────────────
+
+@dataclass
+class MetricSnapshot:
+    """所有指标收集器的统一快照格式。
+
+    每个适配器实现 snapshot() → MetricSnapshot，由 MetricsReport 合并。
+    """
+    namespace: str                          # e.g. "crawler", "classifier", "qbit"
+    values: Dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return {"namespace": self.namespace, **self.values}
+
