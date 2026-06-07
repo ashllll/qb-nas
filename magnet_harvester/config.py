@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     CRAWLER_CONCURRENCY: int = 3
     CRAWLER_HEADLESS: bool = True
 
+    ADULT_BASE_PATH: str = ""  # 空表示使用 qB 默认路径，可覆盖为 NAS 真实路径
+
     MIN_DISK_SPACE_GB: float = 10.0
     AUTO_CREATE_DIRS: bool = True
 

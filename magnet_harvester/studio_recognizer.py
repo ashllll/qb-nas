@@ -47,8 +47,8 @@ class StudioRecognizer:
     base_path 通常来自 qBittorrent 的默认保存路径，由 main.py 在启动时获取并传入。
     """
 
-    def __init__(self, base_path: str = "/volume1/downloads"):
-        self._base_path = base_path
+    def __init__(self, base_path: str | None = None):
+        self._base_path = base_path or "/volume1/downloads"
         self._studios = _load_studios()
         # 编译正则: 关键词必须在文件名开头或点号/空格之后
         self._patterns: List[tuple[re.Pattern, str, str]] = []
