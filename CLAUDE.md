@@ -9,22 +9,22 @@ Magnet Harvester is a FastAPI-based service that crawls websites for magnet link
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Web UI    │────▶│  FastAPI    │────▶│  Crawler    │
-│  (index.html│◀────│   (main.py) │◀────│ (Playwright)│
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-   ┌─────────┐       ┌──────────┐      ┌──────────┐
-   │  Agent  │       │Classifier│      │  qBittorrent
-   │(MiniMax)│       │(MiniMax) │      │  Client  │
-   └─────────┘       └──────────┘      └──────────┘
+┌─────────────┐     ┌─────────────┐     ┌────────────────┐
+│   Web UI    │────▶│  FastAPI    │────▶│  Crawler       │
+│  (index.html│◀────│   (main.py) │◀────│ (crawl4ai)     │
+└─────────────┘     └──────┬──────┘     └───────┬────────┘
+                           │                    │
+        ┌──────────────────┼────────────────────┼──────────────┐
+        ▼                  ▼                    ▼              ▼
+   ┌─────────┐       ┌──────────┐       ┌────────────┐  ┌──────────┐
+   │  Agent  │       │Classifier│       │MagnetParser│  │ qBittorrent
+   │(MiniMax)│       │(MiniMax) │       │ (regex)    │  │ Client  │
+   └─────────┘       └──────────┘       └────────────┘  └──────────┘
 ```
 
 **Key Components:**
 - `main.py` - FastAPI server with WebSocket (`/ws`, `/ws/chat`) and REST endpoints
-- `crawler.py` - Playwright-based magnet extraction with 6 strategies (href, innerHTML, onclick, script, pagination, lazy-load)
+- `crawler.py` - Crawl4AI-based web crawler with magnet link extraction
 - `classifier.py` - MiniMax AI content classification with streaming batch processing and optional thinking-based recheck for low-confidence items
 - `agent.py` - Natural language agent using tool_use for hands-free control
 - `qbit_client.py` - qBittorrent Web API v2 client with auto-login
@@ -42,7 +42,8 @@ qb-nas/
 │   ├── main.py                 # FastAPI 应用
 │   ├── agent.py                # Agent 对话循环
 │   ├── classifier.py           # AI 分类器
-│   ├── crawler.py              # Playwright 爬虫
+│   ├── crawler.py              # Crawl4AI 爬虫
+│   ├── magnet_parser.py        # 磁力链接解析（正则提取）
 │   ├── qbit_client.py          # qBittorrent API
 │   ├── tts_client.py           # TTS 语音通知
 │   ├── config.py               # 配置（子配置拆分）
@@ -94,10 +95,11 @@ All settings are in `.env` (see `.env.example`):
 ## Key Implementation Details
 
 **Crawler (`crawler.py`):**
-- Uses `playwright-stealth` to bypass anti-bot detection
-- 6 extraction strategies: href attributes, full HTML, onclick/data-* attributes, script tags, pagination clicks, scroll lazy-loading
-- Depth-limited crawling (max 3) with same-domain link following
-- Media (images/fonts) blocked to reduce bandwidth
+- Uses `crawl4ai` (AsyncWebCrawler) instead of raw Playwright
+- Clean markdown/text extraction via crawl4ai
+- Magnet link extraction via `magnet_parser.py` (regex + Base64 decode)
+- Depth-limited crawling (max 3) with crawl4ai link discovery
+- `text_mode=True` blocks media resources to reduce bandwidth
 
 **Classifier (`classifier.py`):**
 - Uses Anthropic SDK with MiniMax's Claude-compatible API endpoint

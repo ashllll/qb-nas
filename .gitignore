@@ -58,3 +58,9 @@ test-results/
 *.bak
 *.tmp
 .cache/
+
+# 代码分析缓存
+.codegraph/
+
+# Agent 配置
+.reasonix/

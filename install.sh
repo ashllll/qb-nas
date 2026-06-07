@@ -9,10 +9,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "[1/3] 安装 Python 依赖..."
 pip install -r requirements.txt
 
-# Playwright Chromium
-echo "[2/3] 下载 Playwright Chromium..."
-playwright install chromium
-playwright install-deps chromium 2>/dev/null || true
+# Crawl4AI 浏览器引擎
+echo "[2/3] 初始化 Crawl4AI 浏览器引擎..."
+crawl4ai-setup
 
 # 配置文件
 if [ ! -f .env ]; then

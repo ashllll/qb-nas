@@ -11,7 +11,7 @@ import logging
 from typing import AsyncGenerator, List
 
 from magnet_harvester.bus import Event, EventType, MessageBus
-from magnet_harvester.classifier import MagnetClassifier
+from magnet_harvester.classifier import MiniMaxClassifier
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.qbit_client import QBittorrentClient
@@ -36,7 +36,7 @@ class HarvestPipeline:
     def __init__(
         self,
         crawler: MagnetCrawler,
-        classifier: MagnetClassifier,
+        classifier: MiniMaxClassifier,
         qbit: QBittorrentClient,
         tts: MinimaxTTS,
         store: InMemoryItemStore,
