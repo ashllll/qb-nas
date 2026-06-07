@@ -25,6 +25,14 @@ def test_brazzers_recognized():
     assert result["name"] == "Brazzers"
 
 
+def test_bangbros_in_brackets():
+    """括号中的厂牌也能识别"""
+    r = StudioRecognizer()
+    result = r.recognize("Big Ass Black Beauties 14 [BangBros 2026] XXX WEB-DL 1080p MP4-P2P")
+    assert result is not None
+    assert result["name"] == "BangBros"
+
+
 def test_not_adult_returns_none():
     """普通电影不应被识别为成人厂牌"""
     r = StudioRecognizer()
@@ -35,5 +43,6 @@ def test_not_adult_returns_none():
 if __name__ == "__main__":
     test_sexart_recognized()
     test_brazzers_recognized()
+    test_bangbros_in_brackets()
     test_not_adult_returns_none()
     print("=== StudioRecognizer tests passed! ===")

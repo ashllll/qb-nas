@@ -257,16 +257,19 @@ class MagnetCrawler:
             if result.links:
                 # 优先使用 crawl4ai 提取的链接
                 internal_links = result.links.get("internal", [])
-                sub_links = []
-                for link in internal_links[:15]:
-                    if isinstance(link, dict):
-                        href = link.get("href", "")
-                    elif hasattr(link, "href"):
-                        href = link.href
-                    else:
-                        href = str(link)
-                    if href:
-                        sub_links.append(href)
+                # 优先详情页链接，排除导航/分类/登录/搜索页面
+                def _detail_first(links, max_count=15):
+                    details, others = [], []
+                    for link in links:
+                        href = link.get("href", "") if isinstance(link, dict) else str(link) if hasattr(link, "href") else str(link)
+                        if "/details/" in href:
+                            details.append(href)
+                        elif href.count("/") > 3:
+                            others.append(href)
+                    result = details[:max_count] + others[:max(0, max_count - len(details))]
+                    return result[:max_count]
+
+                sub_links = _detail_first(internal_links, 15)
             else:
                 # 回退到基于 html 的正则提取
                 sub_links = _get_same_domain_links(html_to_parse, url)

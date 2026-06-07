@@ -123,11 +123,7 @@ tr.selected td{background:rgba(124,77,255,.06)}
     </div>
     <div class="status-strip">
       <div class="pill"><span class="dot dot-spin" id="dotQbit"></span><span>qBittorrent</span></div>
-      <div class="pill"><span class="dot dot-spin" id="dotMinimax"></span><span>MiniMax</span></div>
-      <div class="pill" id="modelPill" style="display:none"><span style="color:var(--accent2)" id="modelName"></span></div>
-      <div class="pill" id="usagePill" style="display:none;color:var(--text2)">
-        ⚡<span id="usageTokens">0</span>t · ¥<span id="usageCost">0</span>
-      </div>
+      <div class="pill"><span class="dot dot-spin" id="dotClassifier"></span><span>分类器</span></div>
     </div>
   </header>
 
@@ -229,7 +225,7 @@ function handleMsg(msg) {
     case 'download_start':  addLog(`↑ 发送: ${esc((items.get(msg.hash)||{}).name||'').slice(0,35)}`,'info'); break;
     case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;updateRow(msg.hash);addLog(`${msg.status==='success'?'✓':'✗'} ${esc(it.name.slice(0,35))}`,msg.status==='success'?'found':'error');} break;
     case 'items_cleared':   items.clear();selected.clear();renderTable(); break;
-    case 'usage_update':    updateUsage(msg.data); break;   // FIX-P
+    case 'usage_update':    break;   // no-op (removed AI usage tracking)
     case 'error':           addLog(`⚠ ${msg.msg}`,'error'); break;
   }
 }
@@ -252,7 +248,7 @@ function handleChatMsg(msg) {
       addToolBubble(msg.name, msg.input);
       addLog(`🔧 ${msg.name}`,'tool'); break;
     case 'usage':
-      if(msg.data?.total_so_far) updateUsage(msg.data.total_so_far); break;
+      break;
     case 'done':
       if(aiMsgEl){aiMsgEl.classList.remove('streaming');aiMsgEl=null;}
       setSending(false); break;
@@ -356,7 +352,7 @@ function shortUrl(u){if(!u)return'—';try{const x=new URL(u);return x.hostname+
 function addLog(msg,type='default'){const logBox=document.getElementById('logBox');const now=new Date().toTimeString().slice(0,8);const line=document.createElement('div');line.className='log-line';line.innerHTML=`<span class="log-time">${now}</span><span class="log-msg ${type}">${esc(msg)}</span>`;logBox.appendChild(line);logBox.scrollTop=logBox.scrollHeight;while(logBox.children.length>200)logBox.removeChild(logBox.firstChild);}
 function setCrawling(v){const b=document.getElementById('crawlBtn');b.disabled=v;b.classList.toggle('loading',v);b.textContent=v?'◉ 爬取中...':'▶ 开始爬取';}
 function setProgress(p){document.getElementById('progressBar').style.width=p+'%';}
-function updateUsage(d){if(!d)return;document.getElementById('usagePill').style.display='flex';document.getElementById('usageTokens').textContent=(d.total_tokens||0).toLocaleString();document.getElementById('usageCost').textContent=(d.estimated_cost_cny||0).toFixed(4);}
+function updateUsage(d){/* removed AI usage tracking */}
 
 // ── Status (FIX-O) ────────────────────────────────────────
 async function checkStatus(){
@@ -364,8 +360,7 @@ async function checkStatus(){
     const d=await fetch('/api/status').then(r=>r.json());
     const setDot=(id,s)=>document.getElementById(id).className=`dot dot-${s==='online'?'on':s==='checking'?'spin':'off'}`;
     setDot('dotQbit',d.qbittorrent);
-    setDot('dotMinimax',d.minimax);   // FIX-O: d.ollama → d.minimax
-    if(d.minimax_model){document.getElementById('modelPill').style.display='flex';document.getElementById('modelName').textContent=d.minimax_model;}
+    setDot('dotClassifier','online');   // local_rules always online
   }catch(e){}
 }
 

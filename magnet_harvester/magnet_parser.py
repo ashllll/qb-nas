@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 # ── 正则表达式 ──────────────────────────────
 
 MAGNET_RE = re.compile(
-    r'magnet:\?xt=urn:btih:[a-fA-F0-9]{32,64}(?:[^\s\'"<>&\)]+)?',
+    r'magnet:\?xt=urn:btih:[a-fA-F0-9]{32,64}(?:[^\s\'"<>\)]+)?',
     re.IGNORECASE,
 )
 

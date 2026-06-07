@@ -53,7 +53,7 @@ class StudioRecognizer:
         for s in self._studios:
             kw = re.escape(s["keyword"])
             # 匹配文件名开头的关键词，或前面是点号/空格/下划线的关键词
-            pattern = re.compile(rf"(?:^|[. _-])(?:{kw})", re.IGNORECASE)
+            pattern = re.compile(rf"(?:^|[. _\[\]()\-])(?:{kw})", re.IGNORECASE)
             self._patterns.append((pattern, s["name"], kw))
 
     def recognize(self, name: str) -> Optional[Dict[str, str]]:
@@ -89,5 +89,5 @@ class StudioRecognizer:
         self._patterns = []
         for s in self._studios:
             kw = re.escape(s["keyword"])
-            pattern = re.compile(rf"(?:^|[. _-])(?:{kw})", re.IGNORECASE)
+            pattern = re.compile(rf"(?:^|[. _\[\]()\-])(?:{kw})", re.IGNORECASE)
             self._patterns.append((pattern, s["name"], kw))

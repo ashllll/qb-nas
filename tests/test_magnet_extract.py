@@ -22,14 +22,14 @@ from magnet_harvester.magnet_parser import (
 
 def test_extract_standard_magnet():
     """从普通文本中提取标准磁力链接"""
-    # MAGNET_RE 在 & 处截断，所以 dn 参数不会被捕获
+    # MAGNET_RE 现在允许 &，所以 dn 参数能被捕获
     text = "下载链接：magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&dn=Test+File"
     items = extract_from_text(text)
     assert len(items) == 1, f"应找到1个磁力链接，实际找到 {len(items)}"
     item = items[0]
     assert item["hash"] == "0123456789ABCDEF0123456789ABCDEF01234567"
-    # 由于 & 被排除，name 回退为 Unknown_{hash[:8]}
-    assert item["name"].startswith("Unknown_")
+    # & 已被允许，dn 参数正常解析
+    assert "Test File" in item["name"]
 
 
 def test_extract_multiple_magnets():
