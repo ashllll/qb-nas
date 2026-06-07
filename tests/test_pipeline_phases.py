@@ -1,0 +1,205 @@
+"""
+测试 Phase Protocols — 验证 Pipeline 编排与阶段解耦
+"""
+import sys
+import os
+from typing import AsyncGenerator, List, Optional, Protocol
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.store import FakeStore, StoreStats
+from magnet_harvester.bus import NullBus, Event, EventType, MessageBus
+
+
+# ── Phase Protocols（从 pipeline.py 导入） ──
+
+from magnet_harvester.pipeline import (
+    CrawlPhase,
+    ClassifyPhase,
+    DownloadPhase,
+    HarvestPipeline,
+)
+
+
+async def _fake_notify(*args, **kwargs):
+    """Async no-op for FakeTTS"""
+    pass
+
+
+def _make_fake_tts():
+    return type("FakeTTS", (), {"notify": _fake_notify})()
+
+
+class FakeCrawlPhase:
+    """产出指定磁力链接的 Fake Phase"""
+
+    def __init__(self, items: Optional[List[MagnetItem]] = None):
+        self.items = items or []
+        self.called_with: List[tuple] = []
+
+    async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]:
+        self.called_with.append((url, depth))
+        yield {"type": "progress", "msg": "fake crawl"}
+        for item in self.items:
+            yield {"type": "found", "item": item.model_dump()}
+        yield {"type": "done", "total": len(self.items), "url": url}
+
+
+class FakeClassifyPhase:
+    """为所有输入返回指定分类的 Fake Phase"""
+
+    def __init__(self, category: str = "电影", confidence: float = 0.95):
+        self.category = category
+        self.confidence = confidence
+        self.called_with: List[List[MagnetItem]] = []
+        self.usage = type("Usage", (), {"as_dict": lambda self: {"total": 0}})()
+        self.results: List[dict] = []
+
+    async def classify_stream_batch(self, items: List[dict], on_result=None):
+        self.called_with.append(items)
+        for i, inp in enumerate(items):
+            result = {
+                "category": self.category,
+                "save_path": f"/downloads/{self.category}",
+                "confidence": str(self.confidence),
+                "reason": "test",
+            }
+            self.results.append(result)
+            if on_result:
+                on_result(inp["index"], result)
+
+    def get_cache_stats(self):
+        return {"size": 0, "hits": 0, "misses": 0}
+
+
+class FakeDownloadPhase:
+    """追踪下载请求的 Fake Phase"""
+
+    def __init__(self, success: bool = True):
+        self.success = success
+        self.called_with: List[tuple] = []
+
+    async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool:
+        self.called_with.append((magnet[:20], category, save_path))
+        return self.success
+
+    def close(self):
+        pass
+
+    def is_healthy(self):
+        return True
+
+    def ping(self):
+        return True
+
+
+def test_crawl_phase_protocol():
+    """FakeCrawlPhase 符合 CrawlPhase 协议"""
+    phase = FakeCrawlPhase()
+    assert isinstance(phase, CrawlPhase)
+
+
+def test_pipeline_with_fake_phases():
+    """用 FakePhase 测试完整编排"""
+    store = FakeStore()
+    bus = NullBus()
+
+    # 添加一些已有条目
+    store.add(MagnetItem(hash="ZZZZ", name="Existing", magnet="magnet:?xt=urn:btih:ZZZZ"))
+
+    crawl_phase = FakeCrawlPhase(items=[
+        MagnetItem(hash="AAAA", name="Movie 1", magnet="magnet:?xt=urn:btih:AAAA"),
+        MagnetItem(hash="BBBB", name="Movie 2", magnet="magnet:?xt=urn:btih:BBBB"),
+    ])
+    classify_phase = FakeClassifyPhase(category="电影")
+    download_phase = FakeDownloadPhase(success=True)
+
+    pipeline = HarvestPipeline(
+        crawler=crawl_phase,
+        classifier=classify_phase,
+        qbit=download_phase,
+        tts=_make_fake_tts(),
+        store=store,
+        bus=bus,
+    )
+
+    # 执行管道（auto_download=True 触发第三阶段）
+    import asyncio
+    asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=True))
+
+    # 验证 crawl phase 被调用
+    assert len(crawl_phase.called_with) == 1
+    assert crawl_phase.called_with[0][0] == "https://example.com"
+
+    # 验证新的磁力链接已存储
+    assert store.get("AAAA") is not None
+    assert store.get("BBBB") is not None
+
+    # 验证分类结果（下载前状态暂存为 pending）
+    item_a = store.get("AAAA")
+    assert item_a is not None
+    assert item_a.category == "电影"
+
+    # 验证下载被触发（auto_download=True）→ 状态变为 success
+    assert len(download_phase.called_with) >= 1
+    assert item_a.status == TaskStatus.success
+
+
+def test_pipeline_skip_download():
+    """auto_download=False 时不触发下载"""
+    store = FakeStore()
+    bus = NullBus()
+
+    crawl_phase = FakeCrawlPhase(items=[
+        MagnetItem(hash="CCCC", name="SkipDL", magnet="magnet:?xt=urn:btih:CCCC"),
+    ])
+    classify_phase = FakeClassifyPhase(category="电视剧")
+    download_phase = FakeDownloadPhase()
+
+    pipeline = HarvestPipeline(
+        crawler=crawl_phase,
+        classifier=classify_phase,
+        qbit=download_phase,
+        tts=_make_fake_tts(),
+        store=store,
+        bus=bus,
+    )
+
+    import asyncio
+    asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=False))
+
+    assert len(download_phase.called_with) == 0, "auto_download=False 不应触发下载"
+
+
+def test_no_new_items_skips_classify():
+    """没有新磁力链接时跳过分类和下载"""
+    store = FakeStore()
+    bus = NullBus()
+
+    crawl_phase = FakeCrawlPhase(items=[])  # 无新条目
+    classify_phase = FakeClassifyPhase()
+    download_phase = FakeDownloadPhase()
+
+    pipeline = HarvestPipeline(
+        crawler=crawl_phase,
+        classifier=classify_phase,
+        qbit=download_phase,
+        tts=_make_fake_tts(),
+        store=store,
+        bus=bus,
+    )
+
+    import asyncio
+    asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=True))
+
+    assert len(classify_phase.called_with) == 0, "无新条目时不应分类"
+    assert len(download_phase.called_with) == 0, "无新条目时不应下载"
+
+
+if __name__ == "__main__":
+    test_crawl_phase_protocol()
+    test_pipeline_with_fake_phases()
+    test_pipeline_skip_download()
+    test_no_new_items_skips_classify()
+    print("=== Phase Pipeline tests passed! ===")

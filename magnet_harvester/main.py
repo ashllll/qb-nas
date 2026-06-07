@@ -14,10 +14,11 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -30,7 +31,7 @@ from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import InMemoryItemStore, ItemStore
 from magnet_harvester.tts_client import MinimaxTTS
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -41,6 +42,26 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════
+# AppContext — 依赖容器
+# ═══════════════════════════════════════════════════
+@dataclass
+class AppContext:
+    """所有服务依赖的单一容器。存入 app.state，通过 Depends(get_context) 获取。"""
+    store: ItemStore
+    bus: MessageBus
+    pipeline: HarvestPipeline
+    crawler: MagnetCrawler
+    classifier: MiniMaxClassifier
+    qbit: QBittorrentClient
+    tts: MinimaxTTS
+
+
+def get_context(request: Request) -> AppContext:
+    """FastAPI Depends 用 — 从 app.state 获取 AppContext"""
+    return request.app.state.ctx
 
 # ═══════════════════════════════════════════════════
 # 运行时引用（lifespan 中初始化）
@@ -229,7 +250,7 @@ async def _tool_executor(name: str, inp: dict) -> dict:
 async def lifespan(app: FastAPI):
     global _store, _bus, _pipeline, _crawler, _classifier, _qbit, _tts
 
-    # ── 创建实例（替代 6 个模块级单例 + found_items dict）─
+    # ── 创建实例 ──────────────────────────────
     _crawler = MagnetCrawler(config=settings.crawler)
     _classifier = MiniMaxClassifier(config=settings.classifier)
     _qbit = QBittorrentClient(config=settings.qbit)
@@ -237,14 +258,21 @@ async def lifespan(app: FastAPI):
     _store = InMemoryItemStore()
     _bus = MessageBus()
 
-    # ── 连接适配器 ──────────────────────────────────
-    _bus.subscribe(None, _ws_broadcast)
-    _bus.subscribe(None, _tts_on_event)
-
     _pipeline = HarvestPipeline(
         crawler=_crawler, classifier=_classifier,
         qbit=_qbit, tts=_tts, store=_store, bus=_bus,
     )
+
+    # ── 存入 AppContext ───────────────────────
+    app.state.ctx = AppContext(
+        store=_store, bus=_bus, pipeline=_pipeline,
+        crawler=_crawler, classifier=_classifier,
+        qbit=_qbit, tts=_tts,
+    )
+
+    # ── 连接适配器 ────────────────────────────
+    _bus.subscribe(None, _ws_broadcast)
+    _bus.subscribe(None, _tts_on_event)
 
     # ── 启动 ──────────────────────────────────────
     await _crawler.start()

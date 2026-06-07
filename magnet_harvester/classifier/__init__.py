@@ -1,74 +1,42 @@
 """
-MiniMax 分类器 v2.0
-- AsyncAnthropic + tool_use(forced) + streaming + thinking
-- max_retries=3 内置指数退避
-- usage 追踪（as_dict() 方法，区别于 Pydantic model_dump）
-- 懒初始化 Semaphore（Python 3.10+ 事件循环兼容）
-- 所有路径读取均通过 settings.CATEGORY_PATHS，不做模块级快照
-- 新增：哈希缓存、批量优化、智能重分类、置信度分析
+MiniMax 分类器 v2.0 — 包结构
+
+子模块:
+- fallback: 本地分类规则（LOCAL_RULES + 辅助函数）
+- cache: ClassificationCache
+- optimizer: BatchOptimizer
 """
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import re
 import time
-from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set
-from datetime import datetime, timedelta
+from typing import Callable, Dict, List, Optional
 
 import anthropic
 import httpx
 
+from magnet_harvester.classifier.cache import ClassificationCache
+from magnet_harvester.classifier.fallback import (
+    ALIASES,
+    LOCAL_RULES,
+    VALID_CATEGORIES,
+    analyze_quality,
+    classify_local,
+    classify_local_with_confidence,
+    make_fallback,
+    normalize,
+)
+from magnet_harvester.classifier.optimizer import BatchOptimizer
 from magnet_harvester.config import ClassifierConfig, settings
 
 log = logging.getLogger(__name__)
 
-MINIMAX_BASE_URL  = "https://api.minimaxi.com/anthropic"
+MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic"
 MINIMAX_HTTP_BASE = "https://api.minimaxi.com"
-
-VALID_CATEGORIES = ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"]
-
-ALIASES = {
-    "movie": "电影", "movies": "电影", "film": "电影",
-    "tv": "电视剧", "drama": "电视剧", "series": "电视剧",
-    "anime": "动漫", "animation": "动漫", "cartoon": "动漫",
-    "music": "音乐", "audio": "音乐", "album": "音乐",
-    "game": "游戏", "games": "游戏",
-    "software": "软件", "app": "软件",
-    "variety": "综艺",
-    "documentary": "纪录片", "doc": "纪录片",
-    "other": "其他", "others": "其他",
-}
-
-LOCAL_RULES = [
-    (r's\d{1,2}e\d{1,2}|season\s*\d|第[一二三四五六七八九十\d]+季|第.{1,4}集|ep\d+|全\d+集|第\d+部', "电视剧"),
-    (r'动漫|动画|anime|ova\b|bangumi|字幕组|[简繁]体字幕|国漫|日漫|剧场版', "动漫"),
-    (r'flac|mp3|aac|wav|dff|dsd|专辑|单曲|ost\b|soundtrack|album\b|hires|hi-res|黑胶', "音乐"),
-    (r'\bgame\b|goty|dlc\b|repack|codex|skidrow|fitgirl|gog\b|steam|破解版', "游戏"),
-    (r'setup\.exe|installer|crack|keygen|adobe\s|office\s|v\d+\.\d+\.\d+|绿色版|便携版', "软件"),
-    (r'documentary|纪录片|bbc\b|national.geo|discovery\b|探索频道|国家地理', "纪录片"),
-    (r'综艺|真人秀|选秀|variety.show|reality.show|脱口秀|奇葩说', "综艺"),
-]
-
-QUALITY_PATTERNS = [
-    (r'2160p|4k|uhd|3840', '4K'),
-    (r'1080p|full\s*hd|fhd|1920', '1080P'),
-    (r'720p|hd\s*ready|1280', '720P'),
-    (r'576p|480p|sd\b|dvd', 'SD'),
-]
-
-RESOLUTION_PATTERNS = [
-    (r'hdr\d{0,2}|dolby\s*vision|dv\b', 'HDR'),
-    (r'blu-?ray|bluray|bdrip|bdr', 'BluRay'),
-    (r'web-?dl|webrip|netflix|hulu|amazon', 'WEB'),
-    (r'hdtv|tvrip|dvb', 'TV'),
-    (r'dvdrip|dvd', 'DVD'),
-    (r'web-?dl\s*\d{4}|wb-?dl', 'WEB-DL'),
-]
 
 SYSTEM_PROMPT = """你是专业的影视和数字资源分类专家。
 
@@ -123,7 +91,6 @@ SINGLE_TOOL = {
     },
 }
 
-# 懒初始化 Semaphore，避免在事件循环启动前创建（Python 3.10+ DeprecationWarning）
 _thinking_sem: asyncio.Semaphore | None = None
 
 
@@ -134,157 +101,7 @@ def _get_thinking_sem() -> asyncio.Semaphore:
     return _thinking_sem
 
 
-class ClassificationCache:
-    def __init__(self, max_age_seconds: int = 3600):
-        self._cache: Dict[str, dict] = {}
-        self._timestamps: Dict[str, datetime] = {}
-        self._max_age = timedelta(seconds=max_age_seconds)
-        self._hits = 0
-        self._misses = 0
-    
-    def _make_key(self, name: str) -> str:
-        normalized = re.sub(r'[^\w\u4e00-\u9fff]', '', name.lower())
-        return hashlib.md5(normalized.encode()).hexdigest()
-    
-    def get(self, name: str) -> Optional[dict]:
-        key = self._make_key(name)
-        if key in self._cache:
-            if datetime.now() - self._timestamps[key] < self._max_age:
-                self._hits += 1
-                return self._cache[key].copy()
-            else:
-                del self._cache[key]
-                del self._timestamps[key]
-        self._misses += 1
-        return None
-    
-    def set(self, name: str, result: dict):
-        key = self._make_key(name)
-        self._cache[key] = result.copy()
-        self._timestamps[key] = datetime.now()
-    
-    def invalidate(self, name: str):
-        key = self._make_key(name)
-        self._cache.pop(key, None)
-        self._timestamps.pop(key, None)
-    
-    def clear(self):
-        self._cache.clear()
-        self._timestamps.clear()
-        self._hits = 0
-        self._misses = 0
-    
-    def stats(self) -> dict:
-        total = self._hits + self._misses
-        hit_rate = (self._hits / total * 100) if total > 0 else 0
-        return {
-            "hits": self._hits,
-            "misses": self._misses,
-            "size": len(self._cache),
-            "hit_rate_percent": round(hit_rate, 1),
-        }
-
-
-class BatchOptimizer:
-    def __init__(self, batch_size: int = 20, max_batch_size: int = 50):
-        self.batch_size = batch_size
-        self.max_batch_size = max_batch_size
-    
-    def optimize_batch(self, items: List[dict]) -> List[List[dict]]:
-        if not items:
-            return []
-        
-        items_with_priority = []
-        for item in items:
-            name = item.get("name", "")
-            priority = self._calculate_priority(name)
-            items_with_priority.append((priority, item, name))
-        
-        items_with_priority.sort(key=lambda x: x[0], reverse=True)
-        
-        high_priority = []
-        medium_priority = []
-        low_priority = []
-        
-        for priority, item, name in items_with_priority:
-            if priority > 5:
-                high_priority.append(item)
-            elif priority > 2:
-                medium_priority.append(item)
-            else:
-                low_priority.append(item)
-        
-        batches = []
-        
-        for group in [high_priority, medium_priority, low_priority]:
-            for i in range(0, len(group), self.batch_size):
-                batch = group[i:i + self.batch_size]
-                if batch:
-                    batches.append(batch)
-        
-        return batches
-    
-    def _calculate_priority(self, name: str) -> int:
-        name_lower = name.lower()
-        priority = 0
-        
-        if any(kw in name_lower for kw in ['s01e', 'season', 'ep01', '第', '集']):
-            priority += 5
-        if any(kw in name_lower for kw in ['动漫', 'anime', 'ova', 'bd']):
-            priority += 4
-        if any(kw in name_lower for kw in ['movie', 'film', '2024', '2023', '2025']):
-            priority += 3
-        if any(kw in name_lower for kw in ['game', 'software', 'crack']):
-            priority += 3
-        if any(kw in name_lower for kw in ['flac', 'mp3', 'album', 'ost']):
-            priority += 2
-        
-        if re.search(r'2160p|4k|blu-?ray|bluray', name_lower):
-            priority += 1
-        if re.search(r'complete|全|完整|全集', name_lower):
-            priority += 1
-        
-        return priority
-
-
-@dataclass
-class UsageStats:
-    input_tokens:  int = 0
-    output_tokens: int = 0
-    api_calls:     int = 0
-    errors:        int = 0
-    start_time:    float = field(default_factory=time.time)
-
-    @property
-    def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
-
-    def as_dict(self) -> dict:
-        """转为可序列化字典（命名为 as_dict 避免与 Pydantic .dict() 混淆）"""
-        return {
-            "input_tokens":       self.input_tokens,
-            "output_tokens":      self.output_tokens,
-            "total_tokens":       self.total_tokens,
-            "api_calls":          self.api_calls,
-            "errors":             self.errors,
-            "elapsed_sec":        round(time.time() - self.start_time, 1),
-            "estimated_cost_cny": round(self.total_tokens / 1_000_000 * 4, 4),
-        }
-
-
-def _normalize(raw: str) -> str:
-    raw = raw.strip().strip('"\'')
-    if raw in settings.CATEGORY_PATHS:
-        return raw
-    return ALIASES.get(raw.lower().replace(" ", ""), "其他")
-
-
-def _local_classify(name: str) -> str:
-    n = name.lower()
-    for pattern, cat in LOCAL_RULES:
-        if re.search(pattern, n, re.IGNORECASE):
-            return cat
-    return "电影"
+# ── 结果处理函数 ──────────────────────────
 
 
 def _make_result(tool_input: dict) -> dict:
@@ -296,17 +113,6 @@ def _make_result(tool_input: dict) -> dict:
         "category":   cat,
         "confidence": tool_input.get("confidence", "medium"),
         "reason":     tool_input.get("reason", ""),
-        "save_path":  paths.get(cat, paths["其他"]),
-    }
-
-
-def _make_fallback(name: str, reason: str = "local_fallback") -> dict:
-    cat   = _local_classify(name)
-    paths = settings.CATEGORY_PATHS
-    return {
-        "category":   cat,
-        "confidence": "low",
-        "reason":     reason,
         "save_path":  paths.get(cat, paths["其他"]),
     }
 
@@ -337,43 +143,34 @@ def _extract_partial_results(partial_json: str) -> list[dict]:
     return completed
 
 
-def _analyze_quality(name: str) -> dict:
-    n = name.lower()
-    quality = None
-    source = None
-    
-    for pattern, q in QUALITY_PATTERNS:
-        if re.search(pattern, n):
-            quality = q
-            break
-    
-    for pattern, s in RESOLUTION_PATTERNS:
-        if re.search(pattern, n):
-            source = s
-            break
-    
-    return {"quality": quality, "source": source}
+# ── UsageStats ──────────────────────────────
 
 
-def _local_classify_with_confidence(name: str) -> tuple[str, str]:
-    n = name.lower()
-    matched_rules = []
-    
-    for pattern, cat in LOCAL_RULES:
-        if re.search(pattern, n, re.IGNORECASE):
-            matched_rules.append((pattern, cat))
-    
-    if not matched_rules:
-        return "电影", "medium"
-    
-    primary_category = matched_rules[0][1]
-    
-    if len(matched_rules) >= 2:
-        return primary_category, "high"
-    elif any(kw in n for kw in ['complete', '全', '完整', '全集']):
-        return primary_category, "high"
-    else:
-        return primary_category, "medium"
+@dataclass
+class UsageStats:
+    input_tokens:  int = 0
+    output_tokens: int = 0
+    api_calls:     int = 0
+    errors:        int = 0
+    start_time:    float = field(default_factory=time.time)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def as_dict(self) -> dict:
+        return {
+            "input_tokens":       self.input_tokens,
+            "output_tokens":      self.output_tokens,
+            "total_tokens":       self.total_tokens,
+            "api_calls":          self.api_calls,
+            "errors":             self.errors,
+            "elapsed_sec":        round(time.time() - self.start_time, 1),
+            "estimated_cost_cny": round(self.total_tokens / 1_000_000 * 4, 4),
+        }
+
+
+# ── MiniMaxClassifier ────────────────────────
 
 
 class MiniMaxClassifier:
@@ -403,7 +200,6 @@ class MiniMaxClassifier:
         self._total_local = 0
 
     async def ping(self) -> bool:
-        """轻量健康检查，不消耗生成 token"""
         try:
             async with httpx.AsyncClient(timeout=5) as c:
                 r = await c.get(
@@ -432,7 +228,6 @@ class MiniMaxClassifier:
         items: list[dict],
         on_result: Callable[[int, dict], None] | None = None,
     ) -> list[dict]:
-        """流式批量分类，每完成一条立即回调 on_result(index, result)"""
         if not items:
             return []
 
@@ -441,7 +236,6 @@ class MiniMaxClassifier:
             f"请对以下 {len(items)} 个资源分类，"
             f"调用 submit_classifications 工具提交结果：\n\n{names_text}"
         )
-        # 每条结果约 80-100 token，给足输出空间
         output_budget = min(8192, len(items) * 100 + 512)
         results: dict[int, dict] = {}
 
@@ -501,7 +295,7 @@ class MiniMaxClassifier:
 
         for it in items:
             if it["index"] not in results:
-                fallback = _make_fallback(it["name"])
+                fallback = make_fallback(it["name"])
                 results[it["index"]] = fallback
                 if on_result:
                     on_result(it["index"], fallback)
@@ -509,12 +303,11 @@ class MiniMaxClassifier:
         return [results[it["index"]] for it in items]
 
     async def classify_one_thinking(self, name: str) -> dict:
-        """开启 thinking 对模糊资源名深度推理"""
         try:
             resp = await self._client.messages.create(
                 model       = self._config.thinking_model,
                 max_tokens  = 1024,
-                temperature = 1.0,   # thinking 必须为 1.0
+                temperature = 1.0,
                 system      = SYSTEM_PROMPT,
                 thinking    = {"type": "enabled", "budget_tokens": 512},
                 tools       = [SINGLE_TOOL],
@@ -529,20 +322,19 @@ class MiniMaxClassifier:
         except Exception as e:
             log.warning(f"thinking 分类失败 [{name}]: {e}")
 
-        return _make_fallback(name, "thinking_fallback")
+        return make_fallback(name, "thinking_fallback")
 
     async def _recheck_with_limit(self, name: str) -> dict:
-        """限制 thinking 并发数（≤3），防止触发 429"""
         async with _get_thinking_sem():
             return await self.classify_one_thinking(name)
 
     async def classify_batch(self, names: List[str]) -> List[dict]:
         if not names:
             return []
-        
+
         cached_results = {}
         uncached_items = []
-        
+
         for i, name in enumerate(names):
             cached = self._cache.get(name)
             if cached:
@@ -550,27 +342,27 @@ class MiniMaxClassifier:
                 self._total_cached += 1
             else:
                 uncached_items.append({"index": i, "name": name})
-        
+
         if uncached_items:
             results = await self.classify_stream_batch(uncached_items)
-            
+
             for i, result in zip([item["index"] for item in uncached_items], results):
                 self._cache.set(names[i], result)
-        
+
         final_results = []
         for i in range(len(names)):
             if i in cached_results:
                 final_results.append(cached_results[i])
             else:
-                result = results.pop(0) if results else _make_fallback(names[i], "batch_fallback")
+                result = results.pop(0) if results else make_fallback(names[i], "batch_fallback")
                 final_results.append(result)
-        
+
         if self._config.thinking_recheck:
             recheck_indices = []
             for i, result in enumerate(final_results):
                 if result.get("confidence") == "low" and names[i] not in cached_results:
                     recheck_indices.append(i)
-            
+
             if recheck_indices:
                 log.info(f"thinking 二次核验 {len(recheck_indices)} 条（并发≤3）")
                 rechecked = await asyncio.gather(
@@ -585,7 +377,7 @@ class MiniMaxClassifier:
                         self._cache.set(names[i], r)
 
         return final_results
-    
+
     def get_cache_stats(self) -> dict:
         return {
             "cache": self._cache.stats(),
@@ -593,8 +385,7 @@ class MiniMaxClassifier:
             "total_ai": self._total_ai,
             "total_local": self._total_local,
         }
-    
+
     def clear_cache(self):
         self._cache.clear()
         log.info("分类缓存已清空")
-

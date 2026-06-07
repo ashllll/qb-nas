@@ -1,25 +1,54 @@
 """
 HarvestPipeline — 爬取→分类→下载管道（深模块）
 
-接口: execute(url, depth, auto_download) → AsyncIterable[Event]
-内部阶段 (crawl/classify/download) 是内部缝 — 调用者看不到。
+接口: execute(url, depth, auto_download)
+内部阶段 (crawl/classify/download) 暴露为协议 — 调用者可注入任意实现。
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import AsyncGenerator, List
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Protocol, runtime_checkable
 
 from magnet_harvester.bus import Event, EventType, MessageBus
-from magnet_harvester.classifier import MiniMaxClassifier
-from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.qbit_client import QBittorrentClient
-from magnet_harvester.store import InMemoryItemStore
-from magnet_harvester.tts_client import MinimaxTTS
 
 log = logging.getLogger(__name__)
 
+
+# ═══════════════════════════════════════════════════════
+# Phase Protocols — 每个阶段的可测试 seam
+# ═══════════════════════════════════════════════════════
+
+@runtime_checkable
+class CrawlPhase(Protocol):
+    """爬取阶段: URL → 磁力链接流"""
+    async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
+
+
+@runtime_checkable
+class ClassifyPhase(Protocol):
+    """分类阶段: 磁力链接 → 分类结果"""
+    async def classify_stream_batch(
+        self, items: List[dict], on_result: Callable[[int, dict], None] | None = None
+    ) -> None: ...
+    @property
+    def usage(self) -> Any: ...
+    def get_cache_stats(self) -> dict: ...
+
+
+@runtime_checkable
+class DownloadPhase(Protocol):
+    """下载阶段: 添加磁力链接到下载器"""
+    async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool: ...
+    async def ping(self) -> bool: ...
+    def close(self): ...
+    def is_healthy(self) -> bool: ...
+
+
+# ═══════════════════════════════════════════════════════
+# HarvestPipeline — 管道编排器
+# ═══════════════════════════════════════════════════════
 
 class HarvestPipeline:
     """管道编排器。
@@ -28,18 +57,18 @@ class HarvestPipeline:
     — 1 个入口，整个管道的复杂性隐藏在后面。
 
     依赖通过构造函数注入（缝）：
-    - crawler / classifier / qbit / tts: 服务适配器
-    - store: ItemStore 适配器（InMemory 或 Redis）
-    - bus: MessageBus 适配器（prod 或 NullBus）
+    - crawler / classifier / qbit / tts: 服务适配器（Phase Protocols）
+    - store: ItemStore 适配器
+    - bus: MessageBus 适配器
     """
 
     def __init__(
         self,
-        crawler: MagnetCrawler,
-        classifier: MiniMaxClassifier,
-        qbit: QBittorrentClient,
-        tts: MinimaxTTS,
-        store: InMemoryItemStore,
+        crawler: CrawlPhase,
+        classifier: ClassifyPhase,
+        qbit: DownloadPhase,
+        tts: Any,  # MinimaxTTS 或 duck-type（notify 方法）
+        store: Any,  # ItemStore 实现
         bus: MessageBus,
     ):
         self._crawler = crawler
@@ -50,10 +79,7 @@ class HarvestPipeline:
         self._bus = bus
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
-        """执行完整的爬取→分类→下载管道。
-
-        产出 Event 对象流，每个事件通过 MessageBus 广播。
-        """
+        """执行完整的爬取→分类→下载管道。"""
         await self._bus.emit_nowait(Event(EventType.CRAWL_START, {"url": url}))
 
         new_hashes: List[str] = []

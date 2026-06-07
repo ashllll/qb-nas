@@ -57,18 +57,7 @@ class ErrorRecord:
 
 
 class ErrorHandler:
-    _instance: Optional["ErrorHandler"] = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-    
     def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
         self._errors: Dict[str, ErrorRecord] = {}
         self._error_queue: asyncio.Queue = asyncio.Queue()
         self._max_errors = 1000
@@ -197,22 +186,20 @@ def handle_errors(
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
-            handler = ErrorHandler()
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
-                handler.record(category, severity, str(e), {"function": func.__name__}, e)
+                error_handler.record(category, severity, str(e), {"function": func.__name__}, e)
                 if reraise:
                     raise
                 return default_return
-        
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            handler = ErrorHandler()
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                handler.record(category, severity, str(e), {"function": func.__name__}, e)
+                error_handler.record(category, severity, str(e), {"function": func.__name__}, e)
                 if reraise:
                     raise
                 return default_return
@@ -220,6 +207,8 @@ def handle_errors(
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
+
+    return decorator
 
 
 class GracefulDegradation:
