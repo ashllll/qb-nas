@@ -147,7 +147,7 @@ class HarvestPipeline:
 
     async def _download_items(self, hashes: List[str]):
         success = 0
-        for h in hashes:
+        for i, h in enumerate(hashes):
             item = self._store.get(h)
             if not item or not item.category:
                 continue
@@ -158,11 +158,17 @@ class HarvestPipeline:
                 status = TaskStatus.success if ok else TaskStatus.error
                 if ok:
                     success += 1
+                elif not ok:
+                    # 失败可能是重复，不加过多日志
+                    pass
             except Exception as e:
                 status = TaskStatus.error
                 self._store.update(h, error_msg=str(e))
             self._store.update(h, status=status)
             await self._bus.emit_nowait(Event(EventType.DOWNLOAD_RESULT, {"hash": h, "status": status.value}))
+            # 每批之间加 0.5s 间隔，防止 qB 拒接
+            if i > 0 and i % 10 == 0:
+                await asyncio.sleep(1)
 
         if success:
             await self._tts.notify("download_done", count=success)
