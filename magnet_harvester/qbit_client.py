@@ -238,6 +238,23 @@ class QBittorrentClient:
             log.warning(f"get_preferences 异常: {e}")
             return None
 
+    async def get_base_save_path(self) -> str:
+        """从已有分类推断真实的 NAS 基础路径（优先于 Docker 内部路径）"""
+        cats = await self.get_categories()
+        for name, info in cats.items():
+            sp = info.get("savePath", "")
+            if sp and not sp.startswith("/var/"):
+                if sp.endswith(f"/{name}"):
+                    base = sp[:-len(f"/{name}")]
+                    log.info(f"NAS 基础路径（从 [{name}] 推断）: {base}")
+                    return base
+                parent = "/".join(sp.rstrip("/").split("/")[:-1])
+                if parent:
+                    log.info(f"NAS 基础路径（从 [{name}] 推断）: {parent}")
+                    return parent
+        # 回退到 qB 默认路径
+        return await self.get_default_save_path() or "/volume1/downloads"
+
     async def ensure_category(self, name: str, save_path: str, max_retries: int = 2):
         for attempt in range(max_retries):
             try:
@@ -267,11 +284,11 @@ class QBittorrentClient:
     async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool:
         self.stats.total_added += 1
 
-        # 如果 save_path 不是绝对路径，自动拼接 qB 默认路径
+        # 如果 save_path 不是绝对路径，自动拼接正确的基础路径
         if save_path and not save_path.startswith("/"):
-            default = await self.get_default_save_path()
-            if default:
-                save_path = f"{default}/{save_path}"
+            base = await self.get_base_save_path()
+            if base:
+                save_path = f"{base}/{save_path}"
             else:
                 save_path = ""
         
