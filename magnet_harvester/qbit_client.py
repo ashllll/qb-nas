@@ -219,27 +219,50 @@ class QBittorrentClient:
             return {}
 
     async def get_default_save_path(self) -> str | None:
-        """从 qBittorrent 获取默认保存路径（结果缓存）"""
+        """获取 qBittorrent 默认保存路径（缓存），优先真实 NAS 路径"""
         if self._cached_default_path:
             return self._cached_default_path
+
+        # 策略1: 从已有 torrent 的 save_path 推断（最可靠）
+        path = await self._infer_from_torrents()
+        if path:
+            self._cached_default_path = path
+            return path
+
+        # 策略2: 从已有分类的 savePath 推断
+        path = await self._infer_from_categories()
+        if path:
+            self._cached_default_path = path
+            return path
+
+        # 策略3: qB API 返回的路径（Docker 版可能是容器内部路径）
+        try:
+            r = await self._req("GET", "/app/defaultSavePath")
+            if r.status_code == 200:
+                path = r.text.strip()
+                if path:
+                    self._cached_default_path = path
+                    log.info(f"qB 默认保存路径: {path}")
+                    return path
+        except Exception:
+            pass
+
+        # 策略4: preferences 里的 save_path
         try:
             r = await self._req("GET", "/app/preferences")
             if r.status_code == 200:
                 prefs = r.json()
-                save_path = prefs.get("save_path", "")
-                if save_path:
-                    self._cached_default_path = save_path
-                    log.info(f"qBittorrent 默认保存路径: {save_path}")
-                    return save_path
-                return None
-            log.warning(f"get_preferences 返回 {r.status_code}")
-            return None
-        except Exception as e:
-            log.warning(f"get_preferences 异常: {e}")
-            return None
+                path = prefs.get("save_path", "")
+                if path:
+                    self._cached_default_path = path
+                    return path
+        except Exception:
+            pass
 
-    async def get_base_save_path(self) -> str:
-        """从已有分类推断真实的 NAS 基础路径（优先于 Docker 内部路径）"""
+        return None
+
+    async def _infer_from_categories(self) -> str | None:
+        """从已有分类的 savePath 推断基础路径"""
         cats = await self.get_categories()
         for name, info in cats.items():
             sp = info.get("savePath", "")
@@ -249,11 +272,34 @@ class QBittorrentClient:
                     log.info(f"NAS 基础路径（从 [{name}] 推断）: {base}")
                     return base
                 parent = "/".join(sp.rstrip("/").split("/")[:-1])
-                if parent:
+                if parent and not parent.startswith("/var/"):
                     log.info(f"NAS 基础路径（从 [{name}] 推断）: {parent}")
                     return parent
-        # 回退到 qB 默认路径
-        return await self.get_default_save_path() or "/volume1/downloads"
+        return None
+
+    async def _infer_from_torrents(self) -> str | None:
+        """从已有 torrent 的 save_path 推断基础路径"""
+        try:
+            r = await self._req("GET", "/torrents/info")
+            if r.status_code != 200:
+                return None
+            torrents = r.json()
+            for t in torrents:
+                sp = t.get("save_path", "")
+                if sp and not sp.startswith("/var/") and "/" in sp:
+                    parts = sp.rstrip("/").split("/")
+                    if len(parts) >= 2:
+                        base = "/".join(parts[:-1])
+                        log.info(f"NAS 基础路径（从 torrent [{t.get('name','')[:20]}] 推断）: {base}")
+                        return base
+        except Exception:
+            pass
+        return None
+
+    async def get_base_save_path(self) -> str:
+        """获取基础保存路径（NAS 真实路径优先）"""
+        path = await self.get_default_save_path()
+        return path or "/volume1/downloads"
 
     async def ensure_category(self, name: str, save_path: str, max_retries: int = 2):
         for attempt in range(max_retries):
