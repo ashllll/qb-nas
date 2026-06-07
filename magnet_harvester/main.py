@@ -255,7 +255,11 @@ async def lifespan(app: FastAPI):
     _qbit = QBittorrentClient(config=settings.qbit)
 
     # 从 qB 获取默认保存路径作为厂牌基础路径
-    adult_base_path = await _qbit.get_default_save_path()
+    adult_base_path = None
+    try:
+        adult_base_path = await _qbit.get_default_save_path()
+    except Exception as e:
+        log.warning(f"获取 qB 默认路径失败，使用静默回退: {e}")
     _classifier = LocalClassifier(adult_base_path=adult_base_path)
     _tts = MinimaxTTS(config=settings.tts)
     _store = InMemoryItemStore()
