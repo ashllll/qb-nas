@@ -271,9 +271,9 @@ class MagnetCrawler:
                     href = link.get("href", "") if isinstance(link, dict) else str(link) if hasattr(link, "href") else str(link)
                     if "/details/" in href and href not in visited:
                         detail_links.append(href)
-                        if len(detail_links) >= 15:
+                        if len(detail_links) >= 50:
                             break
-                sub_links = detail_links[:15]
+                sub_links = detail_links[:50]
             else:
                 sub_links = []
 
