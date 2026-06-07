@@ -15,7 +15,7 @@ def test_sexart_recognized():
     result = r.recognize("SexArt.26.02.01.Bonnie.Dolce.In.Your.Hands.XXX.2160p.MP4-WRB")
     assert result is not None
     assert result["name"] == "SexArt"
-    assert result["save_path"] == "/volume1/downloads/adult/SexArt"
+    assert result["save_path"] == "/volume1/downloads/SexArt"
 
 
 def test_brazzers_recognized():

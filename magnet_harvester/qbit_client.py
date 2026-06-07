@@ -217,6 +217,23 @@ class QBittorrentClient:
             log.warning(f"get_categories 异常: {e}")
             return {}
 
+    async def get_default_save_path(self) -> str | None:
+        """从 qBittorrent 获取默认保存路径"""
+        try:
+            r = await self._req("GET", "/app/preferences")
+            if r.status_code == 200:
+                prefs = r.json()
+                save_path = prefs.get("save_path", "")
+                if save_path:
+                    log.info(f"qBittorrent 默认保存路径: {save_path}")
+                    return save_path
+                return None
+            log.warning(f"get_preferences 返回 {r.status_code}")
+            return None
+        except Exception as e:
+            log.warning(f"get_preferences 异常: {e}")
+            return None
+
     async def ensure_category(self, name: str, save_path: str, max_retries: int = 2):
         for attempt in range(max_retries):
             try:

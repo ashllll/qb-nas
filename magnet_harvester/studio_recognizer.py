@@ -12,16 +12,13 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from magnet_harvester.config import settings
-
 log = logging.getLogger(__name__)
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 STUDIO_FILE = CONFIG_DIR / "adult_studios.json"
 
-# 默认下载基础路径
-# 默认下载基础路径（可在 __init__ 中覆盖）
-ADULT_BASE_PATH = "/volume1/downloads/adult"
+# 默认基础路径（无配置时回退到 qB 默认路径，见 main.py）
+DEFAULT_BASE_PATH = None
 
 
 def _load_studios() -> List[Dict[str, str]]:
@@ -43,12 +40,14 @@ class StudioRecognizer:
     """从文件名中识别成人厂牌。
 
     用法:
-        r = StudioRecognizer()
+        r = StudioRecognizer(base_path="/volume1/downloads")
         result = r.recognize("SexArt.26.02.01.Bonnie.XXX.2160p.MP4-WRB")
-        # -> {"name": "SexArt", "save_path": "/volume1/downloads/adult/SexArt"}
+        # -> {"name": "SexArt", "save_path": "/volume1/downloads/SexArt"}
+
+    base_path 通常来自 qBittorrent 的默认保存路径，由 main.py 在启动时获取并传入。
     """
 
-    def __init__(self, base_path: str = ADULT_BASE_PATH):
+    def __init__(self, base_path: str = "/volume1/downloads"):
         self._base_path = base_path
         self._studios = _load_studios()
         # 编译正则: 关键词必须在文件名开头或点号/空格之后
