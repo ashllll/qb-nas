@@ -34,10 +34,13 @@ class LocalClassifier:
         clear_cache()                           — 空操作
     """
 
-    def __init__(self):
+    def __init__(self, adult_base_path: str | None = None):
         self.usage = _NullUsageStats()
         self._ok = True
-        self._studio_recognizer = StudioRecognizer()
+        if adult_base_path:
+            self._studio_recognizer = StudioRecognizer(base_path=adult_base_path)
+        else:
+            self._studio_recognizer = StudioRecognizer()
 
     def _classify_name(self, name: str) -> dict:
         """分类单个名称：优先厂牌识别，回退本地规则"""

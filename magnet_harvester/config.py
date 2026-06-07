@@ -66,6 +66,11 @@ class PathConfig:
         self.min_disk_space_gb: float = kwargs.get("min_disk_space_gb", 10.0)
         self.auto_create_dirs: bool = kwargs.get("auto_create_dirs", True)
         self.template_enabled: bool = kwargs.get("template_enabled", True)
+        self._adult_base_path: str = kwargs.get("adult_base_path", "/volume1/downloads/adult")
+
+    @property
+    def adult_base_path(self) -> str:
+        return self._adult_base_path
 
     @property
     def category_paths(self) -> Dict[str, str]:
@@ -214,6 +219,8 @@ class Settings(BaseSettings):
     PATH_DOCUMENTARY: str = "/volume1/downloads/documentary"
     PATH_OTHER: str = "/volume1/downloads/others"
 
+    ADULT_BASE_PATH: str = "/volume1/downloads/adult"
+
     MIN_DISK_SPACE_GB: float = 10.0
     AUTO_CREATE_DIRS: bool = True
     PATH_TEMPLATE_ENABLED: bool = True
@@ -297,6 +304,7 @@ class Settings(BaseSettings):
                 min_disk_space_gb=self.MIN_DISK_SPACE_GB,
                 auto_create_dirs=self.AUTO_CREATE_DIRS,
                 template_enabled=self.PATH_TEMPLATE_ENABLED,
+                adult_base_path=self.ADULT_BASE_PATH,
             )
             # 启动时立即验证路径
             self._path_config.validate_all()
@@ -308,6 +316,11 @@ class Settings(BaseSettings):
     def CATEGORY_PATHS(self) -> dict[str, str]:
         """向后兼容 — classifier.py / main.py 使用"""
         return self.paths.category_paths
+
+    @property
+    def adult_base_path(self) -> str:
+        """成人厂牌下载基础路径"""
+        return self.paths.adult_base_path
 
     def get_category_path(self, category: str, template_vars=None) -> str:
         """向后兼容"""

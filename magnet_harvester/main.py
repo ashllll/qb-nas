@@ -252,7 +252,7 @@ async def lifespan(app: FastAPI):
 
     # ── 创建实例 ──────────────────────────────
     _crawler = MagnetCrawler(config=settings.crawler)
-    _classifier = LocalClassifier()
+    _classifier = LocalClassifier(adult_base_path=settings.adult_base_path)
     _qbit = QBittorrentClient(config=settings.qbit)
     _tts = MinimaxTTS(config=settings.tts)
     _store = InMemoryItemStore()

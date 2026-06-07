@@ -12,12 +12,15 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from magnet_harvester.config import settings
+
 log = logging.getLogger(__name__)
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 STUDIO_FILE = CONFIG_DIR / "adult_studios.json"
 
 # 默认下载基础路径
+# 默认下载基础路径（可在 __init__ 中覆盖）
 ADULT_BASE_PATH = "/volume1/downloads/adult"
 
 
