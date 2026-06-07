@@ -1,18 +1,15 @@
 """
-测试 ErrorHandler — 验证无单例、可独立实例化
+测试 ErrorHandler — 验证可独立实例化、无单例
 """
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import asyncio
-
 from magnet_harvester.errors import (
     ErrorHandler,
     ErrorCategory,
     ErrorSeverity,
-    handle_errors,
 )
 
 
@@ -33,27 +30,28 @@ def test_no_singleton():
     assert h1 is not h2, "应创建不同实例"
 
 
-def test_module_level_instance_is_plain():
-    """模块级 error_handler 是一个普通实例，非单例强制"""
-    from magnet_harvester.errors import error_handler
-    new_instance = ErrorHandler()
-    assert error_handler is not new_instance
+def test_error_dedup():
+    """相同 category+message 合并为一条记录"""
+    h = ErrorHandler()
+    h.record(ErrorCategory.CRAWLER, ErrorSeverity.ERROR, "same error")
+    h.record(ErrorCategory.CRAWLER, ErrorSeverity.ERROR, "same error")
+    assert len(h.get_recent_errors()) == 1
+    assert h.get_recent_errors()[0].count == 2
 
 
-@handle_errors(ErrorCategory.CLASSIFIER, reraise=False)
-def _function_with_handler():
-    raise ValueError("test error")
-
-
-def test_handle_errors_decorator():
-    """装饰器正常 catch 异常"""
-    result = _function_with_handler()
-    assert result is None  # default_return
+def test_error_stats():
+    """get_error_stats 返回正确的统计"""
+    h = ErrorHandler()
+    h.record(ErrorCategory.CRAWLER, ErrorSeverity.ERROR, "crawl error")
+    h.record(ErrorCategory.CLASSIFIER, ErrorSeverity.WARNING, "classify warn")
+    stats = h.get_error_stats()
+    assert stats["total_errors"] == 2
+    assert stats["unique_errors"] == 2
 
 
 if __name__ == "__main__":
     test_independent_instances()
     test_no_singleton()
-    test_module_level_instance_is_plain()
-    test_handle_errors_decorator()
+    test_error_dedup()
+    test_error_stats()
     print("=== ErrorHandler tests passed! ===")

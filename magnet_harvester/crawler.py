@@ -48,36 +48,6 @@ class CrawlMetrics:
         }
 
 
-def _get_same_domain_links(html: str, base_url: str, max_links: int = 15) -> List[str]:
-    """从 HTML 中提取同域名链接（用于深度爬取）"""
-    base = urlparse(base_url)
-    pattern = re.compile(r'href=["\']([^"\']+)["\']', re.IGNORECASE)
-    pattern = re.compile(r'href=["\']([^"\']+)["\']', re.IGNORECASE)
-    seen: Set[str] = set()
-    links: List[str] = []
-
-    skip_patterns = (
-        r'\.(jpg|jpeg|png|gif|svg|css|js|ico|woff2?|ttf|eot|webp|mp3|mp4|avi|mkv|mov|pdf|zip|rar|7z)$',
-        r'(login|register|signup|signin|password|reset)',
-    )
-    skip_re = re.compile(skip_patterns, re.IGNORECASE)
-
-    for href in pattern.findall(html):
-        full = urljoin(base_url, href)
-        parsed = urlparse(full)
-
-        if (
-            parsed.netloc == base.netloc
-            and parsed.scheme in ("http", "https")
-            and full not in seen
-            and not skip_re.search(full)
-        ):
-            seen.add(full)
-            links.append(full)
-            if len(links) >= max_links:
-                break
-
-    return links
 
 
 def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:

@@ -173,7 +173,7 @@ async def _tool_executor(name: str, inp: dict) -> dict:
         if matches:
             match = matches[0]
             store.update(match, category=cat, save_path=cat)
-            await _bus.emit_nowait(Event(EventType.CLASSIFY_DONE, {
+            await _bus.emit(Event(EventType.CLASSIFY_DONE, {
                 "hash": match, "category": cat, "confidence": "manual", "reason": "手动修改"}))
             return {"status": "ok", "hash": match, "new_category": cat}
         return {"status": "not_found", "hash": h}
@@ -190,7 +190,7 @@ async def _tool_executor(name: str, inp: dict) -> dict:
             return {"status": "cancelled", "reason": "需要 confirm=true"}
         count = store.count
         store.clear()
-        await _bus.emit_nowait(Event(EventType.ERROR, {"type": "items_cleared"}))
+        await _bus.emit(Event(EventType.ERROR, {"type": "items_cleared"}))
         return {"status": "cleared", "removed": count}
 
     return {"error": f"未知工具: {name}"}
@@ -393,7 +393,7 @@ async def search_items(q: str = Query(..., min_length=1), limit: int = Query(20,
 async def clear_items():
     count = _store.count
     _store.clear()
-    await _bus.emit_nowait(Event(EventType.ERROR, {"type": "items_cleared"}))
+    await _bus.emit(Event(EventType.ERROR, {"type": "items_cleared"}))
     return {"status": "cleared", "removed": count}
 
 

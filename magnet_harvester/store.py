@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Dict, List, Optional, Protocol, runtime_checkable
 
 from magnet_harvester.models import MagnetItem, TaskStatus
 
@@ -66,7 +66,6 @@ class InMemoryItemStore:
 
     def __init__(self):
         self._items: Dict[str, MagnetItem] = {}
-        self._listeners: List[Callable[[str, MagnetItem], None]] = []
 
     # ── 核心操作 ──────────────────────────────
 
@@ -75,7 +74,6 @@ class InMemoryItemStore:
         if item.hash in self._items:
             return False
         self._items[item.hash] = item
-        self._notify("add", item)
         return True
 
     def get(self, hash_key: str) -> Optional[MagnetItem]:
@@ -89,7 +87,6 @@ class InMemoryItemStore:
         for k, v in fields.items():
             if hasattr(item, k):
                 setattr(item, k, v)
-        self._notify("update", item)
         return True
 
     def remove(self, hash_key: str) -> bool:
@@ -160,99 +157,6 @@ class InMemoryItemStore:
     def clear(self):
         self._items.clear()
 
-    # ── 变更监听（MessageBus 集成） ──────────────
 
-    def on_change(self, listener: Callable[[str, MagnetItem], None]):
-        self._listeners.append(listener)
-
-    def _notify(self, action: str, item: MagnetItem):
-        for listener in self._listeners:
-            try:
-                listener(action, item)
-            except Exception:
-                pass
-
-
-class FakeStore:
-    """测试用 FakeStore — 实现 ItemStore 协议，纯内存，无 listener"""
-
-    def __init__(self):
-        self._items: Dict[str, MagnetItem] = {}
-
-    def add(self, item: MagnetItem) -> bool:
-        if item.hash in self._items:
-            return False
-        self._items[item.hash] = item
-        return True
-
-    def get(self, hash_key: str) -> Optional[MagnetItem]:
-        return self._items.get(hash_key)
-
-    def update(self, hash_key: str, **fields) -> bool:
-        item = self._items.get(hash_key)
-        if not item:
-            return False
-        for k, v in fields.items():
-            if hasattr(item, k):
-                setattr(item, k, v)
-        return True
-
-    def remove(self, hash_key: str) -> bool:
-        if hash_key in self._items:
-            del self._items[hash_key]
-            return True
-        return False
-
-    def list(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-        limit: int = 20,
-    ) -> List[MagnetItem]:
-        items = list(self._items.values())
-        if category:
-            items = [i for i in items if i.category == category]
-        if status and status != "all":
-            items = [i for i in items if i.status.value == status]
-        items.sort(key=lambda i: i.name.lower())
-        return items[:limit]
-
-    def search(self, query: str) -> List[MagnetItem]:
-        q = query.lower()
-        return [i for i in self._items.values() if q in i.name.lower()]
-
-    def get_pending(self) -> List[MagnetItem]:
-        return [
-            i for i in self._items.values()
-            if i.status == TaskStatus.pending and i.category
-        ]
-
-    def get_hashes_by_prefix(self, prefix: str) -> List[str]:
-        p = prefix.lower()
-        return [h for h in self._items if h.lower().startswith(p)]
-
-    @property
-    def count(self) -> int:
-        return len(self._items)
-
-    def stats(self) -> StoreStats:
-        s = StoreStats()
-        for item in self._items.values():
-            s.total += 1
-            cat = item.category or "未分类"
-            s.by_category[cat] = s.by_category.get(cat, 0) + 1
-            st = item.status.value
-            s.by_status[st] = s.by_status.get(st, 0) + 1
-            if item.status == TaskStatus.pending:
-                s.pending_count += 1
-        return s
-
-    def add_batch(self, items: List[MagnetItem]) -> int:
-        added = 0
-        for item in items:
-            if self.add(item):
-                added += 1
-        return added
-
-    def clear(self):
-        self._items.clear()
+# FakeStore — 测试用别名，与 InMemoryItemStore 逻辑相同
+FakeStore = InMemoryItemStore

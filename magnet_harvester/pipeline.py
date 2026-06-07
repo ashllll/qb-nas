@@ -47,7 +47,7 @@ class HarvestPipeline:
         self._bus = bus
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
-        await self._bus.emit_nowait(Event(EventType.CRAWL_START, {"url": url}))
+        await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))
         new_hashes: List[str] = []
 
         async for msg in self._crawler.crawl(url, depth=depth):
@@ -56,13 +56,13 @@ class HarvestPipeline:
                 item = MagnetItem(**msg["item"])
                 if self._store.add(item):
                     new_hashes.append(item.hash)
-                    await self._bus.emit_nowait(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
+                    await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
             elif t == "progress":
-                await self._bus.emit_nowait(Event(EventType.CRAWL_PROGRESS, msg))
+                await self._bus.emit(Event(EventType.CRAWL_PROGRESS, msg))
             elif t == "error":
-                await self._bus.emit_nowait(Event(EventType.CRAWL_ERROR, msg))
+                await self._bus.emit(Event(EventType.CRAWL_ERROR, msg))
             elif t == "done":
-                await self._bus.emit_nowait(Event(EventType.CRAWL_DONE, {"total": msg["total"], "url": msg["url"]}))
+                await self._bus.emit(Event(EventType.CRAWL_DONE, {"total": msg["total"], "url": msg["url"]}))
 
         if not new_hashes:
             return
@@ -80,7 +80,7 @@ class HarvestPipeline:
         index_to_hash = {i: item.hash for i, item in enumerate(items)}
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
-        await self._bus.emit_nowait(Event(EventType.CLASSIFY_START, {"count": len(items)}))
+        await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
 
         def on_result(index: int, result: dict):
             h = index_to_hash.get(index)
@@ -93,7 +93,7 @@ class HarvestPipeline:
                 asyncio.create_task(self._bus.emit(event))
 
         await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
-        await self._bus.emit_nowait(Event(EventType.CLASSIFY_ALL_DONE, {}))
+        await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
 
     async def _download_items(self, hashes: List[str]):
         success = 0
@@ -102,7 +102,7 @@ class HarvestPipeline:
             if not item or not item.category:
                 continue
             self._store.update(h, status=TaskStatus.adding)
-            await self._bus.emit_nowait(Event(EventType.DOWNLOAD_START, {"hash": h, "name": item.name}))
+            await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": h, "name": item.name}))
             try:
                 ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
                 status = TaskStatus.success if ok else TaskStatus.error
@@ -112,7 +112,7 @@ class HarvestPipeline:
                 status = TaskStatus.error
                 self._store.update(h, error_msg=str(e))
             self._store.update(h, status=status)
-            await self._bus.emit_nowait(Event(EventType.DOWNLOAD_RESULT, {"hash": h, "status": status.value}))
+            await self._bus.emit(Event(EventType.DOWNLOAD_RESULT, {"hash": h, "status": status.value}))
             if i > 0 and i % 10 == 0:
                 await asyncio.sleep(1)
 
