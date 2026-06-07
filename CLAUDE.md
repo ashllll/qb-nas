@@ -23,13 +23,14 @@ Magnet Harvester is a FastAPI-based service that crawls websites for magnet link
 ```
 
 **Key Components:**
-- `main.py` - FastAPI server with WebSocket (`/ws`, `/ws/chat`) and REST endpoints
-- `crawler.py` - Crawl4AI-based web crawler with magnet link extraction
-- `classifier.py` - MiniMax AI content classification with streaming batch processing and optional thinking-based recheck for low-confidence items
-- `agent.py` - Natural language agent using tool_use for hands-free control
-- `qbit_client.py` - qBittorrent Web API v2 client with auto-login
-- `tts_client.py` - Voice notifications for completed operations
+- `main.py` - FastAPI server with WebSocket (`/ws`) and REST endpoints, includes `/api/config` for qB connection settings
+- `crawler.py` - Crawl4AI-based web crawler with magnet link extraction and resolution filtering (2160p/4k only)
+- `classifier/` - Local rule-based classification (no AI), with adult studio recognition via `studio_recognizer.py`
+- `magnet_parser.py` - Regex-based magnet link extraction from text/markdown/html
+- `qbit_client.py` - qBittorrent Web API v2 client with auto-login, category creation, and default path detection
 - `config.py` - Pydantic settings from `.env` file
+- `store.py` - ItemStore protocol + InMemoryItemStore + FakeStore for testing
+- `bus.py` - MessageBus event system with NullBus for testing
 
 ## Project Structure
 

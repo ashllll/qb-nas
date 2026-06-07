@@ -20,8 +20,7 @@ def _make_test_context() -> AppContext:
     from magnet_harvester.crawler import MagnetCrawler
     from magnet_harvester.classifier import LocalClassifier
     from magnet_harvester.qbit_client import QBittorrentClient
-    from magnet_harvester.tts_client import MinimaxTTS
-    from magnet_harvester.config import CrawlerConfig, ClassifierConfig, QBitConfig, TTSConfig
+    from magnet_harvester.config import CrawlerConfig, QBitConfig
     from magnet_harvester.pipeline import HarvestPipeline
 
     store = FakeStore()
@@ -30,10 +29,9 @@ def _make_test_context() -> AppContext:
     crawler = MagnetCrawler(config=cfg)
     classifier = LocalClassifier()
     qbit = QBittorrentClient(config=QBitConfig(host="http://localhost:9999"))
-    tts = MinimaxTTS(config=TTSConfig(enabled=False))
-    pipeline = HarvestPipeline(crawler=crawler, classifier=classifier, qbit=qbit, tts=tts, store=store, bus=bus)
+    pipeline = HarvestPipeline(crawler=crawler, classifier=classifier, qbit=qbit, store=store, bus=bus)
     return AppContext(store=store, bus=bus, pipeline=pipeline,
-                      crawler=crawler, classifier=classifier, qbit=qbit, tts=tts)
+                      crawler=crawler, classifier=classifier, qbit=qbit)
 
 
 def test_appcontext_holds_deps():

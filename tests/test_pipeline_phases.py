@@ -3,7 +3,7 @@
 """
 import sys
 import os
-from typing import AsyncGenerator, List, Optional, Protocol
+from typing import AsyncGenerator, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -20,15 +20,6 @@ from magnet_harvester.pipeline import (
     DownloadPhase,
     HarvestPipeline,
 )
-
-
-async def _fake_notify(*args, **kwargs):
-    """Async no-op for FakeTTS"""
-    pass
-
-
-def _make_fake_tts():
-    return type("FakeTTS", (), {"notify": _fake_notify})()
 
 
 class FakeCrawlPhase:
@@ -119,7 +110,6 @@ def test_pipeline_with_fake_phases():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        tts=_make_fake_tts(),
         store=store,
         bus=bus,
     )
@@ -161,7 +151,6 @@ def test_pipeline_skip_download():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        tts=_make_fake_tts(),
         store=store,
         bus=bus,
     )
@@ -185,7 +174,6 @@ def test_no_new_items_skips_classify():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        tts=_make_fake_tts(),
         store=store,
         bus=bus,
     )

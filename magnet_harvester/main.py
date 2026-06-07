@@ -1,11 +1,5 @@
 """
-Magnet Harvester v3.0 — 主服务（架构重构版）
-
-变更：
-- 依赖注入：所有服务实例在 lifespan 中创建（消除模块级单例）
-- ItemStore：替代 found_items 全局字典（有缝可测试）
-- MessageBus：替代临时 broadcast dict（事件 fan-out）
-- HarvestPipeline：封装 crawl→classify→download（深模块）
+Magnet Harvester v3.0 — 主服务
 """
 from __future__ import annotations
 
@@ -22,17 +16,15 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from magnet_harvester.agent import MagnetAgent
 from magnet_harvester.bus import Event, EventType, MessageBus
-from magnet_harvester.classifier.local_classifier import LocalClassifier
+from magnet_harvester.classifier import LocalClassifier
 from magnet_harvester.config import settings
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
-from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
+from magnet_harvester.models import CrawlRequest, DownloadRequest
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.store import InMemoryItemStore, ItemStore
-from magnet_harvester.tts_client import MinimaxTTS
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
@@ -45,35 +37,29 @@ log = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════
-# AppContext — 依赖容器
+# AppContext
 # ═══════════════════════════════════════════════════
 @dataclass
 class AppContext:
-    """所有服务依赖的单一容器。存入 app.state，通过 Depends(get_context) 获取。"""
     store: ItemStore
     bus: MessageBus
     pipeline: HarvestPipeline
     crawler: MagnetCrawler
     classifier: LocalClassifier
     qbit: QBittorrentClient
-    tts: MinimaxTTS
 
 
 def get_context(request: Request) -> AppContext:
-    """FastAPI Depends 用 — 从 app.state 获取 AppContext"""
     return request.app.state.ctx
 
-# ═══════════════════════════════════════════════════
-# 运行时引用（lifespan 中初始化）
-# 替代原来的 found_items dict + 模块级单例
-# ═══════════════════════════════════════════════════
+
+# ── 全局引用 ────────────────────────────
 _store: InMemoryItemStore | None = None
 _bus: MessageBus | None = None
 _pipeline: HarvestPipeline | None = None
 _crawler: MagnetCrawler | None = None
 _classifier: LocalClassifier | None = None
 _qbit: QBittorrentClient | None = None
-_tts: MinimaxTTS | None = None
 _active_ws: set[WebSocket] = set()
 
 
@@ -116,9 +102,7 @@ def _format_uptime(seconds: float) -> str:
     return f"{secs}s"
 
 
-# ═══════════════════════════════════════════════════
-# 工具函数
-# ═══════════════════════════════════════════════════
+# ── 后台任务工具 ──────────────────────────
 def _bg(coro, name: str | None = None) -> asyncio.Task:
     task = asyncio.create_task(coro, name=name)
     task.add_done_callback(_on_task_done)
@@ -132,11 +116,8 @@ def _on_task_done(task: asyncio.Task) -> None:
             log.error(f"后台任务 [{task.get_name()}] 异常: {exc}", exc_info=exc)
 
 
-# ═══════════════════════════════════════════════════
-# MessageBus → WebSocket 广播适配器
-# ═══════════════════════════════════════════════════
+# ── WebSocket 广播 ──────────────────────────
 async def _ws_broadcast(event: Event):
-    """订阅全部事件，转发到 WebSocket 客户端"""
     if not _active_ws:
         return
     data = json.dumps(event.as_dict(), ensure_ascii=False)
@@ -149,53 +130,30 @@ async def _ws_broadcast(event: Event):
     _active_ws.difference_update(dead)
 
 
-# ═══════════════════════════════════════════════════
-# MessageBus → TTS 通知适配器
-# ═══════════════════════════════════════════════════
-async def _tts_on_event(event: Event):
-    if _tts is None:
-        return
-    if event.type == EventType.CRAWL_DONE:
-        await _tts.notify("crawl_done", total=event.data.get("total", 0))
-    elif event.type == EventType.DOWNLOAD_DONE:
-        await _tts.notify("download_done", count=event.data.get("count", 0))
-
-
-# ═══════════════════════════════════════════════════
-# Agent 工具执行器（通过 ItemStore / Pipeline）
-# ═══════════════════════════════════════════════════
+# ── Agent 工具执行器（通过 ItemStore / Pipeline）──
 async def _tool_executor(name: str, inp: dict) -> dict:
     store = _store
-    bus = _bus
     pipeline = _pipeline
 
     if name == "get_stats":
         s = store.stats()
-        return {
-            "total": s.total,
-            "by_category": s.by_category,
-            "by_status": s.by_status,
-        }
+        return {"total": s.total, "by_category": s.by_category, "by_status": s.by_status}
 
     if name == "list_items":
         cat = inp.get("category")
         status = inp.get("status", "all")
         limit = int(inp.get("limit", 20))
         items = store.list(category=cat, status=status, limit=limit)
-        return {
-            "count": len(items),
-            "items": [{"hash": i.hash[:16], "name": i.name,
-                       "category": i.category, "status": str(i.status)}
-                      for i in items],
-        }
+        return {"count": len(items), "items": [
+            {"hash": i.hash[:16], "name": i.name, "category": i.category, "status": str(i.status)}
+            for i in items]}
 
     if name == "start_crawl":
         url = inp.get("url", "").strip()
         if not url:
             return {"status": "error", "reason": "url 不能为空"}
         depth = int(inp.get("depth", 1))
-        _bg(pipeline.execute(url, depth=depth, auto_download=False),
-            name=f"crawl:{url[:40]}")
+        _bg(pipeline.execute(url, depth=depth, auto_download=False), name=f"crawl:{url[:40]}")
         return {"status": "started", "url": url, "depth": depth}
 
     if name == "add_to_queue":
@@ -211,16 +169,12 @@ async def _tool_executor(name: str, inp: dict) -> dict:
         cat = inp.get("category", "")
         if len(h) < 8:
             return {"status": "error", "reason": "hash 至少需要 8 位前缀"}
-        valid = list(settings.CATEGORY_PATHS.keys())
-        if cat not in valid:
-            return {"status": "error", "reason": f"无效分类，可选: {valid}"}
         matches = store.get_hashes_by_prefix(h)
         if matches:
             match = matches[0]
-            store.update(match, category=cat, save_path=settings.CATEGORY_PATHS[cat])
-            await bus.emit_nowait(Event(EventType.CLASSIFY_DONE, {
-                "hash": match, "category": cat, "confidence": "manual", "reason": "手动修改",
-            }))
+            store.update(match, category=cat, save_path=cat)
+            await _bus.emit_nowait(Event(EventType.CLASSIFY_DONE, {
+                "hash": match, "category": cat, "confidence": "manual", "reason": "手动修改"}))
             return {"status": "ok", "hash": match, "new_category": cat}
         return {"status": "not_found", "hash": h}
 
@@ -229,73 +183,56 @@ async def _tool_executor(name: str, inp: dict) -> dict:
         hits = store.search(query)
         return {"count": len(hits), "results": [
             {"hash": i.hash[:16], "name": i.name, "category": i.category}
-            for i in hits[:20]
-        ]}
+            for i in hits[:20]]}
 
     if name == "clear_all":
         if not inp.get("confirm"):
             return {"status": "cancelled", "reason": "需要 confirm=true"}
         count = store.count
         store.clear()
-        await bus.emit_nowait(Event(EventType.ERROR, {"type": "items_cleared"}))
+        await _bus.emit_nowait(Event(EventType.ERROR, {"type": "items_cleared"}))
         return {"status": "cleared", "removed": count}
 
     return {"error": f"未知工具: {name}"}
 
 
 # ═══════════════════════════════════════════════════
-# FastAPI Lifetime（依赖注入入口）
+# Lifespan
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _bus, _pipeline, _crawler, _classifier, _qbit, _tts
+    global _store, _bus, _pipeline, _crawler, _classifier, _qbit
 
-    # ── 创建实例 ──────────────────────────────
     _crawler = MagnetCrawler(config=settings.crawler)
     _qbit = QBittorrentClient(config=settings.qbit)
-
-    # 从 qB 获取默认保存路径作为厂牌基础路径
-    adult_base_path = None
-    try:
-        adult_base_path = await _qbit.get_default_save_path()
-    except Exception as e:
-        log.warning(f"获取 qB 默认路径失败，使用静默回退: {e}")
-    _classifier = LocalClassifier(adult_base_path=adult_base_path)
-    _tts = MinimaxTTS(config=settings.tts)
+    _classifier = LocalClassifier()
     _store = InMemoryItemStore()
     _bus = MessageBus()
 
     _pipeline = HarvestPipeline(
         crawler=_crawler, classifier=_classifier,
-        qbit=_qbit, tts=_tts, store=_store, bus=_bus,
+        qbit=_qbit, store=_store, bus=_bus,
     )
 
-    # ── 存入 AppContext ───────────────────────
     app.state.ctx = AppContext(
         store=_store, bus=_bus, pipeline=_pipeline,
         crawler=_crawler, classifier=_classifier,
-        qbit=_qbit, tts=_tts,
+        qbit=_qbit,
     )
 
-    # ── 连接适配器 ────────────────────────────
     _bus.subscribe(None, _ws_broadcast)
-    _bus.subscribe(None, _tts_on_event)
 
-    # ── 启动 ──────────────────────────────────────
     await _crawler.start()
-    disk_info = settings.check_disk_space()
+    qbit_ok = await _qbit.ping()
+    disk_info = settings.check_disk_space() if hasattr(settings, 'check_disk_space') else {}
     log.info(
-        f"Crawl4AI 已启动 | 本地分类器就绪"
-        f"| TTS: {'✅' if settings.tts.enabled else '—'}"
-        f"| 磁盘剩余: {disk_info.get('free_gb', 'N/A')}GB"
+        f"Crawl4AI 已启动 | qB: {'在线' if qbit_ok else '离线'} "
+        f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
     )
 
     yield
 
-    # ── 关闭 ──────────────────────────────────────
     await _crawler.stop()
-    await _qbit.close()
-    # LocalClassifier 无外部客户端需要关闭
     log.info("服务已关闭")
 
 
@@ -306,9 +243,8 @@ app.add_middleware(
 
 
 # ═══════════════════════════════════════════════════
-# WebSocket 端点
+# WebSocket
 # ═══════════════════════════════════════════════════
-
 @app.websocket("/ws")
 async def ws_main(ws: WebSocket):
     await ws.accept()
@@ -323,61 +259,6 @@ async def ws_main(ws: WebSocket):
         pass
     finally:
         _active_ws.discard(ws)
-
-
-@app.websocket("/ws/chat")
-async def ws_chat(ws: WebSocket):
-    await ws.accept()
-    history: list[dict] = []
-    agent = MagnetAgent(
-        tool_executor=_tool_executor,
-        shared_usage=_classifier.usage if _classifier else None,
-        config=settings.classifier,
-    )
-    log.info("Agent 会话建立")
-
-    try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                payload = json.loads(raw)
-            except json.JSONDecodeError:
-                await ws.send_text(json.dumps({"type": "error", "msg": "无效的 JSON 格式"}))
-                continue
-
-            user_msg = payload.get("message", "").strip()
-            if not user_msg:
-                continue
-
-            def on_token(token: str):
-                asyncio.create_task(
-                    ws.send_text(json.dumps({"type": "token", "text": token}, ensure_ascii=False))
-                )
-
-            def on_tool_call(name: str, inp: dict):
-                asyncio.create_task(
-                    ws.send_text(json.dumps({"type": "tool_call", "name": name, "input": inp}, ensure_ascii=False))
-                )
-
-            def on_usage(usage_dict: dict):
-                asyncio.create_task(
-                    ws.send_text(json.dumps({"type": "usage", "data": usage_dict}, ensure_ascii=False))
-                )
-
-            try:
-                final_text, history = await agent.run(
-                    user_msg, history,
-                    on_token=on_token, on_tool_call=on_tool_call, on_usage=on_usage,
-                )
-                await ws.send_text(json.dumps({"type": "done", "text": final_text}, ensure_ascii=False))
-            except Exception as e:
-                log.error(f"Agent 执行错误: {e}")
-                await ws.send_text(json.dumps({"type": "error", "msg": str(e)}, ensure_ascii=False))
-
-    except WebSocketDisconnect:
-        log.info("Agent 会话断开")
-    finally:
-        await agent.close()
 
 
 # ═══════════════════════════════════════════════════
@@ -408,14 +289,12 @@ async def reclassify(req: DownloadRequest):
 @app.get("/api/status")
 async def system_status():
     qbit_ok = await _qbit.ping()
-    disk_info = settings.check_disk_space()
+    disk_info = {}
     return {
         "qbittorrent": "online" if qbit_ok else "offline",
         "classifier": "local_rules",
-        "tts_enabled": settings.tts.enabled,
         "items_count": _store.count if _store else 0,
         "disk_space": disk_info,
-        "qbit_stats": _qbit.get_stats(),
     }
 
 
@@ -423,12 +302,6 @@ async def system_status():
 async def get_stats():
     stats.record_api_call()
     return stats.as_dict()
-
-
-@app.get("/api/usage")
-async def get_usage():
-    stats.record_api_call()
-    return {"total": _classifier.usage.as_dict(), "note": "分类器 + Agent 对话合计用量"}
 
 
 @app.get("/api/errors")
@@ -453,29 +326,42 @@ async def clear_resolved_errors():
 @app.get("/api/health")
 async def health_check():
     qbit_ok = await _qbit.ping()
-    disk_ok = settings.check_disk_space()["healthy"]
+    return {"healthy": qbit_ok, "qbittorrent": qbit_ok, "classifier": True}
+
+
+# ── 配置管理 ──────────────────────────────
+
+@app.get("/api/config")
+async def get_config():
+    """获取 qBittorrent 连接配置（不返回密码）"""
     return {
-        "healthy": qbit_ok and disk_ok,
-        "qbittorrent": qbit_ok,
-        "disk_space": disk_ok,
-        "qbit_healthy": _qbit.is_healthy(),
+        "qbit_host": settings.QBIT_HOST,
+        "qbit_username": settings.QBIT_USERNAME,
     }
 
 
-@app.get("/api/disk")
-async def get_disk_info():
-    stats.record_api_call()
-    return {"disk": settings.check_disk_space(), "categories": settings.get_category_stats()}
+@app.put("/api/config")
+async def update_config(data: dict):
+    """更新 qBittorrent 连接配置并重建客户端"""
+    host = data.get("qbit_host")
+    username = data.get("qbit_username")
+    password = data.get("qbit_password")
+
+    settings.update_qbit(host=host, username=username, password=password)
+
+    # 重建 qB 客户端
+    global _qbit
+    _qbit = QBittorrentClient(config=settings.qbit)
+    if _pipeline:
+        _pipeline._qbit = _qbit
+    if hasattr(app.state, 'ctx') and app.state.ctx:
+        app.state.ctx.qbit = _qbit
+
+    ok = await _qbit.ping()
+    return {"status": "ok" if ok else "failed", "connected": ok}
 
 
-@app.get("/api/paths/validate")
-async def validate_paths():
-    results = {}
-    for category, path_str in settings.CATEGORY_PATHS.items():
-        valid, message = settings.validate_path(path_str)
-        results[category] = {"valid": valid, "message": message, "path": path_str}
-    return {"results": results}
-
+# ── 项目接口 ──────────────────────────────
 
 @app.get("/api/items")
 async def get_items(
@@ -511,15 +397,9 @@ async def clear_items():
     return {"status": "cleared", "removed": count}
 
 
-@app.post("/api/cache/clear")
-async def clear_cache():
-    _classifier.clear_cache()
-    return {"status": "cleared"}
-
-
 @app.get("/api/categories")
 async def get_categories():
-    return {"categories": list(settings.CATEGORY_PATHS.keys()), "paths": settings.CATEGORY_PATHS}
+    return {"categories": ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"]}
 
 
 @app.get("/")

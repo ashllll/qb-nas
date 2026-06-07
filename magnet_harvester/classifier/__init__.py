@@ -24,7 +24,6 @@ from magnet_harvester.classifier.fallback import (
 )
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.classifier.optimizer import BatchOptimizer
-from magnet_harvester.usage_stats import UsageStats
 
 __all__ = [
     "LocalClassifier",

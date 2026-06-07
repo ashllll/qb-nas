@@ -123,7 +123,7 @@ tr.selected td{background:rgba(124,77,255,.06)}
     </div>
     <div class="status-strip">
       <div class="pill"><span class="dot dot-spin" id="dotQbit"></span><span>qBittorrent</span></div>
-      <div class="pill"><span class="dot dot-spin" id="dotClassifier"></span><span>分类器</span></div>
+      <div class="pill" style="color:var(--green)">● 本地分类器</div>
     </div>
   </header>
 
@@ -186,22 +186,31 @@ tr.selected td{background:rgba(124,77,255,.06)}
 
   <div class="right-panel">
     <div class="chat-header">
-      <span class="section-label" style="margin:0">AI 助手</span>
-      <button class="toolbar-btn btn-ghost" onclick="clearChat()" style="padding:2px 8px;font-size:9px">清空</button>
+      <span class="section-label" style="margin:0">qBittorrent 配置</span>
+      <span class="pill" id="configStatus" style="font-size:9px;padding:2px 6px">已加载</span>
     </div>
-    <div class="chat-messages" id="chatMessages">
-      <div class="msg msg-ai">你好！我是 Magnet Harvester 助手。你可以告诉我：&#10;· 爬取某个 URL&#10;· 下载全部或特定分类的资源&#10;· 搜索、修改分类&#10;· 查看统计信息</div>
-    </div>
-    <div class="chat-input-row">
-      <textarea class="chat-input" id="chatInput" rows="2" placeholder="Enter 发送，Shift+Enter 换行"></textarea>
-      <button class="send-btn" id="sendBtn" onclick="sendChat()">发送</button>
+    <div class="chat-messages" id="configPanel" style="padding:8px">
+      <div style="margin-bottom:8px">
+        <label style="font-size:10px;color:var(--text2);display:block;margin-bottom:2px">服务器地址</label>
+        <input class="url-input" id="cfgHost" value="" placeholder="http://192.168.1.69:8085" style="font-size:11px">
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:10px;color:var(--text2);display:block;margin-bottom:2px">用户名</label>
+        <input class="url-input" id="cfgUser" value="" placeholder="admin" style="font-size:11px">
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:10px;color:var(--text2);display:block;margin-bottom:2px">密码</label>
+        <input class="url-input" id="cfgPass" type="password" value="" placeholder="输入密码" style="font-size:11px">
+      </div>
+      <button class="crawl-btn" onclick="saveConfig()" style="font-size:11px;padding:4px 12px">保存并测试连接</button>
+      <div id="cfgResult" style="font-size:10px;margin-top:6px;color:var(--text2)"></div>
     </div>
   </div>
 </div>
 
 <script>
 const items = new Map(), selected = new Set();
-let filter = 'all', ws, wsChat, aiMsgEl = null;
+let filter = 'all', ws;
 
 // ── Main WS ───────────────────────────────────────────────
 function connectWS() {
@@ -225,67 +234,43 @@ function handleMsg(msg) {
     case 'download_start':  addLog(`↑ 发送: ${esc((items.get(msg.hash)||{}).name||'').slice(0,35)}`,'info'); break;
     case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;updateRow(msg.hash);addLog(`${msg.status==='success'?'✓':'✗'} ${esc(it.name.slice(0,35))}`,msg.status==='success'?'found':'error');} break;
     case 'items_cleared':   items.clear();selected.clear();renderTable(); break;
-    case 'usage_update':    break;   // no-op (removed AI usage tracking)
     case 'error':           addLog(`⚠ ${msg.msg}`,'error'); break;
   }
 }
 
-// ── Chat WS ───────────────────────────────────────────────
-function connectChatWS() {
-  const p = location.protocol==='https:'?'wss:':'ws:';
-  wsChat = new WebSocket(`${p}//${location.host}/ws/chat`);
-  wsChat.onmessage = e => handleChatMsg(JSON.parse(e.data));
-  wsChat.onclose   = () => setTimeout(connectChatWS, 2000);
-  wsChat.onerror   = () => wsChat.close();
+// ── Config ────────────────────────────────────────────────
+async function loadConfig() {
+  try {
+    const d = await fetch('/api/config').then(r=>r.json());
+    document.getElementById('cfgHost').value = d.qbit_host || '';
+    document.getElementById('cfgUser').value = d.qbit_username || '';
+  } catch(e) { document.getElementById('configStatus').textContent = '加载失败'; }
 }
 
-function handleChatMsg(msg) {
-  switch(msg.type) {
-    case 'token':
-      if(!aiMsgEl) aiMsgEl = addChatBubble('', 'ai', true);
-      aiMsgEl.textContent += msg.text; scrollChat(); break;
-    case 'tool_call':
-      addToolBubble(msg.name, msg.input);
-      addLog(`🔧 ${msg.name}`,'tool'); break;
-    case 'usage':
-      break;
-    case 'done':
-      if(aiMsgEl){aiMsgEl.classList.remove('streaming');aiMsgEl=null;}
-      setSending(false); break;
-    case 'error':
-      if(aiMsgEl){aiMsgEl.classList.remove('streaming');aiMsgEl=null;}
-      addChatBubble(`❌ ${msg.msg}`,'ai'); setSending(false); break;
+async function saveConfig() {
+  const btn = document.querySelector('.crawl-btn');
+  btn.disabled = true; btn.textContent = '连接中...';
+  const res = document.getElementById('cfgResult');
+  try {
+    const r = await fetch('/api/config', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        qbit_host: document.getElementById('cfgHost').value.trim(),
+        qbit_username: document.getElementById('cfgUser').value.trim(),
+        qbit_password: document.getElementById('cfgPass').value,
+      })
+    });
+    const d = await r.json();
+    res.textContent = d.connected ? '✅ 连接成功' : '❌ 连接失败';
+    res.style.color = d.connected ? 'var(--green)' : 'var(--red)';
+    document.getElementById('configStatus').textContent = d.connected ? '在线' : '离线';
+  } catch(e) {
+    res.textContent = '❌ 请求失败';
+    res.style.color = 'var(--red)';
   }
+  btn.disabled = false; btn.textContent = '保存并测试连接';
 }
-
-function sendChat() {
-  const el = document.getElementById('chatInput');
-  const txt = el.value.trim();
-  if(!txt || !wsChat || wsChat.readyState !== WebSocket.OPEN) return;
-  addChatBubble(txt, 'user');
-  el.value = ''; aiMsgEl = null; setSending(true);
-  wsChat.send(JSON.stringify({message: txt}));
-}
-
-function addChatBubble(text, role, streaming=false) {
-  const box = document.getElementById('chatMessages');
-  const el  = document.createElement('div');
-  el.className = `msg msg-${role}${streaming?' streaming':''}`;
-  el.textContent = text;
-  box.appendChild(el); scrollChat(); return el;
-}
-
-function addToolBubble(name, input) {
-  const box = document.getElementById('chatMessages');
-  const el  = document.createElement('div');
-  el.className = 'msg-tool';
-  el.textContent = `⚙ ${name}  ${JSON.stringify(input).slice(0,80)}`;
-  box.appendChild(el);
-}
-
-function scrollChat() { const b=document.getElementById('chatMessages'); b.scrollTop=b.scrollHeight; }
-function setSending(v) { document.getElementById('sendBtn').disabled=v; document.getElementById('chatInput').disabled=v; }
-function clearChat() { document.getElementById('chatMessages').innerHTML='<div class="msg msg-ai">对话已清空。</div>'; aiMsgEl=null; if(wsChat) wsChat.close(); }
 
 // ── Crawl & Actions ───────────────────────────────────────
 async function startCrawl() {
@@ -360,14 +345,12 @@ async function checkStatus(){
     const d=await fetch('/api/status').then(r=>r.json());
     const setDot=(id,s)=>document.getElementById(id).className=`dot dot-${s==='online'?'on':s==='checking'?'spin':'off'}`;
     setDot('dotQbit',d.qbittorrent);
-    setDot('dotClassifier','online');   // local_rules always online
   }catch(e){}
 }
 
 // ── Init ──────────────────────────────────────────────────
 document.getElementById('urlInput').addEventListener('keydown',e=>{if(e.key==='Enter')startCrawl();});
-document.getElementById('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
-connectWS(); connectChatWS(); checkStatus(); setInterval(checkStatus,30000);
+connectWS(); loadConfig(); checkStatus(); setInterval(checkStatus,30000);
 </script>
 </body>
 </html>
