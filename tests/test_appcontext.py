@@ -18,7 +18,7 @@ from magnet_harvester.main import AppContext, get_context
 def _make_test_context() -> AppContext:
     """创建最小测试用 AppContext"""
     from magnet_harvester.crawler import MagnetCrawler
-    from magnet_harvester.classifier import MiniMaxClassifier
+    from magnet_harvester.classifier import LocalClassifier
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.tts_client import MinimaxTTS
     from magnet_harvester.config import CrawlerConfig, ClassifierConfig, QBitConfig, TTSConfig
@@ -28,7 +28,7 @@ def _make_test_context() -> AppContext:
     bus = NullBus()
     cfg = CrawlerConfig(headless=True, timeout=5)
     crawler = MagnetCrawler(config=cfg)
-    classifier = MiniMaxClassifier(config=ClassifierConfig(api_key="test"))
+    classifier = LocalClassifier()
     qbit = QBittorrentClient(config=QBitConfig(host="http://localhost:9999"))
     tts = MinimaxTTS(config=TTSConfig(enabled=False))
     pipeline = HarvestPipeline(crawler=crawler, classifier=classifier, qbit=qbit, tts=tts, store=store, bus=bus)

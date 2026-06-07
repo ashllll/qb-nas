@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 import anthropic
 
-from magnet_harvester.classifier import UsageStats
+from magnet_harvester.usage_stats import UsageStats
 from magnet_harvester.config import ClassifierConfig, settings
 
 log = logging.getLogger(__name__)

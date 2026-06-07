@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse
 
 from magnet_harvester.agent import MagnetAgent
 from magnet_harvester.bus import Event, EventType, MessageBus
-from magnet_harvester.classifier import MiniMaxClassifier
+from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.config import settings
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
@@ -54,7 +54,7 @@ class AppContext:
     bus: MessageBus
     pipeline: HarvestPipeline
     crawler: MagnetCrawler
-    classifier: MiniMaxClassifier
+    classifier: LocalClassifier
     qbit: QBittorrentClient
     tts: MinimaxTTS
 
@@ -71,7 +71,7 @@ _store: InMemoryItemStore | None = None
 _bus: MessageBus | None = None
 _pipeline: HarvestPipeline | None = None
 _crawler: MagnetCrawler | None = None
-_classifier: MiniMaxClassifier | None = None
+_classifier: LocalClassifier | None = None
 _qbit: QBittorrentClient | None = None
 _tts: MinimaxTTS | None = None
 _active_ws: set[WebSocket] = set()
@@ -252,7 +252,7 @@ async def lifespan(app: FastAPI):
 
     # ── 创建实例 ──────────────────────────────
     _crawler = MagnetCrawler(config=settings.crawler)
-    _classifier = MiniMaxClassifier(config=settings.classifier)
+    _classifier = LocalClassifier()
     _qbit = QBittorrentClient(config=settings.qbit)
     _tts = MinimaxTTS(config=settings.tts)
     _store = InMemoryItemStore()
@@ -276,10 +276,9 @@ async def lifespan(app: FastAPI):
 
     # ── 启动 ──────────────────────────────────────
     await _crawler.start()
-    ok = await _classifier.ping()
     disk_info = settings.check_disk_space()
     log.info(
-        f"Playwright 已启动 | MiniMax: {'✅' if ok else '❌'} "
+        f"Crawl4AI 已启动 | 本地分类器就绪"
         f"| TTS: {'✅' if settings.tts.enabled else '—'}"
         f"| 磁盘剩余: {disk_info.get('free_gb', 'N/A')}GB"
     )
@@ -289,8 +288,7 @@ async def lifespan(app: FastAPI):
     # ── 关闭 ──────────────────────────────────────
     await _crawler.stop()
     await _qbit.close()
-    if _classifier._client:
-        await _classifier._client.close()
+    # LocalClassifier 无外部客户端需要关闭
     log.info("服务已关闭")
 
 
@@ -404,18 +402,13 @@ async def reclassify(req: DownloadRequest):
 async def system_status():
     qbit_ok = await _qbit.ping()
     disk_info = settings.check_disk_space()
-    ccfg = settings.classifier
     return {
         "qbittorrent": "online" if qbit_ok else "offline",
-        "minimax": "online" if _classifier._ok else ("checking" if _classifier._ok is None else "offline"),
-        "minimax_model": ccfg.model,
-        "thinking_model": ccfg.thinking_model,
-        "thinking_recheck": ccfg.thinking_recheck,
+        "classifier": "local_rules",
         "tts_enabled": settings.tts.enabled,
         "items_count": _store.count if _store else 0,
         "disk_space": disk_info,
         "qbit_stats": _qbit.get_stats(),
-        "classifier_cache": _classifier.get_cache_stats(),
     }
 
 
@@ -453,12 +446,10 @@ async def clear_resolved_errors():
 @app.get("/api/health")
 async def health_check():
     qbit_ok = await _qbit.ping()
-    minimax_ok = await _classifier.ping()
     disk_ok = settings.check_disk_space()["healthy"]
     return {
-        "healthy": qbit_ok and minimax_ok and disk_ok,
+        "healthy": qbit_ok and disk_ok,
         "qbittorrent": qbit_ok,
-        "minimax": minimax_ok,
         "disk_space": disk_ok,
         "qbit_healthy": _qbit.is_healthy(),
     }

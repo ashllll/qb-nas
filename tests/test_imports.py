@@ -31,11 +31,10 @@ try:
     print(f"   OK - Errors 加载成功 - 错误数: {len(error_handler.get_recent_errors())}")
     
     print("\n4. 测试 classifier 模块...")
-    from magnet_harvester.classifier import MiniMaxClassifier, ClassificationCache, BatchOptimizer
-    cache = ClassificationCache()
-    optimizer = BatchOptimizer()
-    classifier = MiniMaxClassifier()
-    print(f"   OK - Classifier 加载成功")
+    from magnet_harvester.classifier.local_classifier import LocalClassifier
+    classifier = LocalClassifier()
+    result = classifier.classify_one("Test.Movie.2024.1080p")
+    print(f"   OK - LocalClassifier 加载成功 - 分类测试: {result['category']}")
     
     print("\n5. 测试 qbit_client 模块...")
     from magnet_harvester.qbit_client import QBittorrentClient, QBittorrentStats

@@ -21,7 +21,7 @@
 ## 功能特性
 
 - 🔍 **网页爬取** — 基于 [crawl4ai](https://github.com/unclecode/crawl4ai) 引擎，自动发现磁力链接
-- 🤖 **AI 分类** — 使用 MiniMax AI 智能分类（电影、电视剧、动漫、音乐等 9 类）
+- 🤖 **本地规则分类** — 无需 API Key，基于正则规则的智能分类（电影、电视剧、动漫、音乐等 9 类）
 - 💬 **自然语言 Agent** — 通过 WebSocket 聊天界面，用自然语言控制爬虫
 - 📥 **自动下载** — 分类后自动添加到 qBittorrent 下载队列
 - 🔔 **语音通知** — 操作完成后 TTS 语音播报（可选）
@@ -33,7 +33,6 @@
 
 - Python ≥ 3.11
 - 运行中的 [qBittorrent](https://www.qbittorrent.org/)（需启用 Web UI）
-- MiniMax API Key（[获取](https://platform.minimaxi.com/user-center/basic-information/interface-key)）
 
 ### 安装
 
@@ -50,7 +49,7 @@ crawl4ai-setup
 
 # 4. 配置环境变量
 cp .env.example .env
-# 编辑 .env，填入你的 MINIMAX_API_KEY 和 QBIT_HOST
+# 编辑 .env，填入你的 QBIT_HOST（如需 Agent 对话功能还需 MINIMAX_API_KEY）
 ```
 
 ### 配置
@@ -62,8 +61,7 @@ cp .env.example .env
 | `QBIT_HOST` | qBittorrent Web UI 地址 | `http://192.168.1.69:8085` |
 | `QBIT_USERNAME` | qBittorrent 用户名 | `admin` |
 | `QBIT_PASSWORD` | qBittorrent 密码 | |
-| `MINIMAX_API_KEY` | MiniMax API 密钥 | **必填** |
-| `MINIMAX_MODEL` | MiniMax 模型 | `MiniMax-M2.5-highspeed` |
+| `MINIMAX_API_KEY` | MiniMax API 密钥（仅 Agent 对话需要） | 可选 |
 | `SERVICE_PORT` | 服务端口 | `8899` |
 | `CRAWLER_TIMEOUT` | 爬虫超时（秒） | `30` |
 | `CRAWLER_MAX_DEPTH` | 最深爬取层级 | `2` |
@@ -180,8 +178,8 @@ python tests/test_crawler_crawl.py     # 爬虫端到端测试（需网络）
 
 - **FastAPI** — Web 框架（异步 API + WebSocket）
 - **crawl4ai** — 爬虫引擎（基于 Playwright）
-- **MiniMax API** — AI 分类
-- **Anthropic SDK** — MiniMax API（Claude 兼容接口）
+- **MiniMax API** — Agent 对话（可选，磁力分类不需要）
+- **Anthropic SDK** — MiniMax API（Claude 兼容接口，仅 Agent 使用）
 - **qBittorrent Web API v2** — 下载管理
 - **Pydantic v2** — 配置 + 数据模型
 

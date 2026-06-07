@@ -35,11 +35,9 @@ class QBitConfig:
 
 @dataclass
 class ClassifierConfig:
-    """分类器配置 — 只给 classifier.py 用"""
+    """Agent 配置 — 供 agent.py 使用"""
     api_key: str = "your-minimax-api-key"
     model: str = "MiniMax-M2.5-highspeed"
-    thinking_model: str = "MiniMax-M2.5"
-    thinking_recheck: bool = True
 
 
 @dataclass
@@ -195,8 +193,6 @@ class Settings(BaseSettings):
 
     MINIMAX_API_KEY: str = "your-minimax-api-key"
     MINIMAX_MODEL: str = "MiniMax-M2.5-highspeed"
-    MINIMAX_THINKING_MODEL: str = "MiniMax-M2.5"
-    THINKING_RECHECK: bool = True
 
     TTS_ENABLED: bool = True
 
@@ -262,8 +258,6 @@ class Settings(BaseSettings):
             self._classifier_config = ClassifierConfig(
                 api_key=self.MINIMAX_API_KEY,
                 model=self.MINIMAX_MODEL,
-                thinking_model=self.MINIMAX_THINKING_MODEL,
-                thinking_recheck=self.THINKING_RECHECK,
             )
         return self._classifier_config
 
