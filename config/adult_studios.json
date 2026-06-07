@@ -1,0 +1,28 @@
+{
+  "_note": "成人厂牌关键词映射。keyword 用于匹配文件名（大小写不敏感），name 为 qBittorrent 分类名",
+  "_path_note": "下载路径为 ADULT_BASE_PATH + name",
+  "studios": [
+    {"keyword": "sexart", "name": "SexArt"},
+    {"keyword": "brazzers", "name": "Brazzers"},
+    {"keyword": "vixen", "name": "Vixen"},
+    {"keyword": "blacked", "name": "Blacked"},
+    {"keyword": "blackedraw", "name": "BlackedRaw"},
+    {"keyword": "tushy", "name": "Tushy"},
+    {"keyword": "tushyraw", "name": "TushyRaw"},
+    {"keyword": "realitykings", "name": "RealityKings"},
+    {"keyword": "teamskeet", "name": "TeamSkeet"},
+    {"keyword": "babes", "name": "Babes"},
+    {"keyword": "evilangel", "name": "EvilAngel"},
+    {"keyword": "naughtyamerica", "name": "NaughtyAmerica"},
+    {"keyword": "girlfriendsfilms", "name": "GirlfriendsFilms"},
+    {"keyword": "wicked", "name": "Wicked"},
+    {"keyword": "digitalplayground", "name": "DigitalPlayground"},
+    {"keyword": "julesjordan", "name": "JulesJordan"},
+    {"keyword": "bangbros", "name": "BangBros"},
+    {"keyword": "mofos", "name": "Mofos"},
+    {"keyword": "21sextury", "name": "21Sextury"},
+    {"keyword": "xart", "name": "X-Art"},
+    {"keyword": "pornhub", "name": "PornHub"},
+    {"keyword": "xvideos", "name": "XVideos"}
+  ]
+}
