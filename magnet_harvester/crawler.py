@@ -52,6 +52,7 @@ def _get_same_domain_links(html: str, base_url: str, max_links: int = 15) -> Lis
     """从 HTML 中提取同域名链接（用于深度爬取）"""
     base = urlparse(base_url)
     pattern = re.compile(r'href=["\']([^"\']+)["\']', re.IGNORECASE)
+    pattern = re.compile(r'href=["\']([^"\']+)["\']', re.IGNORECASE)
     seen: Set[str] = set()
     links: List[str] = []
 
@@ -77,6 +78,12 @@ def _get_same_domain_links(html: str, base_url: str, max_links: int = 15) -> Lis
                 break
 
     return links
+
+
+def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
+    """按分辨率过滤磁力列表，只保留含指定分辨率关键词的条目"""
+    allowed_lower = {a.lower() for a in allowed}
+    return [it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)]
 
 
 class MagnetCrawler:
@@ -235,6 +242,9 @@ class MagnetCrawler:
         for text in content_sources:
             items.extend(extract_from_text(text))
 
+        # 分辨率过滤：只保留 2160p / 4k
+        items = filter_resolution_items(items)
+
         # 全局去重
         new_count = 0
         for item in items:
@@ -253,26 +263,19 @@ class MagnetCrawler:
 
         # ── 深度爬取 ──
         if depth > 1:
-            html_to_parse = result.cleaned_html or result.html or str(result.markdown) if result.markdown else ""
             if result.links:
-                # 优先使用 crawl4ai 提取的链接
                 internal_links = result.links.get("internal", [])
-                # 优先详情页链接，排除导航/分类/登录/搜索页面
-                def _detail_first(links, max_count=15):
-                    details, others = [], []
-                    for link in links:
-                        href = link.get("href", "") if isinstance(link, dict) else str(link) if hasattr(link, "href") else str(link)
-                        if "/details/" in href:
-                            details.append(href)
-                        elif href.count("/") > 3:
-                            others.append(href)
-                    result = details[:max_count] + others[:max(0, max_count - len(details))]
-                    return result[:max_count]
-
-                sub_links = _detail_first(internal_links, 15)
+                # 只提取详情页链接，跳过导航/分类/登录等无关页面
+                detail_links = []
+                for link in internal_links:
+                    href = link.get("href", "") if isinstance(link, dict) else str(link) if hasattr(link, "href") else str(link)
+                    if "/details/" in href and href not in visited:
+                        detail_links.append(href)
+                        if len(detail_links) >= 15:
+                            break
+                sub_links = detail_links[:15]
             else:
-                # 回退到基于 html 的正则提取
-                sub_links = _get_same_domain_links(html_to_parse, url)
+                sub_links = []
 
             for link in sub_links:
                 if link not in visited:
