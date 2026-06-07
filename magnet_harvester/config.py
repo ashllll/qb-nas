@@ -204,19 +204,8 @@ class Settings(BaseSettings):
     CRAWLER_CONCURRENCY: int = 3
     CRAWLER_HEADLESS: bool = True
 
-    PATH_MOVIE: str = "/volume1/downloads/movies"
-    PATH_TV: str = "/volume1/downloads/tv"
-    PATH_ANIME: str = "/volume1/downloads/anime"
-    PATH_MUSIC: str = "/volume1/downloads/music"
-    PATH_GAME: str = "/volume1/downloads/games"
-    PATH_SOFTWARE: str = "/volume1/downloads/software"
-    PATH_VARIETY: str = "/volume1/downloads/variety"
-    PATH_DOCUMENTARY: str = "/volume1/downloads/documentary"
-    PATH_OTHER: str = "/volume1/downloads/others"
-
     MIN_DISK_SPACE_GB: float = 10.0
     AUTO_CREATE_DIRS: bool = True
-    PATH_TEMPLATE_ENABLED: bool = True
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -282,24 +271,13 @@ class Settings(BaseSettings):
     @property
     def paths(self) -> PathConfig:
         if self._path_config is None:
+            categories = ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"]
             self._path_config = PathConfig(
-                paths={
-                    "电影": self.PATH_MOVIE,
-                    "电视剧": self.PATH_TV,
-                    "动漫": self.PATH_ANIME,
-                    "音乐": self.PATH_MUSIC,
-                    "游戏": self.PATH_GAME,
-                    "软件": self.PATH_SOFTWARE,
-                    "综艺": self.PATH_VARIETY,
-                    "纪录片": self.PATH_DOCUMENTARY,
-                    "其他": self.PATH_OTHER,
-                },
+                paths={c: c for c in categories},
                 min_disk_space_gb=self.MIN_DISK_SPACE_GB,
                 auto_create_dirs=self.AUTO_CREATE_DIRS,
-                template_enabled=self.PATH_TEMPLATE_ENABLED,
+                template_enabled=False,
             )
-            # 启动时立即验证路径
-            self._path_config.validate_all()
         return self._path_config
 
     # ── 向后兼容属性 ──────────────────────────────

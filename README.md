@@ -65,8 +65,8 @@ cp .env.example .env
 | `SERVICE_PORT` | 服务端口 | `8899` |
 | `CRAWLER_TIMEOUT` | 爬虫超时（秒） | `30` |
 | `CRAWLER_MAX_DEPTH` | 最深爬取层级 | `2` |
-| `PATH_MOVIE` | 电影下载路径 | `/vol2/1000/downloads/电影` |
-| ... | 更多分类路径 | 请在 `.env` 中查看 |
+
+非必填配置：`MIN_DISK_SPACE_GB`（磁盘空间告警阈值）、`TTS_ENABLED`（语音通知开关）
 
 ### 启动
 

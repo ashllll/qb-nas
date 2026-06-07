@@ -65,6 +65,7 @@ class QBittorrentClient:
             "max_delay": 10.0,
             "retry_on": [408, 429, 500, 502, 503, 504],
         }
+        self._cached_default_path: str | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -218,13 +219,16 @@ class QBittorrentClient:
             return {}
 
     async def get_default_save_path(self) -> str | None:
-        """从 qBittorrent 获取默认保存路径"""
+        """从 qBittorrent 获取默认保存路径（结果缓存）"""
+        if self._cached_default_path:
+            return self._cached_default_path
         try:
             r = await self._req("GET", "/app/preferences")
             if r.status_code == 200:
                 prefs = r.json()
                 save_path = prefs.get("save_path", "")
                 if save_path:
+                    self._cached_default_path = save_path
                     log.info(f"qBittorrent 默认保存路径: {save_path}")
                     return save_path
                 return None
@@ -262,6 +266,14 @@ class QBittorrentClient:
 
     async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool:
         self.stats.total_added += 1
+
+        # 如果 save_path 不是绝对路径，自动拼接 qB 默认路径
+        if save_path and not save_path.startswith("/"):
+            default = await self.get_default_save_path()
+            if default:
+                save_path = f"{default}/{save_path}"
+            else:
+                save_path = ""
         
         try:
             category_ok = await self.ensure_category(category, save_path)

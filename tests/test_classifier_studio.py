@@ -14,7 +14,7 @@ def test_adult_studio_overrides_category():
     clf = LocalClassifier()
     result = clf.classify_one("SexArt.26.02.01.Bonnie.Dolce.XXX.2160p.MP4-WRB")
     assert result["category"] == "SexArt"
-    assert "adult/SexArt" in result["save_path"]
+    assert "SexArt" in result["save_path"]
 
 
 def test_adult_studio_in_batch():
@@ -26,7 +26,7 @@ def test_adult_studio_in_batch():
     ]
     results = clf.classify_sync_batch(items)
     assert results[0]["category"] == "Brazzers"
-    assert "adult/Brazzers" in results[0]["save_path"]
+    assert results[0]["save_path"].endswith("/Brazzers")
     assert results[1]["category"] == "电影"
 
 

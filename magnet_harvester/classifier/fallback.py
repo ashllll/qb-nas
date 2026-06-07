@@ -72,14 +72,13 @@ def normalize(raw: str) -> str:
 
 
 def make_fallback(name: str, reason: str = "local_fallback") -> dict:
-    """生成兜底分类结果"""
+    """生成兜底分类结果（save_path 为空，由下载时动态解析）"""
     cat = classify_local(name)
-    paths = settings.CATEGORY_PATHS
     return {
         "category": cat,
         "confidence": "low",
         "reason": reason,
-        "save_path": paths.get(cat, paths["其他"]),
+        "save_path": cat,  # 仅作分类名标识，实际路径由 qB 默认路径 + 分类名决定
     }
 
 
