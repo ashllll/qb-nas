@@ -26,7 +26,7 @@ def test_adult_studio_in_batch():
     ]
     results = clf.classify_sync_batch(items)
     assert results[0]["category"] == "Brazzers"
-    assert results[0]["save_path"].endswith("/Brazzers")
+    assert results[0]["save_path"] == "Brazzers"
     assert results[1]["category"] == "电影"
 
 

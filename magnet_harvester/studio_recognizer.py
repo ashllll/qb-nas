@@ -17,9 +17,6 @@ log = logging.getLogger(__name__)
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 STUDIO_FILE = CONFIG_DIR / "adult_studios.json"
 
-# 默认基础路径（无配置时回退到 qB 默认路径，见 main.py）
-DEFAULT_BASE_PATH = None
-
 
 def _load_studios() -> List[Dict[str, str]]:
     """从 JSON 文件加载厂牌列表"""
@@ -40,15 +37,14 @@ class StudioRecognizer:
     """从文件名中识别成人厂牌。
 
     用法:
-        r = StudioRecognizer(base_path="/volume1/downloads")
+        r = StudioRecognizer()
         result = r.recognize("SexArt.26.02.01.Bonnie.XXX.2160p.MP4-WRB")
-        # -> {"name": "SexArt", "save_path": "/volume1/downloads/SexArt"}
+        # -> {"name": "SexArt", "save_path": "SexArt"}
 
-    base_path 通常来自 qBittorrent 的默认保存路径，由 main.py 在启动时获取并传入。
+    save_path 仅为厂牌名，实际路径由 qB 的 add_magnet 在下载时自动拼接。
     """
 
-    def __init__(self, base_path: str | None = None):
-        self._base_path = base_path or "/volume1/downloads"
+    def __init__(self):
         self._studios = _load_studios()
         # 编译正则: 关键词必须在文件名开头或点号/空格之后
         self._patterns: List[tuple[re.Pattern, str, str]] = []
@@ -72,7 +68,7 @@ class StudioRecognizer:
             if n.startswith(kw) or n.startswith(kw + ".") or n.startswith(kw + "_"):
                 return {
                     "name": s["name"],
-                    "save_path": f"{self._base_path}/{s['name']}",
+                    "save_path": s["name"],
                 }
 
         # 策略2：正则匹配（前面有点号/空格/下划线等分隔符）
@@ -80,7 +76,7 @@ class StudioRecognizer:
             if pattern.search(name):
                 return {
                     "name": studio_name,
-                    "save_path": f"{self._base_path}/{studio_name}",
+                    "save_path": studio_name,
                 }
 
         return None

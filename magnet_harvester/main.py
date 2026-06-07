@@ -206,9 +206,7 @@ async def lifespan(app: FastAPI):
     _crawler = MagnetCrawler(config=settings.crawler)
     _qbit = QBittorrentClient(config=settings.qbit)
 
-    # 成人厂牌基础路径：优先 .env ADULT_BASE_PATH，否则 qB API 获取
-    adult_base = settings.ADULT_BASE_PATH.strip() or await _qbit.get_default_save_path()
-    _classifier = LocalClassifier(adult_base_path=adult_base)
+    _classifier = LocalClassifier()
     _store = InMemoryItemStore()
     _bus = MessageBus()
 
