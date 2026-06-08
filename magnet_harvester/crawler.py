@@ -13,10 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 from typing import AsyncGenerator, Dict, List, Optional, Set
-from urllib.parse import urljoin, urlparse
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
