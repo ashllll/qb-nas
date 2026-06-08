@@ -78,6 +78,7 @@ class MagnetCrawler:
         self._crawler: Optional[AsyncWebCrawler] = None
         self._metrics: Optional[CrawlMetrics] = None
         self._global_seen: Set[str] = set()
+        self._depth_semaphore = asyncio.Semaphore(5)  # 深度爬取并发上限
 
     async def start(self):
         """启动 crawl4ai 引擎"""
@@ -159,8 +160,8 @@ class MagnetCrawler:
 
         try:
             run_cfg = CrawlerRunConfig(
-                cache_mode=CacheMode.BYPASS,
-                word_count_threshold=1,  # 不忽略任何内容
+                cache_mode=CacheMode.ENABLED,   # 同域名页面复用缓存，大幅加速
+                word_count_threshold=1,
                 verbose=False,
             )
 
@@ -235,7 +236,6 @@ class MagnetCrawler:
         if depth > 1:
             if result.links:
                 internal_links = result.links.get("internal", [])
-                # 只提取详情页链接，跳过导航/分类/登录等无关页面
                 detail_links = []
                 for link in internal_links:
                     href = link.get("href", "") if isinstance(link, dict) else str(link) if hasattr(link, "href") else str(link)
@@ -243,11 +243,21 @@ class MagnetCrawler:
                         detail_links.append(href)
                         if len(detail_links) >= 50:
                             break
-                sub_links = detail_links[:50]
-            else:
-                sub_links = []
 
-            for link in sub_links:
-                if link not in visited:
-                    async for msg in self._crawl_single(link, depth - 1, visited):
-                        yield msg
+                # 并发爬取详情页（Semaphore 控制并发数）
+                async def _concurrent_crawl(link: str):
+                    async with self._depth_semaphore:
+                        msgs = []
+                        async for msg in self._crawl_single(link, depth - 1, visited):
+                            msgs.append(msg)
+                        return msgs
+
+                if detail_links:
+                    results = await asyncio.gather(
+                        *[_concurrent_crawl(l) for l in detail_links],
+                        return_exceptions=True,
+                    )
+                    for group in results:
+                        if isinstance(group, list):
+                            for msg in group:
+                                yield msg
