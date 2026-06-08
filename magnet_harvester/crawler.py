@@ -91,8 +91,6 @@ class MagnetCrawler:
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
             text_mode=True,
-            light_mode=True,
-            avoid_ads=True,
         )
         self._crawler = AsyncWebCrawler(config=browser_cfg)
         await self._crawler.start()
@@ -158,17 +156,17 @@ class MagnetCrawler:
 
         try:
             run_cfg = CrawlerRunConfig(
-                cache_mode=CacheMode.ENABLED,   # 同域名页面复用缓存，大幅加速
+                cache_mode=CacheMode.ENABLED,
                 word_count_threshold=1,
                 verbose=False,
-                delay_before_return_html=0.05,  # 更快返回结果
-                excluded_tags=["nav", "footer", "script", "style", "form"],
+                page_timeout=self._config.timeout * 1000,
             )
 
             result = await self._crawler.arun(url=url, config=run_cfg)
 
             if not result.success:
                 if retry_count < 2:
+                    visited.discard(url)  # 允许重试
                     self._metrics.retries += 1
                     log.info(f"页面加载失败，重试 {retry_count + 1}: {url}")
                     await asyncio.sleep(2 ** retry_count)
@@ -182,6 +180,7 @@ class MagnetCrawler:
 
         except Exception as e:
             if retry_count < 2:
+                visited.discard(url)  # 允许重试
                 self._metrics.retries += 1
                 log.info(f"爬取异常，重试 {retry_count + 1}: {url} - {e}")
                 await asyncio.sleep(2 ** retry_count)
@@ -244,7 +243,8 @@ class MagnetCrawler:
                         if len(detail_links) >= 50:
                             break
 
-                for link in detail_links:
+                for idx, link in enumerate(detail_links):
                     if link not in visited:
+                        yield {"type": "progress", "msg": f"爬取详情页 {idx+1}/{len(detail_links)}", "url": link, "depth": depth}
                         async for msg in self._crawl_single(link, depth - 1, visited):
                             yield msg
