@@ -248,12 +248,19 @@ class QBittorrentClient:
                 path = r.text.strip()
                 if path:
                     self._cached_default_path = path
-                    log.info(f"qB defaultSavePath: {path}")
+                    log.warning(
+                        f"未找到已有分类或种子，使用 qB 默认路径: {path}"
+                        f"（Docker 版可能返回容器内部路径而非 NAS 路径）"
+                    )
                     return path
         except Exception as e:
             log.warning(f"get_default_save_path 异常: {e}")
 
         return None
+
+    def clear_cached_path(self):
+        """清除缓存的路径，强制下次重新检测（/api/config PUT 时调用）"""
+        self._cached_default_path = None
 
     async def _find_base_from_categories(self) -> str | None:
         """从已有分类的 savePath 提取基础下载路径（排除 Docker 内部路径）"""

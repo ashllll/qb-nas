@@ -91,10 +91,9 @@ class MagnetCrawler:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
-            viewport_width=1920,
-            viewport_height=1080,
-            # 阻止图片/字体等资源以节省带宽
             text_mode=True,
+            light_mode=True,
+            avoid_ads=True,
         )
         self._crawler = AsyncWebCrawler(config=browser_cfg)
         await self._crawler.start()
@@ -163,6 +162,8 @@ class MagnetCrawler:
                 cache_mode=CacheMode.ENABLED,   # 同域名页面复用缓存，大幅加速
                 word_count_threshold=1,
                 verbose=False,
+                delay_before_return_html=0.05,  # 更快返回结果
+                excluded_tags=["nav", "footer", "script", "style", "form"],
             )
 
             result = await self._crawler.arun(url=url, config=run_cfg)
