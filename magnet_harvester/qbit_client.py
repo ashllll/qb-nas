@@ -5,6 +5,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -269,31 +270,45 @@ class QBittorrentClient:
         
         return False
 
-    async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool:
+    async def add_magnet(self, magnet: str, category: str, save_path: str = "") -> bool:
+        """添加磁力链接到 qBittorrent。
+
+        按照 qB 官方 API 最佳实践：
+        - 先 ensure_category(category, save_path) 确保分类存在
+        - add 时不传 savepath，让 qB 根据分类的 savePath 自动路由
+        - autoTMM=true 让 qB 自动管理分类目录
+        """
         self.stats.total_added += 1
 
-        # 如果 save_path 不是绝对路径，自动拼接正确的基础路径
+        # 1. 根据 qB 默认路径生成分类的 savePath（用于 createCategory，不用于 add）
         if save_path and not save_path.startswith("/"):
             base = await self.get_base_save_path()
             if base:
                 save_path = f"{base}/{save_path}"
             else:
                 save_path = ""
-        
+
+        # 2. 如果配置了 FS_BASE_PATH，先创建真实目录（qB 的 createCategory 不是 mkdir）
+        fs_base = settings.FS_BASE_PATH.strip()
+        if fs_base:
+            Path(f"{fs_base}/{category}").mkdir(parents=True, exist_ok=True)
+
         try:
-            category_ok = await self.ensure_category(category, save_path)
-            if not category_ok:
-                log.warning(f"分类 [{category}] 创建失败，使用默认路径")
-            
+            # 2. 确保分类存在且路径正确
+            if save_path:
+                category_ok = await self.ensure_category(category, save_path)
+                if not category_ok:
+                    log.warning(f"分类 [{category}] 创建失败")
+
+            # 3. 添加任务 — 只传 category + autoTMM，不传 savepath
             r = await self._req("POST", "/torrents/add", data={
                 "urls":     magnet,
                 "category": category,
-                "savepath": save_path,
-                "autoTMM":  "false",
+                "autoTMM":  "true",
             })
-            
+
             ok = r.text.strip() == "Ok."
-            
+
             if ok:
                 self.stats.total_success += 1
                 self.stats.consecutive_failures = 0
@@ -304,9 +319,9 @@ class QBittorrentClient:
                 self.stats.consecutive_failures += 1
                 self.stats.last_failure_time = time.time()
                 log.warning(f"add_magnet 失败: {r.text[:100]}")
-            
+
             return ok
-            
+
         except Exception as e:
             self.stats.total_failed += 1
             self.stats.consecutive_failures += 1

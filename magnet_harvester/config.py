@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     CRAWLER_CONCURRENCY: int = 3
     CRAWLER_HEADLESS: bool = True
 
+    FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
+
     MIN_DISK_SPACE_GB: float = 10.0
     AUTO_CREATE_DIRS: bool = True
 
