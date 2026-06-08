@@ -78,7 +78,6 @@ class MagnetCrawler:
         self._crawler: Optional[AsyncWebCrawler] = None
         self._metrics: Optional[CrawlMetrics] = None
         self._global_seen: Set[str] = set()
-        self._depth_semaphore = asyncio.Semaphore(5)  # 深度爬取并发上限
 
     async def start(self):
         """启动 crawl4ai 引擎"""
@@ -245,20 +244,7 @@ class MagnetCrawler:
                         if len(detail_links) >= 50:
                             break
 
-                # 并发爬取详情页（Semaphore 控制并发数）
-                async def _concurrent_crawl(link: str):
-                    async with self._depth_semaphore:
-                        msgs = []
+                for link in detail_links:
+                    if link not in visited:
                         async for msg in self._crawl_single(link, depth - 1, visited):
-                            msgs.append(msg)
-                        return msgs
-
-                if detail_links:
-                    results = await asyncio.gather(
-                        *[_concurrent_crawl(l) for l in detail_links],
-                        return_exceptions=True,
-                    )
-                    for group in results:
-                        if isinstance(group, list):
-                            for msg in group:
-                                yield msg
+                            yield msg
