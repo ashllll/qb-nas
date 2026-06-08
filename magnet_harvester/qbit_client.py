@@ -220,24 +220,71 @@ class QBittorrentClient:
             return {}
 
     async def get_default_save_path(self) -> str | None:
-        """从 qBittorrent API /app/defaultSavePath 获取默认保存路径（结果缓存）
+        """获取 qBittorrent 默认保存路径（缓存）。
 
-        飞牛 NAS 的 qB 通过此端点直接返回真实文件系统路径，
-        例如 /vol2/1000/downloads。无需猜测或推断。
+        飞牛 NAS 的 Docker 版 qB 中，/app/defaultSavePath 返回容器内部路径
+        （如 /var/apps/qBittorrent/.../Download），而非 NAS 真实路径。
+        因此优先从已存在的分类 / torrent 的 savePath 获取真实路径。
         """
         if self._cached_default_path:
             return self._cached_default_path
+
+        # 1. 从已有分类获取（qB API 直接返回真实路径）
+        path = await self._find_base_from_categories()
+        if path:
+            self._cached_default_path = path
+            return path
+
+        # 2. 从已有种子获取
+        path = await self._find_base_from_torrents()
+        if path:
+            self._cached_default_path = path
+            return path
+
+        # 3. 兜底：/app/defaultSavePath（Docker 下可能返回容器内部路径）
         try:
             r = await self._req("GET", "/app/defaultSavePath")
             if r.status_code == 200:
                 path = r.text.strip()
                 if path:
                     self._cached_default_path = path
-                    log.info(f"qB 默认保存路径: {path}")
+                    log.info(f"qB defaultSavePath: {path}")
                     return path
-            log.warning(f"get_default_save_path 返回 {r.status_code}: {r.text[:100]}")
         except Exception as e:
             log.warning(f"get_default_save_path 异常: {e}")
+
+        return None
+
+    async def _find_base_from_categories(self) -> str | None:
+        """从已有分类的 savePath 提取基础下载路径（排除 Docker 内部路径）"""
+        try:
+            cats = await self.get_categories()
+            for name, info in cats.items():
+                sp = info.get("savePath", "")
+                if sp and not sp.startswith("/var/"):
+                    # 路径格式如 /vol2/1000/downloads/电影，取父目录
+                    if "/" in sp.strip("/"):
+                        base = "/".join(sp.rstrip("/").split("/")[:-1])
+                        log.info(f"基础路径（从分类 [{name}]）: {base}")
+                        return base
+        except Exception:
+            pass
+        return None
+
+    async def _find_base_from_torrents(self) -> str | None:
+        """从已有种子的 save_path 提取基础路径"""
+        try:
+            r = await self._req("GET", "/torrents/info")
+            if r.status_code != 200:
+                return None
+            for t in r.json():
+                sp = t.get("save_path", "")
+                if sp and not sp.startswith("/var/") and "/" in sp.strip("/"):
+                    base = "/".join(sp.rstrip("/").split("/")[:-1])
+                    log.info(f"基础路径（从种子 [{t.get('name','')[:20]}…]）: {base}")
+                    return base
+        except Exception:
+            pass
         return None
 
     async def get_base_save_path(self) -> str:
