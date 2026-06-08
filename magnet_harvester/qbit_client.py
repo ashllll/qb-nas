@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -335,6 +336,16 @@ class QBittorrentClient:
         """
         self.stats.total_added += 1
 
+        # 0. 校验磁力格式
+        btih_match = re.search(r'btih:([a-fA-F0-9]{8})', magnet)
+        if not btih_match:
+            self.last_error = "磁力链接格式无效（缺少 btih）"
+            self.stats.total_failed += 1
+            self.stats.consecutive_failures += 1
+            self.stats.last_failure_time = time.time()
+            return False
+        btih_prefix = btih_match.group(1)
+
         # 1. 根据 qB 默认路径生成分类的 savePath（用于 createCategory，不用于 add）
         if save_path and not save_path.startswith("/"):
             base = await self.get_base_save_path()
@@ -370,7 +381,7 @@ class QBittorrentClient:
                 self.stats.last_success_time = time.time()
                 log.debug(f"添加种子成功: {category}")
             else:
-                self.last_error = r.text.strip()[:200]
+                self.last_error = f"qB 拒绝 (btih:{btih_prefix}…) — {r.text.strip()[:100]}"
                 self.stats.total_failed += 1
                 self.stats.consecutive_failures += 1
                 self.stats.last_failure_time = time.time()

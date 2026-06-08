@@ -119,8 +119,8 @@ class HarvestPipeline:
                 "hash": h, "status": status.value,
                 "error_msg": item_updated.error_msg if item_updated else None,
             }))
-            if i > 0 and i % 10 == 0:
-                await asyncio.sleep(1)
+            if i > 0:
+                await asyncio.sleep(0.3)
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]
