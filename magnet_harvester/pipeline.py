@@ -108,11 +108,17 @@ class HarvestPipeline:
                 status = TaskStatus.success if ok else TaskStatus.error
                 if ok:
                     success += 1
+                else:
+                    self._store.update(h, error_msg=self._qbit.last_error or "qB 返回失败")
             except Exception as e:
                 status = TaskStatus.error
                 self._store.update(h, error_msg=str(e))
             self._store.update(h, status=status)
-            await self._bus.emit(Event(EventType.DOWNLOAD_RESULT, {"hash": h, "status": status.value}))
+            item_updated = self._store.get(h)
+            await self._bus.emit(Event(EventType.DOWNLOAD_RESULT, {
+                "hash": h, "status": status.value,
+                "error_msg": item_updated.error_msg if item_updated else None,
+            }))
             if i > 0 and i % 10 == 0:
                 await asyncio.sleep(1)
 

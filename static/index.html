@@ -232,7 +232,7 @@ function handleMsg(msg) {
     case 'classify_all_done': addLog('✅ 分类完成','info'); break;
     case 'crawl_done':      setProgress(100); setTimeout(()=>setProgress(0),1500); setCrawling(false); addLog(`🏁 完成，${msg.total} 个磁力`,'info'); break;
     case 'download_start':  addLog(`↑ 发送: ${esc((items.get(msg.hash)||{}).name||'').slice(0,35)}`,'info'); break;
-    case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;updateRow(msg.hash);addLog(`${msg.status==='success'?'✓':'✗'} ${esc(it.name.slice(0,35))}`,msg.status==='success'?'found':'error');} break;
+    case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;if(msg.error_msg)it.error_msg=msg.error_msg;updateRow(msg.hash);const errSuffix=msg.error_msg?' — '+esc(msg.error_msg.slice(0,60)):'';addLog(`${msg.status==='success'?'✓':'✗'} ${esc(it.name.slice(0,35))}${errSuffix}`,msg.status==='success'?'found':'error');} break;
     case 'items_cleared':   items.clear();selected.clear();renderTable(); break;
     case 'error':           addLog(`⚠ ${msg.msg}`,'error'); break;
   }
@@ -301,7 +301,7 @@ function rowHtml(item) {
     <td class="name-td"><div class="name-main" title="${esc(item.name)}">${esc(item.name)}</div><div class="name-sub">${item.hash.slice(0,16)}…</div></td>
     <td><span class="cat-chip ${catCls(item.category)}">${esc(item.category||'—')}</span></td>
     <td class="size-td">${esc(item.size||'—')}</td>
-    <td class="status-icon" style="color:${SC[item.status]||SC.pending}">${SI[item.status]||'○'}</td>
+    <td class="status-icon" style="color:${SC[item.status]||SC.pending}" title="${esc(item.error_msg||item.status)}">${SI[item.status]||'○'}</td>
     <td class="src-td" title="${esc(item.source_url||'')}">${esc(shortUrl(item.source_url))}</td>
   </tr>`;
 }

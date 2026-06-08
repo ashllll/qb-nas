@@ -67,6 +67,7 @@ class QBittorrentClient:
             "retry_on": [408, 429, 500, 502, 503, 504],
         }
         self._cached_default_path: str | None = None
+        self.last_error: str | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -369,14 +370,16 @@ class QBittorrentClient:
                 self.stats.last_success_time = time.time()
                 log.debug(f"添加种子成功: {category}")
             else:
+                self.last_error = r.text.strip()[:200]
                 self.stats.total_failed += 1
                 self.stats.consecutive_failures += 1
                 self.stats.last_failure_time = time.time()
-                log.warning(f"add_magnet 失败: {r.text[:100]}")
+                log.warning(f"add_magnet 失败: {self.last_error}")
 
             return ok
 
         except Exception as e:
+            self.last_error = str(e)
             self.stats.total_failed += 1
             self.stats.consecutive_failures += 1
             self.stats.last_failure_time = time.time()
