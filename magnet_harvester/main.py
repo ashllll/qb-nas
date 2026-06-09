@@ -102,6 +102,15 @@ def _format_uptime(seconds: float) -> str:
     return f"{secs}s"
 
 
+def _item_summary(item) -> dict:
+    return {
+        "hash": item.hash[:16],
+        "name": item.name,
+        "category": item.category,
+        "status": item.status.value,
+    }
+
+
 # ── 后台任务工具 ──────────────────────────
 def _bg(coro, name: str | None = None) -> asyncio.Task:
     task = asyncio.create_task(coro, name=name)
@@ -144,9 +153,7 @@ async def _tool_executor(name: str, inp: dict) -> dict:
         status = inp.get("status", "all")
         limit = int(inp.get("limit", 20))
         items = store.list(category=cat, status=status, limit=limit)
-        return {"count": len(items), "items": [
-            {"hash": i.hash[:16], "name": i.name, "category": i.category, "status": str(i.status)}
-            for i in items]}
+        return {"count": len(items), "items": [_item_summary(i) for i in items]}
 
     if name == "start_crawl":
         url = inp.get("url", "").strip()
@@ -181,9 +188,7 @@ async def _tool_executor(name: str, inp: dict) -> dict:
     if name == "search_items":
         query = inp.get("query", "")
         hits = store.search(query)
-        return {"count": len(hits), "results": [
-            {"hash": i.hash[:16], "name": i.name, "category": i.category}
-            for i in hits[:20]]}
+        return {"count": len(hits), "results": [_item_summary(i) for i in hits[:20]]}
 
     if name == "clear_all":
         if not inp.get("confirm"):
@@ -234,6 +239,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await _crawler.stop()
+    await _qbit.close()
     log.info("服务已关闭")
 
 
@@ -352,11 +358,15 @@ async def update_config(data: dict):
 
     # 重建 qB 客户端
     global _qbit
+    old_qbit = _qbit
     _qbit = QBittorrentClient(config=settings.qbit)
     if _pipeline:
         _pipeline._qbit = _qbit
     if hasattr(app.state, 'ctx') and app.state.ctx:
         app.state.ctx.qbit = _qbit
+
+    if old_qbit is not None:
+        await old_qbit.close()
 
     ok = await _qbit.ping()
     return {"status": "ok" if ok else "failed", "connected": ok}
@@ -384,10 +394,7 @@ async def get_items(
 async def search_items(q: str = Query(..., min_length=1), limit: int = Query(20, ge=1, le=100)):
     stats.record_api_call()
     hits = _store.search(q)
-    return {"count": len(hits), "results": [
-        {"hash": i.hash[:16], "name": i.name, "category": i.category, "status": str(i.status)}
-        for i in hits[:limit]
-    ]}
+    return {"count": len(hits), "results": [_item_summary(i) for i in hits[:limit]]}
 
 
 @app.delete("/api/items")

@@ -202,7 +202,7 @@ tr.selected td{background:rgba(124,77,255,.06)}
         <label style="font-size:10px;color:var(--text2);display:block;margin-bottom:2px">密码</label>
         <input class="url-input" id="cfgPass" type="password" value="" placeholder="输入密码" style="font-size:11px">
       </div>
-      <button class="crawl-btn" onclick="saveConfig()" style="font-size:11px;padding:4px 12px">保存并测试连接</button>
+      <button class="crawl-btn" id="saveConfigBtn" onclick="saveConfig()" style="font-size:11px;padding:4px 12px">保存并测试连接</button>
       <div id="cfgResult" style="font-size:10px;margin-top:6px;color:var(--text2)"></div>
     </div>
   </div>
@@ -248,7 +248,7 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
-  const btn = document.querySelector('.crawl-btn');
+  const btn = document.getElementById('saveConfigBtn');
   btn.disabled = true; btn.textContent = '连接中...';
   const res = document.getElementById('cfgResult');
   try {
