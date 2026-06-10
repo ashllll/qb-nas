@@ -1,12 +1,12 @@
 # Magnet Harvester
 
-磁力链接采集与分类服务。它会抓取网页中的 magnet 链接，用本地规则分类，并将任务发送到 qBittorrent 下载到 NAS。
+通用磁力链接采集与分类服务。它会抓取网页中的 magnet 链接，用本地规则分类，并将任务发送到 qBittorrent 下载到 NAS。
 
 ## 当前能力
 
 - 基于 `crawl4ai` 抓取页面和子链接中的 magnet
 - 本地规则分类，无需外部 AI 服务
-- 识别成人厂牌并为不同厂牌分配分类目录
+- 支持按内容特征进行本地分类与目录路由
 - 通过 qBittorrent Web API 自动建分类并添加下载
 - 单页 Web UI，支持实时进度、筛选、重分类和批量下载
 - 提供 qBittorrent 连接配置面板和健康检查接口
@@ -23,7 +23,7 @@
         ▼                  ▼                   ▼
    ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
    │ LocalClassifier│  │ MagnetParser │   │ qBittorrent  │
-   │ + StudioRules │   │ regex/base64 │   │ Web API v2   │
+   │ + Rule Engine │   │ regex/base64 │   │ Web API v2   │
    └──────────────┘   └──────────────┘   └──────────────┘
 ```
 
@@ -172,7 +172,8 @@ python3 tests/test_error_handler.py
 
 - `magnet_harvester/crawler.py`：基于 `crawl4ai` 抽取页面文本和子链接
 - `magnet_harvester/magnet_parser.py`：从文本、HTML、属性值和 Base64 中提取 magnet
-- `magnet_harvester/classifier/local_classifier.py`：本地正则分类，优先使用厂牌识别
+- `magnet_harvester/classifier/local_classifier.py`：本地规则分类与兜底策略
+- `magnet_harvester/studio_recognizer.py`：分类辅助规则模块，可按需扩展或替换
 - `magnet_harvester/qbit_client.py`：管理 qB 登录、重试、分类目录和下载添加
 - `magnet_harvester/pipeline.py`：编排抓取、分类、下载三阶段
 
