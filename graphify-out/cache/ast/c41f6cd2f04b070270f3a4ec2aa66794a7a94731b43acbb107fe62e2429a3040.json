@@ -1,0 +1,30 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_magnet_harvester_init_py",
+      "label": "__init__.py",
+      "file_type": "code",
+      "source_file": "magnet_harvester/__init__.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "magnet_harvester_init_rationale_1",
+      "label": "Magnet Harvester \u2014 \u78c1\u529b\u94fe\u63a5\u91c7\u96c6\u4e0e\u5206\u7c7b\u670d\u52a1",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/__init__.py",
+      "source_location": "L1"
+    }
+  ],
+  "edges": [
+    {
+      "source": "magnet_harvester_init_rationale_1",
+      "target": "users_llll_code_github_qb_nas_magnet_harvester_init_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/__init__.py",
+      "source_location": "L1",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": []
+}

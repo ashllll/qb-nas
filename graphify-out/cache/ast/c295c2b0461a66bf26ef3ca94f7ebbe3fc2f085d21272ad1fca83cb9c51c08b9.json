@@ -1,0 +1,912 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "label": "store.py",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "magnet_harvester_store_storestats",
+      "label": "StoreStats",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L21"
+    },
+    {
+      "id": "magnet_harvester_store_storestats_as_dict",
+      "label": ".as_dict()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L27"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore",
+      "label": "ItemStore",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L37"
+    },
+    {
+      "id": "protocol",
+      "label": "Protocol",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_add",
+      "label": ".add()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L40"
+    },
+    {
+      "id": "magnetitem",
+      "label": "MagnetItem",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L40"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_get",
+      "label": ".get()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L41"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_update",
+      "label": ".update()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L42"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_remove",
+      "label": ".remove()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L43"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_list",
+      "label": ".list()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L44"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_search",
+      "label": ".search()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L50"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_get_pending",
+      "label": ".get_pending()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L51"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_get_hashes_by_prefix",
+      "label": ".get_hashes_by_prefix()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L52"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_count",
+      "label": ".count()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L54"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_stats",
+      "label": ".stats()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L55"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_add_batch",
+      "label": ".add_batch()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L56"
+    },
+    {
+      "id": "magnet_harvester_store_itemstore_clear",
+      "label": ".clear()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L57"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore",
+      "label": "InMemoryItemStore",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L60"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_init",
+      "label": ".__init__()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L67"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_add",
+      "label": ".add()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L72"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_get",
+      "label": ".get()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L79"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_update",
+      "label": ".update()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L82"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_remove",
+      "label": ".remove()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L92"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_list",
+      "label": ".list()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L100"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_search",
+      "label": ".search()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L114"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_get_pending",
+      "label": ".get_pending()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L118"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_get_hashes_by_prefix",
+      "label": ".get_hashes_by_prefix()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L124"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_count",
+      "label": ".count()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L132"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_stats",
+      "label": ".stats()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L135"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_add_batch",
+      "label": ".add_batch()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L149"
+    },
+    {
+      "id": "magnet_harvester_store_inmemoryitemstore_clear",
+      "label": ".clear()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L157"
+    },
+    {
+      "id": "magnet_harvester_store_rationale_1",
+      "label": "ItemStore \u2014 \u78c1\u529b\u94fe\u63a5\u4e2d\u592e\u5b58\u50a8\uff08\u6df1\u6a21\u5757\uff09  \u53ef\u66ff\u6362\u9002\u914d\u5668\uff1a - InMemoryItemStore: \u9ed8\u8ba4\u5185\u5b58\u5b9e\u73b0\uff0c\u7528\u4e8e\u5355\u8fdb\u7a0b - RedisItem",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "magnet_harvester_store_rationale_38",
+      "label": "ItemStore \u534f\u8bae \u2014 \u6240\u6709 store \u9002\u914d\u5668\u5fc5\u987b\u5b9e\u73b0\u6b64\u63a5\u53e3",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L38"
+    },
+    {
+      "id": "magnet_harvester_store_rationale_61",
+      "label": "ItemStore \u7684\u9ed8\u8ba4\u5185\u5b58\u9002\u914d\u5668\u3002      \u63a5\u53e3\uff1aadd / get / update / remove / list / search / clear",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L61"
+    },
+    {
+      "id": "magnet_harvester_store_rationale_73",
+      "label": "\u6dfb\u52a0\u6761\u76ee\uff0c\u5df2\u5b58\u5728\u8fd4\u56de False\uff08\u5168\u5c40\u53bb\u91cd\uff09",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L73"
+    },
+    {
+      "id": "magnet_harvester_store_rationale_83",
+      "label": "\u66f4\u65b0\u5b57\u6bb5\uff08category, save_path, status, error_msg \u7b49\uff09",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L83"
+    },
+    {
+      "id": "magnet_harvester_store_rationale_125",
+      "label": "\u652f\u6301\u901a\u8fc7 hash \u524d\u7f00\u67e5\u627e\u5b8c\u6574 hash\uff08Agent \u7528\uff09",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L125"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "logging",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "time",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "dataclasses",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "typing",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "magnet_harvester_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "magnet_harvester_store_storestats",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_storestats",
+      "target": "magnet_harvester_store_storestats_as_dict",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "magnet_harvester_store_itemstore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "protocol",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_add",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore_add",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_get",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore_get",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_update",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_remove",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_list",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore_list",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_search",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore_search",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_get_pending",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore_get_pending",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_get_hashes_by_prefix",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_count",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_stats",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L55",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore_stats",
+      "target": "magnet_harvester_store_storestats",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L55",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_add_batch",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore_add_batch",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_itemstore",
+      "target": "magnet_harvester_store_itemstore_clear",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L57",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "target": "magnet_harvester_store_inmemoryitemstore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_add",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L72",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_add",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L72",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_get",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L79",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_get",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L79",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_update",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L82",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_remove",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_list",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L100",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_list",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L100",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_search",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L114",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_search",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L114",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_get_pending",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L118",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_get_pending",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L118",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_get_hashes_by_prefix",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L124",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_count",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L132",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_stats",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L135",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_stats",
+      "target": "magnet_harvester_store_storestats",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L135",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_add_batch",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L149",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_add_batch",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L149",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore",
+      "target": "magnet_harvester_store_inmemoryitemstore_clear",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L157",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_update",
+      "target": "magnet_harvester_store_inmemoryitemstore_get",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L84",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_stats",
+      "target": "magnet_harvester_store_storestats",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L136",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_stats",
+      "target": "magnet_harvester_store_inmemoryitemstore_get",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L140",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_inmemoryitemstore_add_batch",
+      "target": "magnet_harvester_store_inmemoryitemstore_add",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L153",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_rationale_1",
+      "target": "users_llll_code_github_qb_nas_magnet_harvester_store_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_rationale_38",
+      "target": "magnet_harvester_store_itemstore",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_rationale_61",
+      "target": "magnet_harvester_store_inmemoryitemstore",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_rationale_73",
+      "target": "magnet_harvester_store_inmemoryitemstore_add",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_rationale_83",
+      "target": "magnet_harvester_store_inmemoryitemstore_update",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L83",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_store_rationale_125",
+      "target": "magnet_harvester_store_inmemoryitemstore_get_hashes_by_prefix",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/store.py",
+      "source_location": "L125",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_update",
+      "callee": "items",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L87"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_list",
+      "callee": "values",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L106"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_list",
+      "callee": "sort",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L111"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_list",
+      "callee": "lower",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L111"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_search",
+      "callee": "lower",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L115"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_search",
+      "callee": "values",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L116"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_search",
+      "callee": "lower",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L116"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_get_pending",
+      "callee": "values",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L120"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_get_hashes_by_prefix",
+      "callee": "lower",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L126"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_get_hashes_by_prefix",
+      "callee": "startswith",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L127"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_get_hashes_by_prefix",
+      "callee": "lower",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L127"
+    },
+    {
+      "caller_nid": "magnet_harvester_store_inmemoryitemstore_stats",
+      "callee": "values",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/store.py",
+      "source_location": "L137"
+    }
+  ]
+}

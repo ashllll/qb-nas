@@ -1,0 +1,1873 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "label": "qbit_client.py",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_safe_fs_segment",
+      "label": "_safe_fs_segment()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L20"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_torrentstatusmapper",
+      "label": "TorrentStatusMapper",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L27"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_torrentstatusmapper_map",
+      "label": ".map()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L29"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentstats",
+      "label": "QBittorrentStats",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L62"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentstats_success_rate",
+      "label": ".success_rate()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L72"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "label": ".as_dict()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L77"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient",
+      "label": "QBittorrentClient",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L90"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_init",
+      "label": ".__init__()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L91"
+    },
+    {
+      "id": "qbitconfig",
+      "label": "QBitConfig",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L91"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "label": "._get_client()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L118"
+    },
+    {
+      "id": "asyncclient",
+      "label": "AsyncClient",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L118"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_close",
+      "label": ".close()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L127"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "label": "._login()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L133"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "label": "._req_with_retry()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L160"
+    },
+    {
+      "id": "response",
+      "label": "Response",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L160"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "label": "._req()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L229"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_ping",
+      "label": ".ping()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L232"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_maindata",
+      "label": ".get_maindata()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L240"
+    },
+    {
+      "id": "any",
+      "label": "Any",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L240"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "label": ".poll_torrent_snapshot()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L250"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_take_recently_removed",
+      "label": ".take_recently_removed()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L272"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_map_torrent_status",
+      "label": ".map_torrent_status()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L278"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_torrent_properties",
+      "label": ".get_torrent_properties()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L281"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "label": ".get_categories()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L290"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "label": ".get_default_save_path()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L301"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_clear_cached_path",
+      "label": ".clear_cached_path()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L340"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "label": "._find_base_from_categories()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L344"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "label": "._find_base_from_torrents()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L360"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_base_save_path",
+      "label": ".get_base_save_path()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L376"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "label": ".ensure_category()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L380"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "label": ".add_magnet()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L406"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_torrents",
+      "label": ".get_torrents()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L477"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_delete_torrent",
+      "label": ".delete_torrent()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L500"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_recheck_torrent",
+      "label": ".recheck_torrent()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L512"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_transfer_info",
+      "label": ".get_transfer_info()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L520"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_get_stats",
+      "label": ".get_stats()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L529"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_qbittorrentclient_is_healthy",
+      "label": ".is_healthy()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L532"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_1",
+      "label": "qBittorrent WebAPI v2 \u5ba2\u6237\u7aef v2.0",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_21",
+      "label": "\u628a\u5206\u7c7b\u540d\u538b\u6210\u5355\u4e2a\u672c\u5730\u8def\u5f84\u6bb5\uff0c\u907f\u514d FS_BASE_PATH \u4e0b\u76ee\u5f55\u7a7f\u8d8a\u3002",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L21"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_251",
+      "label": "\u589e\u91cf\u540c\u6b65 qB torrent \u72b6\u6001\uff0c\u5e76\u7f13\u5b58\u5f53\u524d\u5feb\u7167\u3002",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L251"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_302",
+      "label": "\u83b7\u53d6 qBittorrent \u9ed8\u8ba4\u4fdd\u5b58\u8def\u5f84\uff08\u7f13\u5b58\uff09\u3002          \u98de\u725b NAS \u7684 Docker \u7248 qB \u4e2d\uff0c/app/defaultSavePath",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L302"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_341",
+      "label": "\u6e05\u9664\u7f13\u5b58\u7684\u8def\u5f84\uff0c\u5f3a\u5236\u4e0b\u6b21\u91cd\u65b0\u68c0\u6d4b\uff08/api/config PUT \u65f6\u8c03\u7528\uff09",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L341"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_345",
+      "label": "\u4ece\u5df2\u6709\u5206\u7c7b\u7684 savePath \u63d0\u53d6\u57fa\u7840\u4e0b\u8f7d\u8def\u5f84\uff08\u6392\u9664 Docker \u5185\u90e8\u8def\u5f84\uff09",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L345"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_361",
+      "label": "\u4ece\u5df2\u6709\u79cd\u5b50\u7684 save_path \u63d0\u53d6\u57fa\u7840\u8def\u5f84",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L361"
+    },
+    {
+      "id": "magnet_harvester_qbit_client_rationale_407",
+      "label": "\u6dfb\u52a0\u78c1\u529b\u94fe\u63a5\u5230 qBittorrent\u3002          \u6309\u7167 qB \u5b98\u65b9 API \u6700\u4f73\u5b9e\u8df5\uff1a         - \u5148 ensure_category(cat",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L407"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "asyncio",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "logging",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "re",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "time",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "dataclasses",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "pathlib",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "typing",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "httpx",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "magnet_harvester_config",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "magnet_harvester_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "magnet_harvester_qbit_client_safe_fs_segment",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "magnet_harvester_qbit_client_torrentstatusmapper",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_torrentstatusmapper",
+      "target": "magnet_harvester_qbit_client_torrentstatusmapper_map",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L29",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "magnet_harvester_qbit_client_qbittorrentstats",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L62",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentstats",
+      "target": "magnet_harvester_qbit_client_qbittorrentstats_success_rate",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L72",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentstats",
+      "target": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L77",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L90",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L91",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_init",
+      "target": "qbitconfig",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L91",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L118",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "target": "asyncclient",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L118",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_close",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L127",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L133",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L160",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "target": "response",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L160",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L229",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "target": "response",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L229",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_ping",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L232",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_maindata",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L240",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_maindata",
+      "target": "any",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L240",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L250",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_take_recently_removed",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L272",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_map_torrent_status",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L278",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_torrent_properties",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L281",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_torrent_properties",
+      "target": "any",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L281",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L290",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L301",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_clear_cached_path",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L340",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L344",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L360",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_base_save_path",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L376",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L380",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L406",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_torrents",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L477",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_delete_torrent",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L500",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_recheck_torrent",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L512",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_transfer_info",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L520",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_transfer_info",
+      "target": "any",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L520",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_stats",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L529",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_is_healthy",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L532",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_init",
+      "target": "qbitconfig",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L93",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_init",
+      "target": "magnet_harvester_qbit_client_qbittorrentstats",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L105",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "target": "asyncclient",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L121",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L138",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L169",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L173",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L230",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_ping",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L234",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_maindata",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L242",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_maindata",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L252",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_torrent_properties",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L283",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L292",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L312",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L318",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L325",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L347",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L363",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_base_save_path",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L378",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L383",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L386",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_base_save_path",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L428",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "target": "magnet_harvester_qbit_client_safe_fs_segment",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L437",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L442",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L447",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_torrents",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L492",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_delete_torrent",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L506",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_recheck_torrent",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L515",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_transfer_info",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_req",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L522",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_qbittorrentclient_get_stats",
+      "target": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L530",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_1",
+      "target": "users_llll_code_github_qb_nas_magnet_harvester_qbit_client_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_21",
+      "target": "magnet_harvester_qbit_client_safe_fs_segment",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_251",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L251",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_302",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L302",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_341",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_clear_cached_path",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L341",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_345",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L345",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_361",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L361",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_qbit_client_rationale_407",
+      "target": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/qbit_client.py",
+      "source_location": "L407",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "magnet_harvester_qbit_client_safe_fs_segment",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L22"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_safe_fs_segment",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L22"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_safe_fs_segment",
+      "callee": "sub",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L22"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_safe_fs_segment",
+      "callee": "sub",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L23"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_torrentstatusmapper_map",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L30"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_torrentstatusmapper_map",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L31"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "callee": "strftime",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L84"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "callee": "localtime",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L84"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "callee": "strftime",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L85"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "callee": "localtime",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L85"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentstats_as_dict",
+      "callee": "time",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L86"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_init",
+      "callee": "rstrip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L100"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "callee": "Limits",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L120"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_client",
+      "callee": "Timeout",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L123"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_close",
+      "callee": "aclose",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L129"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "callee": "post",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L139"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L144"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "callee": "info",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L146"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "callee": "error",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L149"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "callee": "time",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L151"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "callee": "error",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L155"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_login",
+      "callee": "time",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L157"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "RuntimeError",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L171"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "request",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L177"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "RuntimeError",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L186"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L188"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "RuntimeError",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L193"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L198"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "sleep",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L199"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L208"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "sleep",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L209"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "error",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L211"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L217"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "sleep",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L218"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "error",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L220"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "error",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L224"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_req_with_retry",
+      "callee": "RuntimeError",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L227"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_ping",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L237"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_maindata",
+      "callee": "json",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L244"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_maindata",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L247"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L256"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L258"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "callee": "items",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L259"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "callee": "lower",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L260"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "callee": "lower",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L262"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L262"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_poll_torrent_snapshot",
+      "callee": "pop",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L266"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_take_recently_removed",
+      "callee": "clear",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L274"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_torrent_properties",
+      "callee": "json",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L285"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L294"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "callee": "json",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L296"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_categories",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L298"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L327"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L330"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_default_save_path",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L336"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "items",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L348"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L349"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "startswith",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L350"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L352"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "join",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L353"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "split",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L353"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "rstrip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L353"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_categories",
+      "callee": "info",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L354"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "json",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L366"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L367"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "startswith",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L368"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L368"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "join",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L369"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "split",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L369"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "rstrip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L369"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "info",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L370"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_find_base_from_torrents",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L370"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "callee": "info",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L388"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "callee": "sleep",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L389"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L392"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "callee": "info",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L395"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L400"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_ensure_category",
+      "callee": "sleep",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L402"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "search",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L417"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "time",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L422"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "group",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L424"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "startswith",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L427"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L435"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "mkdir",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L437"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "Path",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L437"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L444"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L453"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "time",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L458"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "debug",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L459"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L461"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "time",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L464"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "warning",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L465"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "time",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L473"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_add_magnet",
+      "callee": "error",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L474"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_torrents",
+      "callee": "join",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L490"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_torrents",
+      "callee": "json",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L495"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_delete_torrent",
+      "callee": "join",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L503"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_delete_torrent",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L507"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_delete_torrent",
+      "callee": "error",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L509"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_recheck_torrent",
+      "callee": "join",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L514"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_recheck_torrent",
+      "callee": "strip",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L516"
+    },
+    {
+      "caller_nid": "magnet_harvester_qbit_client_qbittorrentclient_get_transfer_info",
+      "callee": "json",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/qbit_client.py",
+      "source_location": "L524"
+    }
+  ]
+}

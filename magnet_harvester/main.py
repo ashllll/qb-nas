@@ -25,6 +25,12 @@ from magnet_harvester.models import CrawlRequest, DownloadRequest, MagnetItem, T
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.store import InMemoryItemStore, ItemStore
+from magnet_harvester.context.app_context import AppContext, RuntimeContext, get_context
+from magnet_harvester.utils.serializers import _item_summary, _item_payload
+from magnet_harvester.utils.bg_tasks import BGTaskManager
+from magnet_harvester.services.stats import SystemStats
+from magnet_harvester.services.qbit_sync import QBitSyncLoop
+from magnet_harvester.api.websocket import WSBroadcaster
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
@@ -36,35 +42,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════
-# AppContext
-# ═══════════════════════════════════════════════════
-@dataclass
-class AppContext:
-    store: ItemStore
-    bus: MessageBus
-    pipeline: HarvestPipeline
-    crawler: MagnetCrawler
-    classifier: LocalClassifier
-    qbit: QBittorrentClient
-
-
-@dataclass
-class RuntimeContext:
-    ctx: AppContext
-
-    async def replace_qbit(self, new_qbit):
-        old_qbit = self.ctx.qbit
-        self.ctx.qbit = new_qbit
-        self.ctx.pipeline._qbit = new_qbit
-        if old_qbit is not None:
-            await old_qbit.close()
-
-
-def get_context(request: Request) -> AppContext:
-    return request.app.state.ctx
-
-
 # ── 全局引用 ────────────────────────────
 _store: InMemoryItemStore | None = None
 _bus: MessageBus | None = None
@@ -72,64 +49,11 @@ _pipeline: HarvestPipeline | None = None
 _crawler: MagnetCrawler | None = None
 _classifier: LocalClassifier | None = None
 _qbit: QBittorrentClient | None = None
-_active_ws: set[WebSocket] = set()
-_qbit_sync_stop: asyncio.Event | None = None
-_qbit_sync_task: asyncio.Task | None = None
 _qbit_lock: asyncio.Lock | None = None
-
-
-# ═══════════════════════════════════════════════════
-# SystemStats
-# ═══════════════════════════════════════════════════
-class SystemStats:
-    def __init__(self):
-        self.crawl_requests = 0
-        self.download_requests = 0
-        self.api_calls = 0
-        self.start_time = time.time()
-
-    def record_crawl(self):    self.crawl_requests += 1
-    def record_download(self): self.download_requests += 1
-    def record_api_call(self): self.api_calls += 1
-
-    def as_dict(self) -> dict:
-        uptime = time.time() - self.start_time
-        return {
-            "uptime_sec": round(uptime, 1),
-            "uptime_human": _format_uptime(uptime),
-            "crawl_requests": self.crawl_requests,
-            "download_requests": self.download_requests,
-            "api_calls": self.api_calls,
-            "active_items": _store.count if _store else 0,
-            "websocket_clients": len(_active_ws),
-            "error_stats": error_handler.get_error_stats(),
-        }
+_broadcaster: WSBroadcaster | None = None
 
 
 stats = SystemStats()
-
-
-def _format_uptime(seconds: float) -> str:
-    hours, remainder = divmod(int(seconds), 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours > 0:   return f"{hours}h {minutes}m {secs}s"
-    if minutes > 0: return f"{minutes}m {secs}s"
-    return f"{secs}s"
-
-
-def _item_summary(item) -> dict:
-    return {
-        "hash": item.hash[:16],
-        "name": item.name,
-        "category": item.category,
-        "status": item.status.value,
-    }
-
-
-def _item_payload(item: MagnetItem) -> dict:
-    data = item.model_dump()
-    data["status"] = item.status.value
-    return data
 
 
 def _ensure_qbit_lock() -> asyncio.Lock:
@@ -140,33 +64,13 @@ def _ensure_qbit_lock() -> asyncio.Lock:
 
 
 # ── 后台任务工具 ──────────────────────────
+_bg_manager = BGTaskManager()
+
 def _bg(coro, name: str | None = None) -> asyncio.Task:
-    task = asyncio.create_task(coro, name=name)
-    task.add_done_callback(_on_task_done)
-    return task
-
-
-def _on_task_done(task: asyncio.Task) -> None:
-    if not task.cancelled():
-        exc = task.exception()
-        if exc is not None:
-            log.error(f"后台任务 [{task.get_name()}] 异常: {exc}", exc_info=exc)
+    return _bg_manager.create(coro, name=name)
 
 
 # ── WebSocket 广播 ──────────────────────────
-async def _ws_broadcast(event: Event):
-    if not _active_ws:
-        return
-    data = json.dumps(event.as_dict(), ensure_ascii=False)
-    dead = set()
-    for ws in _active_ws:
-        try:
-            await ws.send_text(data)
-        except Exception:
-            dead.add(ws)
-    _active_ws.difference_update(dead)
-
-
 async def _emit_store_changed(hash_key: str, previous_status: TaskStatus | None = None):
     if not _store or not _bus:
         return
@@ -185,73 +89,6 @@ async def _emit_store_changed(hash_key: str, previous_status: TaskStatus | None 
             "progress": item.progress,
             "torrent_state": item.torrent_state,
         }))
-
-
-async def _qbit_sync_loop(stop_event: asyncio.Event):
-    poll_interval = 2.0
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
-            break
-        except asyncio.TimeoutError:
-            pass
-
-        qbit = _qbit
-        store = _store
-        if qbit is None or store is None:
-            continue
-
-        tracked_items = [
-            item for item in store.list(limit=10000)
-            if item.status in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
-        ]
-        if not tracked_items:
-            continue
-
-        lock = _ensure_qbit_lock()
-        async with lock:
-            if qbit is not _qbit:
-                continue
-            try:
-                snapshot = await qbit.poll_torrent_snapshot()
-                removed_hashes = qbit.take_recently_removed()
-            except Exception as e:
-                log.debug(f"qB 状态同步失败: {e}")
-                continue
-
-        for item in tracked_items:
-            hash_key = item.hash
-            torrent = snapshot.get(hash_key.lower())
-
-            if torrent is None:
-                if hash_key.lower() in removed_hashes and item.status != TaskStatus.success:
-                    previous_status = item.status
-                    store.update(
-                        hash_key,
-                        status=TaskStatus.error,
-                        error_msg="种子已从 qBittorrent 中消失",
-                        torrent_state="removed",
-                    )
-                    await _emit_store_changed(hash_key, previous_status=previous_status)
-                continue
-
-            mapped = qbit.map_torrent_status(torrent)
-            previous_status = item.status
-            fields: dict = {}
-
-            if previous_status != mapped["status"]:
-                fields["status"] = mapped["status"]
-            if item.progress != mapped["progress"]:
-                fields["progress"] = mapped["progress"]
-            if item.torrent_state != mapped["torrent_state"]:
-                fields["torrent_state"] = mapped["torrent_state"]
-            if item.error_msg and mapped["status"] != TaskStatus.error:
-                fields["error_msg"] = None
-
-            if fields:
-                store.update(hash_key, **fields)
-                await _emit_store_changed(hash_key, previous_status=previous_status)
 
 
 # ── Agent 工具执行器（通过 ItemStore / Pipeline）──
@@ -321,7 +158,7 @@ async def _tool_executor(name: str, inp: dict) -> dict:
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _bus, _pipeline, _crawler, _classifier, _qbit, _qbit_sync_stop, _qbit_sync_task, _qbit_lock
+    global _store, _bus, _pipeline, _crawler, _classifier, _qbit, _qbit_lock
 
     _qbit_lock = asyncio.Lock()
     _crawler = MagnetCrawler(config=settings.crawler)
@@ -342,11 +179,12 @@ async def lifespan(app: FastAPI):
         qbit=_qbit,
     )
 
-    _bus.subscribe(None, _ws_broadcast)
+    global _broadcaster
+    _broadcaster = WSBroadcaster(bus=_bus, store=_store)
+    sync_loop = QBitSyncLoop(qbit_client=_qbit, store=_store, bus=_bus)
 
     await _crawler.start()
-    _qbit_sync_stop = asyncio.Event()
-    _qbit_sync_task = _bg(_qbit_sync_loop(_qbit_sync_stop), name="qbit_sync")
+    await sync_loop.start()
     qbit_ok = await _qbit.ping()
     disk_info = settings.check_disk_space() if hasattr(settings, 'check_disk_space') else {}
     log.info(
@@ -356,10 +194,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    if _qbit_sync_stop is not None:
-        _qbit_sync_stop.set()
-    if _qbit_sync_task is not None:
-        await asyncio.gather(_qbit_sync_task, return_exceptions=True)
+    await sync_loop.stop()
     await _crawler.stop()
     await _qbit.close()
     log.info("服务已关闭")
@@ -376,18 +211,8 @@ app.add_middleware(
 # ═══════════════════════════════════════════════════
 @app.websocket("/ws")
 async def ws_main(ws: WebSocket):
-    await ws.accept()
-    _active_ws.add(ws)
-    try:
-        if _store:
-            items = [_item_payload(i) for i in _store.list(limit=10000)]
-            await ws.send_text(json.dumps({"type": "init", "items": items}, ensure_ascii=False))
-        while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        pass
-    finally:
-        _active_ws.discard(ws)
+    if _broadcaster:
+        await _broadcaster.handle_connection(ws)
 
 
 # ═══════════════════════════════════════════════════
@@ -438,7 +263,11 @@ async def system_status():
 @app.get("/api/stats")
 async def get_stats():
     stats.record_api_call()
-    return stats.as_dict()
+    result = stats.as_dict()
+    result["active_items"] = _store.count if _store else 0
+    result["websocket_clients"] = _broadcaster.active_count if _broadcaster else 0
+    result["error_stats"] = error_handler.get_error_stats()
+    return result
 
 
 @app.get("/api/errors")

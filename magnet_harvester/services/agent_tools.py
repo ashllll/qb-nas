@@ -1,0 +1,94 @@
+"""
+ToolExecutor — dispatches agent tool calls to store/pipeline operations.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.utils.serializers import _item_summary
+
+log = logging.getLogger(__name__)
+
+
+class ToolExecutor:
+    """Dispatches 7 agent tools to ItemStore / HarvestPipeline operations."""
+
+    def __init__(self, store: Any, pipeline: Any, bus: MessageBus):
+        self._store = store
+        self._pipeline = pipeline
+        self._bus = bus
+
+    async def execute(self, name: str, inp: dict) -> dict:
+        store = self._store
+        pipeline = self._pipeline
+
+        if name == "get_stats":
+            s = store.stats()
+            return {"total": s.total, "by_category": s.by_category, "by_status": s.by_status}
+
+        if name == "list_items":
+            cat = inp.get("category")
+            status = inp.get("status", "all")
+            limit = int(inp.get("limit", 20))
+            items = store.list(category=cat, status=status, limit=limit)
+            return {"count": len(items), "items": [_item_summary(i) for i in items]}
+
+        if name == "start_crawl":
+            url = inp.get("url", "").strip()
+            if not url:
+                return {"status": "error", "reason": "url 不能为空"}
+            depth = int(inp.get("depth", 1))
+            asyncio.create_task(
+                pipeline.execute(url, depth=depth, auto_download=False),
+                name=f"crawl:{url[:40]}",
+            )
+            return {"status": "started", "url": url, "depth": depth}
+
+        if name == "add_to_queue":
+            hashes = inp.get("hashes", [])
+            if hashes == ["all"]:
+                pending = store.get_pending()
+                hashes = [i.hash for i in pending]
+            asyncio.create_task(pipeline.download(hashes), name="download_batch")
+            return {"status": "started", "count": len(hashes)}
+
+        if name == "reclassify_item":
+            h = inp.get("hash", "")
+            cat = inp.get("category", "")
+            if len(h) < 8:
+                return {"status": "error", "reason": "hash 至少需要 8 位前缀"}
+            matches = store.get_hashes_by_prefix(h)
+            if matches:
+                match = matches[0]
+                store.update(match, category=cat, save_path=cat)
+                await self._bus.emit(
+                    Event(
+                        EventType.CLASSIFY_DONE,
+                        {
+                            "hash": match,
+                            "category": cat,
+                            "confidence": "manual",
+                            "reason": "手动修改",
+                        },
+                    )
+                )
+                return {"status": "ok", "hash": match, "new_category": cat}
+            return {"status": "not_found", "hash": h}
+
+        if name == "search_items":
+            query = inp.get("query", "")
+            hits = store.search(query)
+            return {"count": len(hits), "results": [_item_summary(i) for i in hits[:20]]}
+
+        if name == "clear_all":
+            if not inp.get("confirm"):
+                return {"status": "cancelled", "reason": "需要 confirm=true"}
+            count = store.count
+            store.clear()
+            await self._bus.emit(Event(EventType.ERROR, {"type": "items_cleared"}))
+            return {"status": "cleared", "removed": count}
+
+        return {"error": f"未知工具: {name}"}

@@ -1,0 +1,81 @@
+{
+  "nodes": [
+    {
+      "id": "triage_labels_vocabulary",
+      "label": "Triage Label Vocabulary",
+      "file_type": "document",
+      "source_file": "docs/agents/triage-labels.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "triage_needs_triage",
+      "label": "needs-triage Label",
+      "file_type": "document",
+      "source_file": "docs/agents/triage-labels.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "triage_ready_for_agent",
+      "label": "ready-for-agent Label",
+      "file_type": "document",
+      "source_file": "docs/agents/triage-labels.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "triage_ready_for_human",
+      "label": "ready-for-human Label",
+      "file_type": "document",
+      "source_file": "docs/agents/triage-labels.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "triage_labels_vocabulary",
+      "target": "triage_needs_triage",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/triage-labels.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "triage_labels_vocabulary",
+      "target": "triage_ready_for_agent",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/triage-labels.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "triage_labels_vocabulary",
+      "target": "triage_ready_for_human",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/triage-labels.md",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": []
+}

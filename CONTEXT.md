@@ -33,3 +33,19 @@ The background process that polls qBittorrent state and reconciles tracked Magne
 ### TorrentStatusMapper
 
 The qB lifecycle module that maps qBittorrent torrent state snapshots to Magnet item task status fields.
+
+### WSBroadcaster
+
+The module that manages all active WebSocket client connections and subscribes to `MessageBus` events to broadcast real-time updates to connected clients.
+
+### QBitSyncLoop
+
+The background module that polls qBittorrent state at regular intervals and reconciles tracked Magnet items with the current torrent snapshot.
+
+### ToolExecutor
+
+The module that dispatches agent tool calls (get_stats, list_items, start_crawl, add_to_queue, reclassify_item, search_items, clear_all) to the appropriate `ItemStore` or `HarvestPipeline` operations.
+
+### BGTaskManager
+
+The utility module that wraps `asyncio.create_task` with exception logging via `add_done_callback`, providing a uniform way to spawn and monitor background coroutines.

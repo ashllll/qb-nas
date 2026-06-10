@@ -1,0 +1,17 @@
+{
+  "0": "Event Bus & Messaging",
+  "1": "qBittorrent Integration",
+  "2": "Local Classification Rules",
+  "3": "Configuration & Crawler",
+  "4": "Item Store & Persistence",
+  "5": "FastAPI Server & APIs",
+  "6": "Documentation & Architecture",
+  "7": "Magnet Parsing & Filtering",
+  "8": "Error Handling",
+  "9": "qBittorrent Path Safety",
+  "10": "Agent Workflow Labels",
+  "11": "Claude Settings",
+  "12": "Category Keywords Config",
+  "13": "Package Initialization",
+  "14": "Pydantic Dependencies"
+}

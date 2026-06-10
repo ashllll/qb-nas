@@ -1,0 +1,249 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "label": "test_resolution_filter.py",
+      "file_type": "code",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_resolution_filter_test_keep_2160p",
+      "label": "test_keep_2160p()",
+      "file_type": "code",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L15"
+    },
+    {
+      "id": "tests_test_resolution_filter_test_keep_4k",
+      "label": "test_keep_4k()",
+      "file_type": "code",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L25"
+    },
+    {
+      "id": "tests_test_resolution_filter_test_drop_1080p",
+      "label": "test_drop_1080p()",
+      "file_type": "code",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L33"
+    },
+    {
+      "id": "tests_test_resolution_filter_test_mixed",
+      "label": "test_mixed()",
+      "file_type": "code",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L42"
+    },
+    {
+      "id": "tests_test_resolution_filter_test_empty",
+      "label": "test_empty()",
+      "file_type": "code",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L56"
+    },
+    {
+      "id": "tests_test_resolution_filter_rationale_1",
+      "label": "\u6d4b\u8bd5\u5206\u8fa8\u7387\u8fc7\u6ee4 \u2014 \u53ea\u4fdd\u7559\u542b 2160p / 4k \u7684\u78c1\u529b",
+      "file_type": "rationale",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L1"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "magnet_harvester_crawler",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "magnet_harvester_magnet_parser",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "tests_test_resolution_filter_test_keep_2160p",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "tests_test_resolution_filter_test_keep_4k",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "tests_test_resolution_filter_test_drop_1080p",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "tests_test_resolution_filter_test_mixed",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "target": "tests_test_resolution_filter_test_empty",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_resolution_filter_rationale_1",
+      "target": "users_llll_code_github_qb_nas_tests_test_resolution_filter_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_resolution_filter.py",
+      "source_location": "L1",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "tests_test_resolution_filter_test_keep_2160p",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L17"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_keep_2160p",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L18"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_keep_2160p",
+      "callee": "filter_resolution_items",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L20"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_keep_4k",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L27"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_keep_4k",
+      "callee": "filter_resolution_items",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L29"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_drop_1080p",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L35"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_drop_1080p",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L36"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_drop_1080p",
+      "callee": "filter_resolution_items",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L38"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_mixed",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L44"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_mixed",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L45"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_mixed",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L46"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_mixed",
+      "callee": "parse_magnet",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L47"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_mixed",
+      "callee": "filter_resolution_items",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L49"
+    },
+    {
+      "caller_nid": "tests_test_resolution_filter_test_empty",
+      "callee": "filter_resolution_items",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_resolution_filter.py",
+      "source_location": "L57"
+    }
+  ]
+}

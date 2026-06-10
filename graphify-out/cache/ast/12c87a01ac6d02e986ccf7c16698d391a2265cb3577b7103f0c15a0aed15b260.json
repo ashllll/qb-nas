@@ -1,0 +1,425 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "label": "test_magnet_extract.py",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_extract_standard_magnet",
+      "label": "test_extract_standard_magnet()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L23"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_extract_multiple_magnets",
+      "label": "test_extract_multiple_magnets()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L35"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_extract_magnet_with_html",
+      "label": "test_extract_magnet_with_html()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L46"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_deduplicate_by_hash",
+      "label": "test_deduplicate_by_hash()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L54"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_invalid_hash_too_short",
+      "label": "test_invalid_hash_too_short()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L64"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_base64_encoded_magnet",
+      "label": "test_base64_encoded_magnet()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L71"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_magnet_in_json",
+      "label": "test_magnet_in_json()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L82"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "label": "test_extract_name_with_chinese()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L97"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_extract_from_crawl4ai_markdown",
+      "label": "test_extract_from_crawl4ai_markdown()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L123"
+    },
+    {
+      "id": "tests_test_magnet_extract_test_no_false_positives",
+      "label": "test_no_false_positives()",
+      "file_type": "code",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L148"
+    },
+    {
+      "id": "tests_test_magnet_extract_rationale_1",
+      "label": "\u6d4b\u8bd5\u78c1\u529b\u94fe\u63a5\u63d0\u53d6\u903b\u8f91 \u2014 \u4ece crawl4ai \u7684 markdown/html \u8f93\u51fa\u4e2d\u63d0\u53d6\u78c1\u529b\u94fe\u63a5 \u8fd9\u662f\u72ec\u7acb\u4e8e\u722c\u866b\u5f15\u64ce\u7684\u4e1a\u52a1\u903b\u8f91\u6d4b\u8bd5\uff0c\u4e0d\u4f9d\u8d56\u7f51\u7edc\u6216\u6d4f\u89c8\u5668",
+      "file_type": "rationale",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_magnet_extract_rationale_47",
+      "label": "\u78c1\u529b\u94fe\u63a5\u5d4c\u5728 HTML \u5c5e\u6027\u4e2d\uff08\u6a21\u62df crawl4ai \u8f93\u51fa\u7684\u5e38\u89c1\u573a\u666f\uff09",
+      "file_type": "rationale",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L47"
+    },
+    {
+      "id": "tests_test_magnet_extract_rationale_83",
+      "label": "\u5728 JSON \u5b57\u7b26\u4e32\u4e2d\u7684\u78c1\u529b\u94fe\u63a5          JSON_MAGNET_RE \u6355\u83b7\u5f15\u53f7\u5185\u7684\u5b8c\u6574\u78c1\u529bURL\uff08\u542b &dn=\uff09\uff0c     \u4f46\u4e5f\u53ef\u80fd\u88ab MAGNET",
+      "file_type": "rationale",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L83"
+    },
+    {
+      "id": "tests_test_magnet_extract_rationale_98",
+      "label": "\u63d0\u53d6\u542b\u4e2d\u6587\u6587\u4ef6\u540d\u7684\u78c1\u529b\u94fe\u63a5\uff08\u76f4\u63a5\u6d4b\u8bd5 parse_magnet \u51fd\u6570\uff09",
+      "file_type": "rationale",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L98"
+    },
+    {
+      "id": "tests_test_magnet_extract_rationale_124",
+      "label": "\u6a21\u62df crawl4ai \u7684 markdown \u8f93\u51fa\u683c\u5f0f          \u6ce8\u610f\uff1aMAGNET_RE \u5339\u914d\u78c1\u529b\u94fe\u63a5\uff0c& \u53ca\u4e4b\u540e\u7684\u53c2\u6570\u88ab\u622a\u65ad\uff08dn \u4e22\u5931\uff09\uff0c",
+      "file_type": "rationale",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L124"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "magnet_harvester_magnet_parser",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_extract_standard_magnet",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_extract_multiple_magnets",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_extract_magnet_with_html",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L46",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_deduplicate_by_hash",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_invalid_hash_too_short",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L64",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_base64_encoded_magnet",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L71",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_magnet_in_json",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L82",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_extract_from_crawl4ai_markdown",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "target": "tests_test_magnet_extract_test_no_false_positives",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L148",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_magnet_extract_rationale_1",
+      "target": "users_llll_code_github_qb_nas_tests_test_magnet_extract_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_magnet_extract_rationale_47",
+      "target": "tests_test_magnet_extract_test_extract_magnet_with_html",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_magnet_extract_rationale_83",
+      "target": "tests_test_magnet_extract_test_magnet_in_json",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L83",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_magnet_extract_rationale_98",
+      "target": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L98",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_magnet_extract_rationale_124",
+      "target": "tests_test_magnet_extract_test_extract_from_crawl4ai_markdown",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_magnet_extract.py",
+      "source_location": "L124",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_standard_magnet",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L27"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_multiple_magnets",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L42"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_magnet_with_html",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L49"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_deduplicate_by_hash",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L60"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_invalid_hash_too_short",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L67"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_base64_encoded_magnet",
+      "callee": "decode",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L75"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_base64_encoded_magnet",
+      "callee": "b64encode",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L75"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_base64_encoded_magnet",
+      "callee": "encode",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L75"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_base64_encoded_magnet",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L77"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_magnet_in_json",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L90"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "search",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L106"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "upper",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L108"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "group",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L108"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "search",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L111"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "unquote_plus",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L113"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "group",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L113"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "encode",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L115"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_name_with_chinese",
+      "callee": "findall",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L117"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_extract_from_crawl4ai_markdown",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L141"
+    },
+    {
+      "caller_nid": "tests_test_magnet_extract_test_no_false_positives",
+      "callee": "extract_from_text",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_magnet_extract.py",
+      "source_location": "L154"
+    }
+  ]
+}

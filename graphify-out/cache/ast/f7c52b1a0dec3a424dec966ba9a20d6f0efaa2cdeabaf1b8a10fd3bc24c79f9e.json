@@ -1,0 +1,1214 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "label": "pipeline.py",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "magnet_harvester_pipeline_crawlphase",
+      "label": "CrawlPhase",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L19"
+    },
+    {
+      "id": "protocol",
+      "label": "Protocol",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "magnet_harvester_pipeline_crawlphase_crawl",
+      "label": ".crawl()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L20"
+    },
+    {
+      "id": "magnet_harvester_pipeline_classifyphase",
+      "label": "ClassifyPhase",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L24"
+    },
+    {
+      "id": "magnet_harvester_pipeline_classifyphase_classify_stream_batch",
+      "label": ".classify_stream_batch()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L25"
+    },
+    {
+      "id": "magnet_harvester_pipeline_classifyphase_usage",
+      "label": ".usage()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L27"
+    },
+    {
+      "id": "any",
+      "label": "Any",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L27"
+    },
+    {
+      "id": "magnet_harvester_pipeline_classifyphase_get_cache_stats",
+      "label": ".get_cache_stats()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L28"
+    },
+    {
+      "id": "magnet_harvester_pipeline_downloadphase",
+      "label": "DownloadPhase",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L32"
+    },
+    {
+      "id": "magnet_harvester_pipeline_downloadphase_add_magnet",
+      "label": ".add_magnet()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L33"
+    },
+    {
+      "id": "magnet_harvester_pipeline_downloadphase_ping",
+      "label": ".ping()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L34"
+    },
+    {
+      "id": "magnet_harvester_pipeline_downloadphase_close",
+      "label": ".close()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L35"
+    },
+    {
+      "id": "magnet_harvester_pipeline_downloadphase_is_healthy",
+      "label": ".is_healthy()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L36"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions",
+      "label": "MagnetItemTransitions",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L41"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_init",
+      "label": ".__init__()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L44"
+    },
+    {
+      "id": "messagebus",
+      "label": "MessageBus",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L44"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "label": "._emit_item_changed()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L48"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "label": ".found()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L53"
+    },
+    {
+      "id": "magnetitem",
+      "label": "MagnetItem",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L53"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_classification_started",
+      "label": ".classification_started()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L59"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "label": ".classified()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L63"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "label": ".download_submitting()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L81"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_download_submitted",
+      "label": ".download_submitted()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L95"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_download_failed",
+      "label": ".download_failed()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L106"
+    },
+    {
+      "id": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "label": "._emit_download_result()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L111"
+    },
+    {
+      "id": "taskstatus",
+      "label": "TaskStatus",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L111"
+    },
+    {
+      "id": "magnet_harvester_pipeline_harvestpipeline",
+      "label": "HarvestPipeline",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L122"
+    },
+    {
+      "id": "magnet_harvester_pipeline_harvestpipeline_init",
+      "label": ".__init__()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L123"
+    },
+    {
+      "id": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "label": ".execute()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L131"
+    },
+    {
+      "id": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "label": "._stream_classify()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L158"
+    },
+    {
+      "id": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "label": "._download_items()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L180"
+    },
+    {
+      "id": "magnet_harvester_pipeline_harvestpipeline_reclassify",
+      "label": ".reclassify()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L197"
+    },
+    {
+      "id": "magnet_harvester_pipeline_harvestpipeline_download",
+      "label": ".download()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L202"
+    },
+    {
+      "id": "magnet_harvester_pipeline_rationale_1",
+      "label": "HarvestPipeline \u2014 \u722c\u53d6\u2192\u5206\u7c7b\u2192\u4e0b\u8f7d\u7ba1\u9053\uff08\u6df1\u6a21\u5757\uff09",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "magnet_harvester_pipeline_rationale_42",
+      "label": "Applies Magnet item state changes and publishes matching events.",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L42"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "asyncio",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "logging",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "typing",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "magnet_harvester_bus",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "magnet_harvester_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "magnet_harvester_pipeline_crawlphase",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_crawlphase",
+      "target": "protocol",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_crawlphase",
+      "target": "magnet_harvester_pipeline_crawlphase_crawl",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "magnet_harvester_pipeline_classifyphase",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_classifyphase",
+      "target": "protocol",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_classifyphase",
+      "target": "magnet_harvester_pipeline_classifyphase_classify_stream_batch",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_classifyphase",
+      "target": "magnet_harvester_pipeline_classifyphase_usage",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_classifyphase_usage",
+      "target": "any",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_classifyphase",
+      "target": "magnet_harvester_pipeline_classifyphase_get_cache_stats",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "magnet_harvester_pipeline_downloadphase",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_downloadphase",
+      "target": "protocol",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_downloadphase",
+      "target": "magnet_harvester_pipeline_downloadphase_add_magnet",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_downloadphase",
+      "target": "magnet_harvester_pipeline_downloadphase_ping",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_downloadphase",
+      "target": "magnet_harvester_pipeline_downloadphase_close",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_downloadphase",
+      "target": "magnet_harvester_pipeline_downloadphase_is_healthy",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L36",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_init",
+      "target": "any",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_init",
+      "target": "messagebus",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L48",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_classification_started",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L63",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_download_submitted",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L95",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_download_failed",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L106",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "target": "taskstatus",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "target": "magnet_harvester_pipeline_harvestpipeline",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L122",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline",
+      "target": "magnet_harvester_pipeline_harvestpipeline_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_init",
+      "target": "magnet_harvester_pipeline_crawlphase",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_init",
+      "target": "magnet_harvester_pipeline_classifyphase",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_init",
+      "target": "magnet_harvester_pipeline_downloadphase",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_init",
+      "target": "any",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_init",
+      "target": "messagebus",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline",
+      "target": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L131",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline",
+      "target": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L158",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L158",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline",
+      "target": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L180",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline",
+      "target": "magnet_harvester_pipeline_harvestpipeline_reclassify",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L197",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline",
+      "target": "magnet_harvester_pipeline_harvestpipeline_download",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L202",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_classification_started",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L79",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_download_submitted",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L103",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_download_submitted",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L104",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_download_failed",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L108",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_magnetitemtransitions_download_failed",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L109",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_init",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L129",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "target": "magnet_harvester_pipeline_crawlphase_crawl",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L135",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "target": "magnetitem",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L138",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L139",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "target": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L153",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "target": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L156",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_classification_started",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L165",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "target": "magnet_harvester_pipeline_classifyphase_classify_stream_batch",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L175",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L185",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "target": "magnet_harvester_pipeline_downloadphase_add_magnet",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L187",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_download_submitted",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L189",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions_download_failed",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L191",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_reclassify",
+      "target": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L200",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_harvestpipeline_download",
+      "target": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L203",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_rationale_1",
+      "target": "users_llll_code_github_qb_nas_magnet_harvester_pipeline_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "magnet_harvester_pipeline_rationale_42",
+      "target": "magnet_harvester_pipeline_magnetitemtransitions",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/pipeline.py",
+      "source_location": "L42",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L49"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L51"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L51"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_emit_item_changed",
+      "callee": "model_dump",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L51"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "callee": "add",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L54"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L56"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L56"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_found",
+      "callee": "model_dump",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L56"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_classification_started",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L60"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L64"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L73"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L73"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L76"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_classified",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L77"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L82"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L85"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L93"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_download_submitting",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L93"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_download_submitted",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L96"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_download_failed",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L107"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L112"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L113"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_magnetitemtransitions_emit_download_result",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L113"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L132"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L132"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "append",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L140"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L142"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L142"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L144"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L144"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L146"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L146"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_execute",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L151"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L167"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L167"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "callee": "gather",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L177"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "callee": "emit",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L178"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_stream_classify",
+      "callee": "Event",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L178"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L182"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_download_items",
+      "callee": "sleep",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L195"
+    },
+    {
+      "caller_nid": "magnet_harvester_pipeline_harvestpipeline_reclassify",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/pipeline.py",
+      "source_location": "L198"
+    }
+  ]
+}

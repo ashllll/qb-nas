@@ -1,0 +1,472 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "label": "test_store_protocol.py",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_store_protocol_make_item",
+      "label": "_make_item()",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L13"
+    },
+    {
+      "id": "magnetitem",
+      "label": "MagnetItem",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L13"
+    },
+    {
+      "id": "tests_test_store_protocol_test_protocol_is_defined",
+      "label": "test_protocol_is_defined()",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L21"
+    },
+    {
+      "id": "tests_test_store_protocol_test_inmemory_conforms_to_protocol",
+      "label": "test_inmemory_conforms_to_protocol()",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L32"
+    },
+    {
+      "id": "tests_test_store_protocol_test_fake_store_conforms_to_protocol",
+      "label": "test_fake_store_conforms_to_protocol()",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L38"
+    },
+    {
+      "id": "tests_test_store_protocol_run_store_tests",
+      "label": "run_store_tests()",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L47"
+    },
+    {
+      "id": "tests_test_store_protocol_test_inmemory_behaviors",
+      "label": "test_inmemory_behaviors()",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L119"
+    },
+    {
+      "id": "tests_test_store_protocol_test_fakestore_behaviors",
+      "label": "test_fakestore_behaviors()",
+      "file_type": "code",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L123"
+    },
+    {
+      "id": "tests_test_store_protocol_rationale_1",
+      "label": "\u6d4b\u8bd5 ItemStore \u534f\u8bae \u2014 \u9a8c\u8bc1 InMemoryItemStore \u548c FakeStore \u90fd\u7b26\u5408\u534f\u8bae",
+      "file_type": "rationale",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_store_protocol_rationale_22",
+      "label": "\u786e\u4fdd ItemStore \u534f\u8bae\u5b58\u5728\u4e14\u53ef\u5bfc\u5165",
+      "file_type": "rationale",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L22"
+    },
+    {
+      "id": "tests_test_store_protocol_rationale_33",
+      "label": "InMemoryItemStore \u662f ItemStore \u7684\u5b9e\u4f8b",
+      "file_type": "rationale",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L33"
+    },
+    {
+      "id": "tests_test_store_protocol_rationale_39",
+      "label": "FakeStore \u662f ItemStore \u7684\u5b9e\u4f8b",
+      "file_type": "rationale",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L39"
+    },
+    {
+      "id": "tests_test_store_protocol_rationale_48",
+      "label": "\u9488\u5bf9 ItemStore \u534f\u8bae\u7684\u901a\u7528\u6d4b\u8bd5\u5957\u4ef6",
+      "file_type": "rationale",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L48"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "magnet_harvester_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "magnet_harvester_store",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "tests_test_store_protocol_make_item",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_make_item",
+      "target": "magnetitem",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "tests_test_store_protocol_test_protocol_is_defined",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "tests_test_store_protocol_test_inmemory_conforms_to_protocol",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "tests_test_store_protocol_test_fake_store_conforms_to_protocol",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "tests_test_store_protocol_run_store_tests",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "tests_test_store_protocol_test_inmemory_behaviors",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L119",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "target": "tests_test_store_protocol_test_fakestore_behaviors",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L123",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_make_item",
+      "target": "magnetitem",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_run_store_tests",
+      "target": "tests_test_store_protocol_make_item",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_test_inmemory_behaviors",
+      "target": "tests_test_store_protocol_run_store_tests",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L120",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_test_fakestore_behaviors",
+      "target": "tests_test_store_protocol_run_store_tests",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L125",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_rationale_1",
+      "target": "users_llll_code_github_qb_nas_tests_test_store_protocol_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_rationale_22",
+      "target": "tests_test_store_protocol_test_protocol_is_defined",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_rationale_33",
+      "target": "tests_test_store_protocol_test_inmemory_conforms_to_protocol",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_rationale_39",
+      "target": "tests_test_store_protocol_test_fake_store_conforms_to_protocol",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_store_protocol_rationale_48",
+      "target": "tests_test_store_protocol_run_store_tests",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_store_protocol.py",
+      "source_location": "L48",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "tests_test_store_protocol_test_inmemory_conforms_to_protocol",
+      "callee": "InMemoryItemStore",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L34"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_test_fake_store_conforms_to_protocol",
+      "callee": "FakeStore",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L41"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "store_factory",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L49"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "add",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L53"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L54"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L55"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "add",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L58"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L61"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L62"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L65"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "add",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L69"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "remove",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L70"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L71"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "remove",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L74"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "add",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L81"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "search",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L82"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "update",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L86"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "get_pending",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L95"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "get_hashes_by_prefix",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L99"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "stats",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L103"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "add_batch",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L109"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "add_batch",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L110"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "clear",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L113"
+    },
+    {
+      "caller_nid": "tests_test_store_protocol_run_store_tests",
+      "callee": "store_factory",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_store_protocol.py",
+      "source_location": "L116"
+    }
+  ]
+}

@@ -1,0 +1,301 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "label": "test_error_handler.py",
+      "file_type": "code",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_error_handler_test_independent_instances",
+      "label": "test_independent_instances()",
+      "file_type": "code",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L16"
+    },
+    {
+      "id": "tests_test_error_handler_test_no_singleton",
+      "label": "test_no_singleton()",
+      "file_type": "code",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L26"
+    },
+    {
+      "id": "tests_test_error_handler_test_error_dedup",
+      "label": "test_error_dedup()",
+      "file_type": "code",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L33"
+    },
+    {
+      "id": "tests_test_error_handler_test_error_stats",
+      "label": "test_error_stats()",
+      "file_type": "code",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L42"
+    },
+    {
+      "id": "tests_test_error_handler_rationale_1",
+      "label": "\u6d4b\u8bd5 ErrorHandler \u2014 \u9a8c\u8bc1\u53ef\u72ec\u7acb\u5b9e\u4f8b\u5316\u3001\u65e0\u5355\u4f8b",
+      "file_type": "rationale",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_error_handler_rationale_17",
+      "label": "\u4e24\u4e2a ErrorHandler \u5b9e\u4f8b\u4e92\u4e0d\u5e72\u6270",
+      "file_type": "rationale",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L17"
+    },
+    {
+      "id": "tests_test_error_handler_rationale_27",
+      "label": "ErrorHandler() \u6bcf\u6b21\u90fd\u521b\u5efa\u65b0\u5b9e\u4f8b",
+      "file_type": "rationale",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L27"
+    },
+    {
+      "id": "tests_test_error_handler_rationale_34",
+      "label": "\u76f8\u540c category+message \u5408\u5e76\u4e3a\u4e00\u6761\u8bb0\u5f55",
+      "file_type": "rationale",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L34"
+    },
+    {
+      "id": "tests_test_error_handler_rationale_43",
+      "label": "get_error_stats \u8fd4\u56de\u6b63\u786e\u7684\u7edf\u8ba1",
+      "file_type": "rationale",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L43"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "target": "magnet_harvester_errors",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "target": "tests_test_error_handler_test_independent_instances",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "target": "tests_test_error_handler_test_no_singleton",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "target": "tests_test_error_handler_test_error_dedup",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "target": "tests_test_error_handler_test_error_stats",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_error_handler_rationale_1",
+      "target": "users_llll_code_github_qb_nas_tests_test_error_handler_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_error_handler_rationale_17",
+      "target": "tests_test_error_handler_test_independent_instances",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L17",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_error_handler_rationale_27",
+      "target": "tests_test_error_handler_test_no_singleton",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_error_handler_rationale_34",
+      "target": "tests_test_error_handler_test_error_dedup",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_error_handler_rationale_43",
+      "target": "tests_test_error_handler_test_error_stats",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_error_handler.py",
+      "source_location": "L43",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "tests_test_error_handler_test_independent_instances",
+      "callee": "ErrorHandler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L18"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_independent_instances",
+      "callee": "ErrorHandler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L19"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_independent_instances",
+      "callee": "record",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L21"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_independent_instances",
+      "callee": "get_recent_errors",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L22"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_independent_instances",
+      "callee": "get_recent_errors",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L23"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_no_singleton",
+      "callee": "ErrorHandler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L28"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_no_singleton",
+      "callee": "ErrorHandler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L29"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_dedup",
+      "callee": "ErrorHandler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L35"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_dedup",
+      "callee": "record",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L36"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_dedup",
+      "callee": "record",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L37"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_dedup",
+      "callee": "get_recent_errors",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L38"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_dedup",
+      "callee": "get_recent_errors",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L39"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_stats",
+      "callee": "ErrorHandler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L44"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_stats",
+      "callee": "record",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L45"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_stats",
+      "callee": "record",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L46"
+    },
+    {
+      "caller_nid": "tests_test_error_handler_test_error_stats",
+      "callee": "get_error_stats",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_error_handler.py",
+      "source_location": "L47"
+    }
+  ]
+}

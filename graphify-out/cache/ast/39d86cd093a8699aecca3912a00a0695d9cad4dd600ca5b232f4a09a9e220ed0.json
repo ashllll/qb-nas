@@ -1,0 +1,255 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "label": "test_crawler_adapter.py",
+      "file_type": "code",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_crawler_adapter_test_crawler_start_stop",
+      "label": "test_crawler_start_stop()",
+      "file_type": "code",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L16"
+    },
+    {
+      "id": "tests_test_crawler_adapter_test_crawler_context_manager",
+      "label": "test_crawler_context_manager()",
+      "file_type": "code",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L34"
+    },
+    {
+      "id": "tests_test_crawler_adapter_run",
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L54"
+    },
+    {
+      "id": "tests_test_crawler_adapter_rationale_1",
+      "label": "\u96c6\u6210\u6d4b\u8bd5\uff1aMagnetCrawler (crawl4ai \u9002\u914d\u5668) \u751f\u547d\u5468\u671f",
+      "file_type": "rationale",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_crawler_adapter_rationale_17",
+      "label": "\u9a8c\u8bc1 crawler \u4f7f\u7528 crawl4ai \u80fd\u6b63\u5e38\u542f\u52a8\u548c\u5173\u95ed",
+      "file_type": "rationale",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L17"
+    },
+    {
+      "id": "tests_test_crawler_adapter_rationale_35",
+      "label": "\u9a8c\u8bc1 async with \u7528\u6cd5\uff08\u901a\u8fc7 start/stop \u6a21\u62df\uff09",
+      "file_type": "rationale",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L35"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "pytest",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "magnet_harvester_crawler",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "magnet_harvester_config",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "tests_test_crawler_adapter_test_crawler_start_stop",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "tests_test_crawler_adapter_test_crawler_context_manager",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "asyncio",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "target": "tests_test_crawler_adapter_run",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_crawler_adapter_rationale_1",
+      "target": "users_llll_code_github_qb_nas_tests_test_crawler_adapter_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_crawler_adapter_rationale_17",
+      "target": "tests_test_crawler_adapter_test_crawler_start_stop",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L17",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_crawler_adapter_rationale_35",
+      "target": "tests_test_crawler_adapter_test_crawler_context_manager",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_crawler_adapter.py",
+      "source_location": "L35",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_start_stop",
+      "callee": "CrawlerConfig",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L18"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_start_stop",
+      "callee": "MagnetCrawler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L19"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_start_stop",
+      "callee": "start",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L23"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_start_stop",
+      "callee": "stop",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L28"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_context_manager",
+      "callee": "CrawlerConfig",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L36"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_context_manager",
+      "callee": "MagnetCrawler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L37"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_context_manager",
+      "callee": "start",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L42"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_test_crawler_context_manager",
+      "callee": "stop",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L46"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_run",
+      "callee": "CrawlerConfig",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L55"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_run",
+      "callee": "MagnetCrawler",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L56"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_run",
+      "callee": "start",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L58"
+    },
+    {
+      "caller_nid": "tests_test_crawler_adapter_run",
+      "callee": "stop",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_crawler_adapter.py",
+      "source_location": "L61"
+    }
+  ]
+}

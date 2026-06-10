@@ -1,0 +1,407 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "label": "local_classifier.py",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier",
+      "label": "LocalClassifier",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L24"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_init",
+      "label": ".__init__()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L36"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_classify_name",
+      "label": "._classify_name()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L41"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "label": ".classify_stream_batch()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L56"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_classify_sync_batch",
+      "label": ".classify_sync_batch()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L73"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_classify_one",
+      "label": ".classify_one()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L80"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_get_cache_stats",
+      "label": ".get_cache_stats()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L86"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_clear_cache",
+      "label": ".clear_cache()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L89"
+    },
+    {
+      "id": "classifier_local_classifier_localclassifier_ping",
+      "label": ".ping()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L92"
+    },
+    {
+      "id": "classifier_local_classifier_nullusagestats",
+      "label": "_NullUsageStats",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L96"
+    },
+    {
+      "id": "classifier_local_classifier_nullusagestats_as_dict",
+      "label": ".as_dict()",
+      "file_type": "code",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L103"
+    },
+    {
+      "id": "classifier_local_classifier_rationale_1",
+      "label": "LocalClassifier \u2014 \u7eaf\u672c\u5730\u89c4\u5219\u5206\u7c7b\u5668\uff0c\u96f6\u5916\u90e8\u4f9d\u8d56  \u76f4\u63a5\u4f7f\u7528 LOCAL_RULES \u6b63\u5219\u8fdb\u884c\u5206\u7c7b\uff0c\u540c\u6b65 API\u3002 \u7b26\u5408 ClassifyPha",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "classifier_local_classifier_rationale_25",
+      "label": "\u7eaf\u672c\u5730\u89c4\u5219\u5206\u7c7b\u5668\u3002      \u516c\u5171\u63a5\u53e3\uff08\u7b26\u5408 ClassifyPhase \u534f\u8bae\uff09:         classify_stream_batch(items, o",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L25"
+    },
+    {
+      "id": "classifier_local_classifier_rationale_42",
+      "label": "\u5206\u7c7b\u5355\u4e2a\u540d\u79f0\uff1a\u4f18\u5148\u5173\u952e\u8bcd\u8bc6\u522b\uff0c\u56de\u9000\u672c\u5730\u89c4\u5219",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L42"
+    },
+    {
+      "id": "classifier_local_classifier_rationale_61",
+      "label": "\u6d41\u5f0f\u6279\u91cf\u5206\u7c7b \u2014 \u540c\u6b65\u5b9e\u73b0\uff0c\u76f4\u63a5\u904d\u5386\u5e76\u56de\u8c03",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L61"
+    },
+    {
+      "id": "classifier_local_classifier_rationale_97",
+      "label": "\u5360\u4f4d UsageStats \u2014 \u4fdd\u6301\u5206\u7c7b\u5668\u534f\u8bae\u517c\u5bb9",
+      "file_type": "rationale",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L97"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "target": "logging",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "target": "typing",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "target": "magnet_harvester_classifier_fallback",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "target": "magnet_harvester_keyword_recognizer",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "target": "classifier_local_classifier_localclassifier",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L36",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_classify_name",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_classify_sync_batch",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_classify_one",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_get_cache_stats",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L86",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_clear_cache",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L89",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier",
+      "target": "classifier_local_classifier_localclassifier_ping",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "target": "classifier_local_classifier_nullusagestats",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L96",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_nullusagestats",
+      "target": "classifier_local_classifier_nullusagestats_as_dict",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L103",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier_init",
+      "target": "classifier_local_classifier_nullusagestats",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "target": "classifier_local_classifier_localclassifier_classify_name",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier_classify_sync_batch",
+      "target": "classifier_local_classifier_localclassifier_classify_name",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L76",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_localclassifier_classify_one",
+      "target": "classifier_local_classifier_localclassifier_classify_name",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L82",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_rationale_1",
+      "target": "users_llll_code_github_qb_nas_magnet_harvester_classifier_local_classifier_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_rationale_25",
+      "target": "classifier_local_classifier_localclassifier",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_rationale_42",
+      "target": "classifier_local_classifier_localclassifier_classify_name",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_rationale_61",
+      "target": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "classifier_local_classifier_rationale_97",
+      "target": "classifier_local_classifier_nullusagestats",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L97",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_init",
+      "callee": "KeywordCategoryRecognizer",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L39"
+    },
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_classify_name",
+      "callee": "recognize",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L43"
+    },
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_classify_name",
+      "callee": "make_fallback",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L52"
+    },
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L64"
+    },
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L65"
+    },
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "callee": "append",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L66"
+    },
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_classify_stream_batch",
+      "callee": "on_result",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L68"
+    },
+    {
+      "caller_nid": "classifier_local_classifier_localclassifier_classify_sync_batch",
+      "callee": "get",
+      "is_member_call": true,
+      "source_file": "/Users/llll/code/github/qb-nas/magnet_harvester/classifier/local_classifier.py",
+      "source_location": "L76"
+    }
+  ]
+}

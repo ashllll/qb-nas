@@ -1,0 +1,34 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_run_py",
+      "label": "run.py",
+      "file_type": "code",
+      "source_file": "run.py",
+      "source_location": "L1"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_run_py",
+      "target": "uvicorn",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "run.py",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_run_py",
+      "target": "magnet_harvester_config",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "run.py",
+      "source_location": "L9",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": []
+}

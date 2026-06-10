@@ -1,0 +1,74 @@
+{
+  "nodes": [
+    {
+      "id": "domain_single_context_repo",
+      "label": "Single-context Repository Pattern",
+      "file_type": "rationale",
+      "source_file": "docs/agents/domain.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "domain_adr_conflict_rule",
+      "label": "ADR Conflict Resolution Rule",
+      "file_type": "rationale",
+      "source_file": "docs/agents/domain.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "domain_single_context_repo",
+      "target": "domain_adr_conflict_rule",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/domain.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "domain_single_context_repo",
+      "target": "context_magnet_item",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "docs/agents/domain.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "domain_adr_conflict_rule",
+      "target": "context_runtimecontext",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.65,
+      "source_file": "docs/agents/domain.md",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "agent_documentation_ecosystem",
+      "label": "Agent Skill Documentation Ecosystem",
+      "nodes": [
+        "domain_single_context_repo",
+        "issue_tracker_github",
+        "triage_labels_vocabulary",
+        "domain_adr_conflict_rule"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/agents/domain.md"
+    }
+  ]
+}

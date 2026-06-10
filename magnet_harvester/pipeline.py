@@ -201,3 +201,7 @@ class HarvestPipeline:
 
     async def download(self, hashes: List[str]):
         await self._download_items(hashes)
+
+    def replace_download_phase(self, new_qbit: DownloadPhase):
+        """Hot-swap the download phase (e.g. when qBittorrent config changes)."""
+        self._qbit = new_qbit

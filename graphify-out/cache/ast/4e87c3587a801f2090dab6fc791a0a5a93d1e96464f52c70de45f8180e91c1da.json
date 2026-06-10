@@ -1,0 +1,91 @@
+{
+  "nodes": [
+    {
+      "id": "users_llll_code_github_qb_nas_tests_test_config_py",
+      "label": "test_config.py",
+      "file_type": "code",
+      "source_file": "tests/test_config.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "tests_test_config_test_crawler_allowed_resolutions_parse_csv",
+      "label": "test_crawler_allowed_resolutions_parse_csv()",
+      "file_type": "code",
+      "source_file": "tests/test_config.py",
+      "source_location": "L12"
+    },
+    {
+      "id": "tests_test_config_test_crawler_allowed_resolutions_falls_back_when_empty",
+      "label": "test_crawler_allowed_resolutions_falls_back_when_empty()",
+      "file_type": "code",
+      "source_file": "tests/test_config.py",
+      "source_location": "L18"
+    }
+  ],
+  "edges": [
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_config_py",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_config.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_config_py",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_config.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_config_py",
+      "target": "magnet_harvester_config",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_config.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_config_py",
+      "target": "tests_test_config_test_crawler_allowed_resolutions_parse_csv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_config.py",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "users_llll_code_github_qb_nas_tests_test_config_py",
+      "target": "tests_test_config_test_crawler_allowed_resolutions_falls_back_when_empty",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_config.py",
+      "source_location": "L18",
+      "weight": 1.0
+    }
+  ],
+  "raw_calls": [
+    {
+      "caller_nid": "tests_test_config_test_crawler_allowed_resolutions_parse_csv",
+      "callee": "Settings",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_config.py",
+      "source_location": "L13"
+    },
+    {
+      "caller_nid": "tests_test_config_test_crawler_allowed_resolutions_falls_back_when_empty",
+      "callee": "Settings",
+      "is_member_call": false,
+      "source_file": "/Users/llll/code/github/qb-nas/tests/test_config.py",
+      "source_location": "L19"
+    }
+  ]
+}
