@@ -28,6 +28,16 @@ def test_map_torrent_status_for_completed():
     assert result["progress"] == 100.0
 
 
+def test_map_torrent_status_for_completed_paused_upload():
+    result = QBittorrentClient.map_torrent_status({"state": "pausedUP", "progress": 1.0})
+    assert result["status"] == TaskStatus.success
+
+
+def test_map_torrent_status_for_completed_queued_upload():
+    result = QBittorrentClient.map_torrent_status({"state": "queuedUP", "progress": 1.0})
+    assert result["status"] == TaskStatus.success
+
+
 def test_map_torrent_status_for_error():
     result = QBittorrentClient.map_torrent_status({"state": "error", "progress": 0.0})
     assert result["status"] == TaskStatus.error
@@ -37,5 +47,7 @@ if __name__ == "__main__":
     test_map_torrent_status_for_queue()
     test_map_torrent_status_for_downloading()
     test_map_torrent_status_for_completed()
+    test_map_torrent_status_for_completed_paused_upload()
+    test_map_torrent_status_for_completed_queued_upload()
     test_map_torrent_status_for_error()
     print("=== qB state mapping tests passed! ===")

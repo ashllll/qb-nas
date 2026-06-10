@@ -15,12 +15,12 @@ import asyncio
 import logging
 import time
 from urllib.parse import urlparse
-from typing import AsyncGenerator, Dict, List, Optional, Set
+from typing import AsyncGenerator, List, Optional, Set
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
 from magnet_harvester.config import CrawlerConfig, settings
-from magnet_harvester.magnet_parser import extract_from_text, parse_magnet
+from magnet_harvester.magnet_parser import extract_from_text
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ class MagnetCrawler:
                 max_depth=settings.CRAWLER_MAX_DEPTH,
                 concurrency=settings.CRAWLER_CONCURRENCY,
                 headless=settings.CRAWLER_HEADLESS,
+                allowed_resolutions=settings.crawler.allowed_resolutions,
             )
         else:
             self._config = config
@@ -132,6 +133,12 @@ class MagnetCrawler:
                 current_url, remaining_depth = await frontier.get()
                 try:
                     await self._crawl_page(current_url, remaining_depth, visited, frontier, events)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    self._metrics.errors += 1
+                    log.warning(f"页面处理异常: {current_url} - {e}", exc_info=e)
+                    await events.put({"type": "error", "msg": str(e), "url": current_url})
                 finally:
                     frontier.task_done()
 
@@ -206,7 +213,10 @@ class MagnetCrawler:
         if depth <= 1:
             return
 
-        detail_links = self._extract_detail_links(url, result.links, visited)
+        detail_links = self._claim_unvisited_links(
+            self._extract_detail_links(url, result.links),
+            visited,
+        )
         if detail_links:
             await events.put({
                 "type": "progress",
@@ -216,7 +226,6 @@ class MagnetCrawler:
             })
 
         for link in detail_links:
-            visited.add(link)
             await frontier.put((link, depth - 1))
 
     async def _fetch_with_retry(self, url: str):
@@ -253,12 +262,12 @@ class MagnetCrawler:
         for text in content_sources:
             items.extend(extract_from_text(text))
 
-        items = filter_resolution_items(items)
+        items = filter_resolution_items(items, allowed=self._config.allowed_resolutions)
         for item in items:
             item.setdefault("source_url", source_url)
         return items
 
-    def _extract_detail_links(self, parent_url: str, links: dict | None, visited: Set[str]) -> List[str]:
+    def _extract_detail_links(self, parent_url: str, links: dict | None) -> List[str]:
         if not links:
             return []
 
@@ -269,7 +278,7 @@ class MagnetCrawler:
 
         for link in internal_links:
             href = link.get("href", "") if isinstance(link, dict) else str(link)
-            if not href or href in visited or href in seen_links:
+            if not href or href in seen_links:
                 continue
 
             parsed = urlparse(href)
@@ -291,3 +300,12 @@ class MagnetCrawler:
                 break
 
         return detail_links
+
+    def _claim_unvisited_links(self, links: List[str], visited: Set[str]) -> List[str]:
+        claimed: List[str] = []
+        for link in links:
+            if link in visited:
+                continue
+            visited.add(link)
+            claimed.append(link)
+        return claimed

@@ -17,6 +17,13 @@ from magnet_harvester.models import TaskStatus
 log = logging.getLogger(__name__)
 
 
+def _safe_fs_segment(name: str) -> str:
+    """把分类名压成单个本地路径段，避免 FS_BASE_PATH 下目录穿越。"""
+    safe = re.sub(r"[\\/:\0]+", "_", name).strip().strip(".")
+    safe = re.sub(r"\s+", " ", safe)
+    return safe or "uncategorized"
+
+
 @dataclass
 class QBittorrentStats:
     total_added: int = 0
@@ -238,24 +245,24 @@ class QBittorrentClient:
         state = str(torrent.get("state", "") or "")
         progress = float(torrent.get("progress") or 0.0)
 
-        queued_states = {"queuedDL", "queuedUP", "pausedDL", "pausedUP"}
+        queued_states = {"queuedDL", "pausedDL"}
         downloading_states = {
             "downloading", "forcedDL", "metaDL", "stalledDL",
             "checkingDL", "checkingResumeData", "moving",
         }
         success_states = {
-            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP",
+            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
         }
         error_states = {"error", "missingFiles", "unknown"}
 
         if state in error_states:
             status = TaskStatus.error
+        elif progress >= 1.0 or state in success_states:
+            status = TaskStatus.success
         elif state in downloading_states or 0.0 < progress < 1.0:
             status = TaskStatus.downloading
         elif state in queued_states:
             status = TaskStatus.queued
-        elif progress >= 1.0 or state in success_states:
-            status = TaskStatus.success
         else:
             status = TaskStatus.queued
 
@@ -421,7 +428,7 @@ class QBittorrentClient:
         # 2. 如果配置了 FS_BASE_PATH，先创建真实目录（qB 的 createCategory 不是 mkdir）
         fs_base = settings.FS_BASE_PATH.strip()
         if fs_base:
-            Path(f"{fs_base}/{category}").mkdir(parents=True, exist_ok=True)
+            (Path(fs_base) / _safe_fs_segment(category)).mkdir(parents=True, exist_ok=True)
 
         try:
             # 2. 确保分类存在且路径正确

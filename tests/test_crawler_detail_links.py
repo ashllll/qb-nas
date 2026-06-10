@@ -3,6 +3,7 @@
 """
 import sys
 import os
+import asyncio
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -24,7 +25,10 @@ def test_extract_detail_links_filters_and_limits():
         ]
     }
 
-    result = crawler._extract_detail_links("https://example.com/list", links, visited)
+    result = crawler._claim_unvisited_links(
+        crawler._extract_detail_links("https://example.com/list", links),
+        visited,
+    )
 
     assert "https://example.com/details/123" in result
     assert "https://example.com/view/abc" in result
@@ -34,6 +38,43 @@ def test_extract_detail_links_filters_and_limits():
     assert "https://example.com/details/old" not in result
 
 
+def test_claim_unvisited_links_reserves_before_await_points():
+    crawler = MagnetCrawler(config=CrawlerConfig())
+    visited = set()
+    links = ["https://example.com/details/123"]
+
+    first_claim = crawler._claim_unvisited_links(links, visited)
+    second_claim = crawler._claim_unvisited_links(links, visited)
+
+    assert first_claim == ["https://example.com/details/123"]
+    assert second_claim == []
+
+
+def test_crawl_worker_reports_page_errors_and_finishes():
+    class ExplodingCrawler(MagnetCrawler):
+        async def start(self):
+            self._crawler = object()
+
+        async def _crawl_page(self, url, depth, visited, frontier, events):
+            raise RuntimeError("boom")
+
+    async def collect():
+        crawler = ExplodingCrawler(config=CrawlerConfig(concurrency=1))
+        messages = []
+        async with asyncio.timeout(1):
+            async for message in crawler.crawl("https://example.com", depth=1):
+                messages.append(message)
+        return messages
+
+    messages = asyncio.run(collect())
+
+    assert any(message["type"] == "error" and message["msg"] == "boom" for message in messages)
+    assert messages[-1]["type"] == "done"
+    assert messages[-1]["metrics"]["errors"] == 1
+
+
 if __name__ == "__main__":
     test_extract_detail_links_filters_and_limits()
+    test_claim_unvisited_links_reserves_before_await_points()
+    test_crawl_worker_reports_page_errors_and_finishes()
     print("=== crawler detail link tests passed! ===")

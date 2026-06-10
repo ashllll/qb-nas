@@ -63,6 +63,7 @@ _qbit: QBittorrentClient | None = None
 _active_ws: set[WebSocket] = set()
 _qbit_sync_stop: asyncio.Event | None = None
 _qbit_sync_task: asyncio.Task | None = None
+_qbit_lock: asyncio.Lock | None = None
 
 
 # ═══════════════════════════════════════════════════
@@ -117,6 +118,13 @@ def _item_payload(item: MagnetItem) -> dict:
     data = item.model_dump()
     data["status"] = item.status.value
     return data
+
+
+def _ensure_qbit_lock() -> asyncio.Lock:
+    global _qbit_lock
+    if _qbit_lock is None:
+        _qbit_lock = asyncio.Lock()
+    return _qbit_lock
 
 
 # ── 后台任务工具 ──────────────────────────
@@ -189,12 +197,16 @@ async def _qbit_sync_loop(stop_event: asyncio.Event):
         if not tracked_items:
             continue
 
-        try:
-            snapshot = await qbit.poll_torrent_snapshot()
-            removed_hashes = qbit.take_recently_removed()
-        except Exception as e:
-            log.debug(f"qB 状态同步失败: {e}")
-            continue
+        lock = _ensure_qbit_lock()
+        async with lock:
+            if qbit is not _qbit:
+                continue
+            try:
+                snapshot = await qbit.poll_torrent_snapshot()
+                removed_hashes = qbit.take_recently_removed()
+            except Exception as e:
+                log.debug(f"qB 状态同步失败: {e}")
+                continue
 
         for item in tracked_items:
             hash_key = item.hash
@@ -297,8 +309,9 @@ async def _tool_executor(name: str, inp: dict) -> dict:
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _bus, _pipeline, _crawler, _classifier, _qbit, _qbit_sync_stop, _qbit_sync_task
+    global _store, _bus, _pipeline, _crawler, _classifier, _qbit, _qbit_sync_stop, _qbit_sync_task, _qbit_lock
 
+    _qbit_lock = asyncio.Lock()
     _crawler = MagnetCrawler(config=settings.crawler)
     _qbit = QBittorrentClient(config=settings.qbit)
 
@@ -461,19 +474,21 @@ async def update_config(data: dict):
 
     settings.update_qbit(host=host, username=username, password=password)
 
-    # 重建 qB 客户端
     global _qbit
-    old_qbit = _qbit
-    _qbit = QBittorrentClient(config=settings.qbit)
-    if _pipeline:
-        _pipeline._qbit = _qbit
-    if hasattr(app.state, 'ctx') and app.state.ctx:
-        app.state.ctx.qbit = _qbit
+    new_qbit = QBittorrentClient(config=settings.qbit)
+    lock = _ensure_qbit_lock()
+    async with lock:
+        old_qbit = _qbit
+        _qbit = new_qbit
+        if _pipeline:
+            _pipeline._qbit = new_qbit
+        if hasattr(app.state, 'ctx') and app.state.ctx:
+            app.state.ctx.qbit = new_qbit
 
-    if old_qbit is not None:
-        await old_qbit.close()
+        if old_qbit is not None:
+            await old_qbit.close()
 
-    ok = await _qbit.ping()
+        ok = await new_qbit.ping()
     return {"status": "ok" if ok else "failed", "connected": ok}
 
 
@@ -491,7 +506,7 @@ async def get_items(
     total = len(items)
     return {
         "total": total, "limit": limit, "offset": offset,
-        "items": [i.model_dump() for i in items[offset:offset + limit]],
+        "items": [_item_payload(i) for i in items[offset:offset + limit]],
     }
 
 

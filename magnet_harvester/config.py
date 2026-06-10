@@ -20,6 +20,7 @@ class CrawlerConfig:
     max_depth: int = 2
     concurrency: int = 3
     headless: bool = True
+    allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
 
 
 @dataclass
@@ -49,6 +50,7 @@ class Settings(BaseSettings):
     CRAWLER_MAX_DEPTH: int = 2
     CRAWLER_CONCURRENCY: int = 3
     CRAWLER_HEADLESS: bool = True
+    CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
 
@@ -81,6 +83,7 @@ class Settings(BaseSettings):
                 max_depth=self.CRAWLER_MAX_DEPTH,
                 concurrency=self.CRAWLER_CONCURRENCY,
                 headless=self.CRAWLER_HEADLESS,
+                allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
             )
         return self._crawler_config
 
@@ -102,6 +105,11 @@ class Settings(BaseSettings):
         if password:
             self.QBIT_PASSWORD = password
         self._qbit_config = None  # 下次调用 .qbit 时重建
+
+    @staticmethod
+    def _parse_csv_tuple(value: str) -> tuple[str, ...]:
+        values = tuple(item.strip() for item in value.split(",") if item.strip())
+        return values or ("2160p", "4k")
 
 
 settings = Settings()

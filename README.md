@@ -67,6 +67,7 @@ cp .env.example .env
 | `CRAWLER_MAX_DEPTH` | 默认最大深度 | `2` |
 | `CRAWLER_CONCURRENCY` | 抓取并发数 | `3` |
 | `CRAWLER_HEADLESS` | 是否无头运行 | `true` |
+| `CRAWLER_ALLOWED_RESOLUTIONS` | 保留的分辨率关键词，逗号分隔 | `2160p,4k` |
 | `FS_BASE_PATH` | 可选，本地可写下载根目录 | 空 |
 | `MIN_DISK_SPACE_GB` | 磁盘告警阈值 | `10.0` |
 
