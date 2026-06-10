@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Magnet Harvester is a FastAPI-based service that crawls websites for magnet links, classifies them using MiniMax AI, and adds them to qBittorrent for NAS downloading.
+Magnet Harvester is a FastAPI-based service for general-purpose magnet link crawling. It extracts magnet links from web pages, classifies them with local rules, and submits selected items to qBittorrent for NAS downloading.
 
 ## Architecture
 
@@ -18,14 +18,14 @@ Magnet Harvester is a FastAPI-based service that crawls websites for magnet link
         ▼                  ▼                    ▼              ▼
    ┌─────────┐       ┌──────────┐       ┌────────────┐  ┌──────────┐
    │  Agent  │       │Classifier│       │MagnetParser│  │ qBittorrent
-   │(MiniMax)│       │(MiniMax) │       │ (regex)    │  │ Client  │
+   │ tools   │       │local rules│      │ regex/base64│ │ Client  │
    └─────────┘       └──────────┘       └────────────┘  └──────────┘
 ```
 
 **Key Components:**
 - `main.py` - FastAPI server with WebSocket (`/ws`) and REST endpoints, includes `/api/config` for qB connection settings
-- `crawler.py` - Crawl4AI-based web crawler with magnet link extraction and resolution filtering (2160p/4k only)
-- `classifier/` - Local rule-based classification (no AI), with adult studio recognition via `studio_recognizer.py`
+- `crawler.py` - Crawl4AI-based web crawler with magnet link extraction and configurable resolution filtering
+- `classifier/` - Local rule-based classification with a replaceable helper module for project-specific naming rules
 - `magnet_parser.py` - Regex-based magnet link extraction from text/markdown/html
 - `qbit_client.py` - qBittorrent Web API v2 client with auto-login, category creation, and default path detection
 - `config.py` - Pydantic settings from `.env` file
@@ -41,18 +41,19 @@ qb-nas/
 ├── magnet_harvester/           # Python 包
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI 应用
-│   ├── agent.py                # Agent 对话循环
-│   ├── classifier.py           # AI 分类器
 │   ├── crawler.py              # Crawl4AI 爬虫
 │   ├── magnet_parser.py        # 磁力链接解析（正则提取）
 │   ├── qbit_client.py          # qBittorrent API
-│   ├── tts_client.py           # TTS 语音通知
 │   ├── config.py               # 配置（子配置拆分）
 │   ├── models.py               # Pydantic 模型
 │   ├── errors.py               # 错误处理
 │   ├── store.py                # ItemStore（中央存储）
 │   ├── bus.py                  # MessageBus（事件总线）
-│   └── pipeline.py             # HarvestPipeline（管道编排）
+│   ├── pipeline.py             # HarvestPipeline（管道编排）
+│   ├── studio_recognizer.py    # 可替换的分类辅助规则
+│   └── classifier/             # 本地分类规则
+│       ├── fallback.py
+│       └── local_classifier.py
 ├── tests/                      # 单元测试
 ├── docs/                       # 文档
 ├── static/                     # Web UI 静态资源
@@ -80,7 +81,7 @@ uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
 **Run tests:**
 ```bash
 python tests/test_imports.py          # Import verification
-python tests/test_base64.py           # Base64 regex tests
+python tests/test_magnet_extract.py   # Magnet extraction tests
 # Or run all
 python -m pytest tests/ -v
 ```
@@ -89,9 +90,9 @@ python -m pytest tests/ -v
 
 All settings are in `.env` (see `.env.example`):
 - `QBIT_HOST`, `QBIT_USERNAME`, `QBIT_PASSWORD` - qBittorrent connection
-- `MINIMAX_API_KEY` - Get from https://platform.minimaxi.com/user-center/basic-information/interface-key
-- `PATH_*` - Download directories for each category (电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他)
-- `TTS_ENABLED` - Voice notifications (default: true)
+- `CRAWLER_ALLOWED_RESOLUTIONS` - Comma-separated resolution keywords to keep, default `2160p,4k`
+- `FS_BASE_PATH` - Optional local filesystem root used only when the service should create directories itself
+- `MIN_DISK_SPACE_GB` - Disk warning threshold
 
 ## Key Implementation Details
 
@@ -102,33 +103,45 @@ All settings are in `.env` (see `.env.example`):
 - Depth-limited crawling (max 3) with crawl4ai link discovery
 - `text_mode=True` blocks media resources to reduce bandwidth
 
-**Classifier (`classifier.py`):**
-- Uses Anthropic SDK with MiniMax's Claude-compatible API endpoint
+**Classifier (`classifier/local_classifier.py`):**
+- Pure local rule engine; no external AI dependency
 - Streaming batch classification with per-item callbacks
-- Local regex rules as fallback for rate limit failures
-- Optional thinking-based recheck for low-confidence items (concurrency limited to 3)
+- Uses `classifier/fallback.py` for category rules
+- `studio_recognizer.py` is a project-specific helper module and can be replaced or generalized
 - Categories: 电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他
 
-**Agent (`agent.py`):**
-- Tool-based agent with 7 tools: get_stats, list_items, start_crawl, add_to_queue, reclassify_item, search_items, clear_all
-- Sliding window history trimming (max 20 turns) to stay within context limits
-- MAX_TURNS=8 safety limit to prevent runaway loops
+**Internal tool executor (`main.py`):**
+- `_tool_executor()` exposes project operations such as stats, item listing, crawl start, queueing downloads, reclassification, search, and clearing state
+- It operates through `ItemStore` and `HarvestPipeline`; keep new operations aligned with those boundaries
 
 **WebSocket Protocol:**
 - `/ws` - Real-time magnet item updates (broadcast on discovery, classification, download status)
-- `/ws/chat` - Agent conversation with streaming tokens and tool call notifications
 
 ## Common Patterns
 
 **Adding a new API endpoint:**
 1. Add Pydantic model in `models.py` if needed
 2. Implement handler in `main.py` using existing `_bg()` helper for background tasks
-3. Use `broadcast()` to push updates to connected WebSocket clients
+3. Use `MessageBus` events to push updates to connected WebSocket clients
 
 **Modifying classification behavior:**
-- Edit `LOCAL_RULES` in `classifier.py` for regex-based pre-filtering
-- Adjust `SYSTEM_PROMPT` for AI classification instructions
-- Categories must match keys in `settings.CATEGORY_PATHS`
+- Edit `LOCAL_RULES` in `classifier/fallback.py` for regex-based local classification
+- Extend or replace `studio_recognizer.py` if project-specific naming heuristics are needed
+- Categories should stay aligned with `VALID_CATEGORIES` in `classifier/fallback.py`
 
 **Background tasks:**
 Always use `_bg(coro, name)` helper in `main.py` - it wraps `asyncio.create_task` with exception logging via `add_done_callback`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `ashllll/qb-nas`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default mattpocock/skills triage label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo: read `CONTEXT.md` at the repo root and ADRs under `docs/adr/` when present. See `docs/agents/domain.md`.
