@@ -7,40 +7,45 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.models import TaskStatus
-from magnet_harvester.qbit_client import QBittorrentClient
+from magnet_harvester.qbit_client import QBittorrentClient, TorrentStatusMapper
 
 
 def test_map_torrent_status_for_queue():
-    result = QBittorrentClient.map_torrent_status({"state": "queuedDL", "progress": 0.0})
+    result = TorrentStatusMapper.map({"state": "queuedDL", "progress": 0.0})
     assert result["status"] == TaskStatus.queued
     assert result["progress"] == 0.0
 
 
 def test_map_torrent_status_for_downloading():
-    result = QBittorrentClient.map_torrent_status({"state": "downloading", "progress": 0.42})
+    result = TorrentStatusMapper.map({"state": "downloading", "progress": 0.42})
     assert result["status"] == TaskStatus.downloading
     assert result["progress"] == 42.0
 
 
 def test_map_torrent_status_for_completed():
-    result = QBittorrentClient.map_torrent_status({"state": "uploading", "progress": 1.0})
+    result = TorrentStatusMapper.map({"state": "uploading", "progress": 1.0})
     assert result["status"] == TaskStatus.success
     assert result["progress"] == 100.0
 
 
 def test_map_torrent_status_for_completed_paused_upload():
-    result = QBittorrentClient.map_torrent_status({"state": "pausedUP", "progress": 1.0})
+    result = TorrentStatusMapper.map({"state": "pausedUP", "progress": 1.0})
     assert result["status"] == TaskStatus.success
 
 
 def test_map_torrent_status_for_completed_queued_upload():
-    result = QBittorrentClient.map_torrent_status({"state": "queuedUP", "progress": 1.0})
+    result = TorrentStatusMapper.map({"state": "queuedUP", "progress": 1.0})
     assert result["status"] == TaskStatus.success
 
 
 def test_map_torrent_status_for_error():
-    result = QBittorrentClient.map_torrent_status({"state": "error", "progress": 0.0})
+    result = TorrentStatusMapper.map({"state": "error", "progress": 0.0})
     assert result["status"] == TaskStatus.error
+
+
+def test_qbit_client_status_mapping_keeps_backward_compatibility():
+    result = QBittorrentClient.map_torrent_status({"state": "uploading", "progress": 1.0})
+    assert result == TorrentStatusMapper.map({"state": "uploading", "progress": 1.0})
 
 
 if __name__ == "__main__":
@@ -50,4 +55,5 @@ if __name__ == "__main__":
     test_map_torrent_status_for_completed_paused_upload()
     test_map_torrent_status_for_completed_queued_upload()
     test_map_torrent_status_for_error()
+    test_qbit_client_status_mapping_keeps_backward_compatibility()
     print("=== qB state mapping tests passed! ===")

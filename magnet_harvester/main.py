@@ -49,6 +49,18 @@ class AppContext:
     qbit: QBittorrentClient
 
 
+@dataclass
+class RuntimeContext:
+    ctx: AppContext
+
+    async def replace_qbit(self, new_qbit):
+        old_qbit = self.ctx.qbit
+        self.ctx.qbit = new_qbit
+        self.ctx.pipeline._qbit = new_qbit
+        if old_qbit is not None:
+            await old_qbit.close()
+
+
 def get_context(request: Request) -> AppContext:
     return request.app.state.ctx
 
@@ -478,15 +490,9 @@ async def update_config(data: dict):
     new_qbit = QBittorrentClient(config=settings.qbit)
     lock = _ensure_qbit_lock()
     async with lock:
-        old_qbit = _qbit
         _qbit = new_qbit
-        if _pipeline:
-            _pipeline._qbit = new_qbit
         if hasattr(app.state, 'ctx') and app.state.ctx:
-            app.state.ctx.qbit = new_qbit
-
-        if old_qbit is not None:
-            await old_qbit.close()
+            await RuntimeContext(app.state.ctx).replace_qbit(new_qbit)
 
         ok = await new_qbit.ping()
     return {"status": "ok" if ok else "failed", "connected": ok}

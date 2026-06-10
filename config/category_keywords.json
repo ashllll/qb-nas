@@ -1,0 +1,9 @@
+{
+  "_note": "Generic keyword-to-category hints. keyword is matched in filenames, category is the qBittorrent category/save path.",
+  "keywords": [
+    {"keyword": "ubuntu", "category": "软件"},
+    {"keyword": "debian", "category": "软件"},
+    {"keyword": "national geographic", "category": "纪录片"},
+    {"keyword": "bbc", "category": "纪录片"}
+  ]
+}

@@ -2,14 +2,13 @@
 LocalClassifier — 纯本地规则分类器，零外部依赖
 
 直接使用 LOCAL_RULES 正则进行分类，同步 API。
-符合 ClassifyPhase 协议，可替换 MiniMaxClassifier。
-优先识别成人厂牌（StudioRecognizer），回退到 LOCAL_RULES。
+符合 ClassifyPhase 协议。
+优先识别通用分类关键词，回退到 LOCAL_RULES。
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable
 
 from magnet_harvester.classifier.fallback import (
     LOCAL_RULES,
@@ -17,7 +16,7 @@ from magnet_harvester.classifier.fallback import (
     classify_local,
     make_fallback,
 )
-from magnet_harvester.studio_recognizer import StudioRecognizer
+from magnet_harvester.keyword_recognizer import KeywordCategoryRecognizer
 
 log = logging.getLogger(__name__)
 
@@ -37,18 +36,17 @@ class LocalClassifier:
     def __init__(self):
         self.usage = _NullUsageStats()
         self._ok = True
-        self._studio_recognizer = StudioRecognizer()
+        self._keyword_recognizer = KeywordCategoryRecognizer()
 
     def _classify_name(self, name: str) -> dict:
-        """分类单个名称：优先厂牌识别，回退本地规则"""
-        # 先查成人厂牌
-        studio = self._studio_recognizer.recognize(name)
-        if studio:
+        """分类单个名称：优先关键词识别，回退本地规则"""
+        keyword = self._keyword_recognizer.recognize(name)
+        if keyword:
             return {
-                "category": studio["name"],
+                "category": keyword["category"],
                 "confidence": "high",
-                "reason": "adult_studio",
-                "save_path": studio["save_path"],
+                "reason": "keyword_rule",
+                "save_path": keyword["save_path"],
             }
         # 回退 LOCAL_RULES
         return make_fallback(name, "local_rule")
@@ -83,7 +81,7 @@ class LocalClassifier:
         """单条分类"""
         return self._classify_name(name)
 
-    # ── 兼容方法（原 MiniMaxClassifier 的接口）────
+    # ── 兼容方法 ────
 
     def get_cache_stats(self) -> dict:
         return {"cache": {"size": 0, "hits": 0, "misses": 0, "hit_rate_percent": 0.0}}
@@ -96,7 +94,7 @@ class LocalClassifier:
 
 
 class _NullUsageStats:
-    """占位 UsageStats — 保持与 MiniMaxClassifier 兼容"""
+    """占位 UsageStats — 保持分类器协议兼容"""
     input_tokens: int = 0
     output_tokens: int = 0
     api_calls: int = 0

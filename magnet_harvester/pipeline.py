@@ -38,11 +38,10 @@ class DownloadPhase(Protocol):
 
 # ── HarvestPipeline ──────────────────────────
 
-class HarvestPipeline:
-    def __init__(self, crawler: CrawlPhase, classifier: ClassifyPhase, qbit: DownloadPhase, store: Any, bus: MessageBus):
-        self._crawler = crawler
-        self._classifier = classifier
-        self._qbit = qbit
+class MagnetItemTransitions:
+    """Applies Magnet item state changes and publishes matching events."""
+
+    def __init__(self, store: Any, bus: MessageBus):
         self._store = store
         self._bus = bus
 
@@ -50,6 +49,84 @@ class HarvestPipeline:
         item = self._store.get(hash_key)
         if item is not None:
             await self._bus.emit(Event(EventType.STORE_CHANGED, {"item": item.model_dump()}))
+
+    async def found(self, item: MagnetItem) -> bool:
+        if not self._store.add(item):
+            return False
+        await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
+        return True
+
+    async def classification_started(self, hash_key: str):
+        self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None)
+        await self._emit_item_changed(hash_key)
+
+    async def classified(self, hash_key: str, result: dict):
+        self._store.update(
+            hash_key,
+            category=result["category"],
+            save_path=result["save_path"],
+            status=TaskStatus.pending,
+            progress=0.0,
+            torrent_state=None,
+            error_msg=None,
+        )
+        await self._bus.emit(Event(EventType.CLASSIFY_DONE, {
+            "hash": hash_key,
+            "category": result["category"],
+            "confidence": result.get("confidence", ""),
+            "reason": result.get("reason", ""),
+        }))
+        await self._emit_item_changed(hash_key)
+
+    async def download_submitting(self, hash_key: str):
+        item = self._store.get(hash_key)
+        if item is None:
+            return
+        self._store.update(
+            hash_key,
+            status=TaskStatus.adding,
+            progress=0.0,
+            torrent_state="submitting",
+            error_msg=None,
+        )
+        await self._emit_item_changed(hash_key)
+        await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
+
+    async def download_submitted(self, hash_key: str):
+        self._store.update(
+            hash_key,
+            status=TaskStatus.queued,
+            torrent_state="submitted",
+            progress=0.0,
+            error_msg=None,
+        )
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, TaskStatus.queued)
+
+    async def download_failed(self, hash_key: str, error_msg: str):
+        self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg)
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, TaskStatus.error)
+
+    async def _emit_download_result(self, hash_key: str, status: TaskStatus):
+        item = self._store.get(hash_key)
+        await self._bus.emit(Event(EventType.DOWNLOAD_RESULT, {
+            "hash": hash_key,
+            "status": status.value,
+            "error_msg": item.error_msg if item else None,
+            "progress": item.progress if item else 0.0,
+            "torrent_state": item.torrent_state if item else None,
+        }))
+
+
+class HarvestPipeline:
+    def __init__(self, crawler: CrawlPhase, classifier: ClassifyPhase, qbit: DownloadPhase, store: Any, bus: MessageBus):
+        self._crawler = crawler
+        self._classifier = classifier
+        self._qbit = qbit
+        self._store = store
+        self._bus = bus
+        self._transitions = MagnetItemTransitions(store=store, bus=bus)
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))
@@ -59,9 +136,8 @@ class HarvestPipeline:
             t = msg["type"]
             if t == "found":
                 item = MagnetItem(**msg["item"])
-                if self._store.add(item):
+                if await self._transitions.found(item):
                     new_hashes.append(item.hash)
-                    await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
             elif t == "progress":
                 await self._bus.emit(Event(EventType.CRAWL_PROGRESS, msg))
             elif t == "error":
@@ -86,62 +162,35 @@ class HarvestPipeline:
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
         for item in items:
-            self._store.update(item.hash, status=TaskStatus.classifying, error_msg=None)
-            await self._emit_item_changed(item.hash)
+            await self._transitions.classification_started(item.hash)
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
+        result_events: list[asyncio.Task] = []
 
         def on_result(index: int, result: dict):
             h = index_to_hash.get(index)
             if h:
-                self._store.update(
-                    h,
-                    category=result["category"],
-                    save_path=result["save_path"],
-                    status=TaskStatus.pending,
-                    progress=0.0,
-                    torrent_state=None,
-                    error_msg=None,
-                )
-                event = Event(EventType.CLASSIFY_DONE, {
-                    "hash": h, "category": result["category"],
-                    "confidence": result.get("confidence", ""), "reason": result.get("reason", ""),
-                })
-                asyncio.create_task(self._bus.emit(event))
-                asyncio.create_task(self._emit_item_changed(h))
+                result_events.append(asyncio.create_task(self._transitions.classified(h, result)))
 
         await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
+        if result_events:
+            await asyncio.gather(*result_events)
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
 
     async def _download_items(self, hashes: List[str]):
-        success = 0
         for i, h in enumerate(hashes):
             item = self._store.get(h)
             if not item or not item.category:
                 continue
-            self._store.update(h, status=TaskStatus.adding, progress=0.0, torrent_state="submitting", error_msg=None)
-            await self._emit_item_changed(h)
-            await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": h, "name": item.name}))
+            await self._transitions.download_submitting(h)
             try:
                 ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
-                status = TaskStatus.queued if ok else TaskStatus.error
                 if ok:
-                    success += 1
-                    self._store.update(h, torrent_state="submitted", progress=0.0)
+                    await self._transitions.download_submitted(h)
                 else:
-                    self._store.update(h, error_msg=self._qbit.last_error or "qB 返回失败")
+                    await self._transitions.download_failed(h, self._qbit.last_error or "qB 返回失败")
             except Exception as e:
-                status = TaskStatus.error
-                self._store.update(h, error_msg=str(e))
-            self._store.update(h, status=status)
-            await self._emit_item_changed(h)
-            item_updated = self._store.get(h)
-            await self._bus.emit(Event(EventType.DOWNLOAD_RESULT, {
-                "hash": h, "status": status.value,
-                "error_msg": item_updated.error_msg if item_updated else None,
-                "progress": item_updated.progress if item_updated else 0.0,
-                "torrent_state": item_updated.torrent_state if item_updated else None,
-            }))
+                await self._transitions.download_failed(h, str(e))
             if i > 0:
                 await asyncio.sleep(0.3)
 

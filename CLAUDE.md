@@ -50,7 +50,7 @@ qb-nas/
 │   ├── store.py                # ItemStore（中央存储）
 │   ├── bus.py                  # MessageBus（事件总线）
 │   ├── pipeline.py             # HarvestPipeline（管道编排）
-│   ├── studio_recognizer.py    # 可替换的分类辅助规则
+│   ├── keyword_recognizer.py   # 可替换的关键词分类辅助规则
 │   └── classifier/             # 本地分类规则
 │       ├── fallback.py
 │       └── local_classifier.py
@@ -107,7 +107,7 @@ All settings are in `.env` (see `.env.example`):
 - Pure local rule engine; no external AI dependency
 - Streaming batch classification with per-item callbacks
 - Uses `classifier/fallback.py` for category rules
-- `studio_recognizer.py` is a project-specific helper module and can be replaced or generalized
+- `keyword_recognizer.py` is a generic helper module for optional keyword-based category hints
 - Categories: 电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他
 
 **Internal tool executor (`main.py`):**
@@ -126,7 +126,7 @@ All settings are in `.env` (see `.env.example`):
 
 **Modifying classification behavior:**
 - Edit `LOCAL_RULES` in `classifier/fallback.py` for regex-based local classification
-- Extend or replace `studio_recognizer.py` if project-specific naming heuristics are needed
+- Extend or replace `keyword_recognizer.py` if project-specific naming heuristics are needed
 - Categories should stay aligned with `VALID_CATEGORIES` in `classifier/fallback.py`
 
 **Background tasks:**

@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem
-from magnet_harvester.main import AppContext, get_context
+from magnet_harvester.main import AppContext, RuntimeContext, get_context
 
 
 def _make_test_context() -> AppContext:
@@ -81,8 +81,31 @@ def test_appcontext_in_lifespan():
         assert resp.json()["ok"] is True
 
 
+def test_runtime_context_replaces_qbit_everywhere():
+    import asyncio
+
+    class FakeQbit:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    ctx = _make_test_context()
+    old_qbit = ctx.qbit
+    new_qbit = FakeQbit()
+    runtime = RuntimeContext(ctx=ctx)
+
+    asyncio.run(runtime.replace_qbit(new_qbit))
+
+    assert ctx.qbit is new_qbit
+    assert ctx.pipeline._qbit is new_qbit
+    assert old_qbit._client is None
+
+
 if __name__ == "__main__":
     test_appcontext_holds_deps()
     test_appcontext_in_endpoint()
     test_appcontext_in_lifespan()
+    test_runtime_context_replaces_qbit_everywhere()
     print("=== AppContext tests passed! ===")

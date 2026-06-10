@@ -41,9 +41,9 @@ def test_drop_1080p():
 
 def test_mixed():
     items = [
-        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF11111111111111111111111111111&dn=SexArt.26.02.01.2160p.WRB"),
-        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF22222222222222222222222222222&dn=SexArt.26.02.01.1080p.x264"),
-        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF33333333333333333333333333333&dn=SexArt.26.02.01.480p.XviD"),
+        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF11111111111111111111111111111&dn=Example.Movie.2160p.WEB-DL"),
+        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF22222222222222222222222222222&dn=Example.Movie.1080p.x264"),
+        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF33333333333333333333333333333&dn=Example.Movie.480p.XviD"),
         parse_magnet("magnet:?xt=urn:btih:4444444444444444444444444444444444444444&dn=Some.Movie.4K.UHD"),
     ]
     filtered = filter_resolution_items(items)

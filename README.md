@@ -144,7 +144,7 @@ qb-nas/
 │   ├── store.py
 │   ├── bus.py
 │   ├── errors.py
-│   ├── studio_recognizer.py
+│   ├── keyword_recognizer.py
 │   └── classifier/
 │       ├── __init__.py
 │       ├── fallback.py
@@ -173,7 +173,7 @@ python3 tests/test_error_handler.py
 - `magnet_harvester/crawler.py`：基于 `crawl4ai` 抽取页面文本和子链接
 - `magnet_harvester/magnet_parser.py`：从文本、HTML、属性值和 Base64 中提取 magnet
 - `magnet_harvester/classifier/local_classifier.py`：本地规则分类与兜底策略
-- `magnet_harvester/studio_recognizer.py`：分类辅助规则模块，可按需扩展或替换
+- `magnet_harvester/keyword_recognizer.py`：通用关键词分类辅助模块，可按需扩展或替换
 - `magnet_harvester/qbit_client.py`：管理 qB 登录、重试、分类目录和下载添加
 - `magnet_harvester/pipeline.py`：编排抓取、分类、下载三阶段
 
