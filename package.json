@@ -1,0 +1,13 @@
+{
+  "name": "qb-nas-hooks",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "test": "./.venv/bin/python -m pytest tests -q"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.6.2"
+  }
+}
