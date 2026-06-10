@@ -21,7 +21,7 @@ from magnet_harvester.classifier import LocalClassifier
 from magnet_harvester.config import settings
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
-from magnet_harvester.models import CrawlRequest, DownloadRequest
+from magnet_harvester.models import CrawlRequest, DownloadRequest, MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.store import InMemoryItemStore, ItemStore
@@ -61,6 +61,8 @@ _crawler: MagnetCrawler | None = None
 _classifier: LocalClassifier | None = None
 _qbit: QBittorrentClient | None = None
 _active_ws: set[WebSocket] = set()
+_qbit_sync_stop: asyncio.Event | None = None
+_qbit_sync_task: asyncio.Task | None = None
 
 
 # ═══════════════════════════════════════════════════
@@ -111,6 +113,12 @@ def _item_summary(item) -> dict:
     }
 
 
+def _item_payload(item: MagnetItem) -> dict:
+    data = item.model_dump()
+    data["status"] = item.status.value
+    return data
+
+
 # ── 后台任务工具 ──────────────────────────
 def _bg(coro, name: str | None = None) -> asyncio.Task:
     task = asyncio.create_task(coro, name=name)
@@ -137,6 +145,89 @@ async def _ws_broadcast(event: Event):
         except Exception:
             dead.add(ws)
     _active_ws.difference_update(dead)
+
+
+async def _emit_store_changed(hash_key: str, previous_status: TaskStatus | None = None):
+    if not _store or not _bus:
+        return
+
+    item = _store.get(hash_key)
+    if item is None:
+        return
+
+    await _bus.emit(Event(EventType.STORE_CHANGED, {"item": _item_payload(item)}))
+
+    if previous_status is not None and previous_status != item.status:
+        await _bus.emit(Event(EventType.DOWNLOAD_RESULT, {
+            "hash": hash_key,
+            "status": item.status.value,
+            "error_msg": item.error_msg,
+            "progress": item.progress,
+            "torrent_state": item.torrent_state,
+        }))
+
+
+async def _qbit_sync_loop(stop_event: asyncio.Event):
+    poll_interval = 2.0
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+        qbit = _qbit
+        store = _store
+        if qbit is None or store is None:
+            continue
+
+        tracked_items = [
+            item for item in store.list(limit=10000)
+            if item.status in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
+        ]
+        if not tracked_items:
+            continue
+
+        try:
+            snapshot = await qbit.poll_torrent_snapshot()
+            removed_hashes = qbit.take_recently_removed()
+        except Exception as e:
+            log.debug(f"qB 状态同步失败: {e}")
+            continue
+
+        for item in tracked_items:
+            hash_key = item.hash
+            torrent = snapshot.get(hash_key.lower())
+
+            if torrent is None:
+                if hash_key.lower() in removed_hashes and item.status != TaskStatus.success:
+                    previous_status = item.status
+                    store.update(
+                        hash_key,
+                        status=TaskStatus.error,
+                        error_msg="种子已从 qBittorrent 中消失",
+                        torrent_state="removed",
+                    )
+                    await _emit_store_changed(hash_key, previous_status=previous_status)
+                continue
+
+            mapped = qbit.map_torrent_status(torrent)
+            previous_status = item.status
+            fields: dict = {}
+
+            if previous_status != mapped["status"]:
+                fields["status"] = mapped["status"]
+            if item.progress != mapped["progress"]:
+                fields["progress"] = mapped["progress"]
+            if item.torrent_state != mapped["torrent_state"]:
+                fields["torrent_state"] = mapped["torrent_state"]
+            if item.error_msg and mapped["status"] != TaskStatus.error:
+                fields["error_msg"] = None
+
+            if fields:
+                store.update(hash_key, **fields)
+                await _emit_store_changed(hash_key, previous_status=previous_status)
 
 
 # ── Agent 工具执行器（通过 ItemStore / Pipeline）──
@@ -206,7 +297,7 @@ async def _tool_executor(name: str, inp: dict) -> dict:
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _bus, _pipeline, _crawler, _classifier, _qbit
+    global _store, _bus, _pipeline, _crawler, _classifier, _qbit, _qbit_sync_stop, _qbit_sync_task
 
     _crawler = MagnetCrawler(config=settings.crawler)
     _qbit = QBittorrentClient(config=settings.qbit)
@@ -229,6 +320,8 @@ async def lifespan(app: FastAPI):
     _bus.subscribe(None, _ws_broadcast)
 
     await _crawler.start()
+    _qbit_sync_stop = asyncio.Event()
+    _qbit_sync_task = _bg(_qbit_sync_loop(_qbit_sync_stop), name="qbit_sync")
     qbit_ok = await _qbit.ping()
     disk_info = settings.check_disk_space() if hasattr(settings, 'check_disk_space') else {}
     log.info(
@@ -238,6 +331,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    if _qbit_sync_stop is not None:
+        _qbit_sync_stop.set()
+    if _qbit_sync_task is not None:
+        await asyncio.gather(_qbit_sync_task, return_exceptions=True)
     await _crawler.stop()
     await _qbit.close()
     log.info("服务已关闭")
@@ -258,7 +355,7 @@ async def ws_main(ws: WebSocket):
     _active_ws.add(ws)
     try:
         if _store:
-            items = [i.model_dump() for i in _store.list(limit=10000)]
+            items = [_item_payload(i) for i in _store.list(limit=10000)]
             await ws.send_text(json.dumps({"type": "init", "items": items}, ensure_ascii=False))
         while True:
             await ws.receive_text()
@@ -297,10 +394,18 @@ async def reclassify(req: DownloadRequest):
 async def system_status():
     qbit_ok = await _qbit.ping()
     disk_info = {}
+    tracked = 0
+    if _store:
+        tracked = len([
+            item for item in _store.list(limit=10000)
+            if item.status in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
+        ])
     return {
         "qbittorrent": "online" if qbit_ok else "offline",
         "classifier": "local_rules",
         "items_count": _store.count if _store else 0,
+        "tracked_downloads": tracked,
+        "qbit_stats": _qbit.get_stats() if _qbit else {},
         "disk_space": disk_info,
     }
 

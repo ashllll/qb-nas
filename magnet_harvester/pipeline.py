@@ -46,6 +46,11 @@ class HarvestPipeline:
         self._store = store
         self._bus = bus
 
+    async def _emit_item_changed(self, hash_key: str):
+        item = self._store.get(hash_key)
+        if item is not None:
+            await self._bus.emit(Event(EventType.STORE_CHANGED, {"item": item.model_dump()}))
+
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))
         new_hashes: List[str] = []
@@ -80,17 +85,30 @@ class HarvestPipeline:
         index_to_hash = {i: item.hash for i, item in enumerate(items)}
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
+        for item in items:
+            self._store.update(item.hash, status=TaskStatus.classifying, error_msg=None)
+            await self._emit_item_changed(item.hash)
+
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
 
         def on_result(index: int, result: dict):
             h = index_to_hash.get(index)
             if h:
-                self._store.update(h, category=result["category"], save_path=result["save_path"], status=TaskStatus.pending)
+                self._store.update(
+                    h,
+                    category=result["category"],
+                    save_path=result["save_path"],
+                    status=TaskStatus.pending,
+                    progress=0.0,
+                    torrent_state=None,
+                    error_msg=None,
+                )
                 event = Event(EventType.CLASSIFY_DONE, {
                     "hash": h, "category": result["category"],
                     "confidence": result.get("confidence", ""), "reason": result.get("reason", ""),
                 })
                 asyncio.create_task(self._bus.emit(event))
+                asyncio.create_task(self._emit_item_changed(h))
 
         await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
@@ -101,23 +119,28 @@ class HarvestPipeline:
             item = self._store.get(h)
             if not item or not item.category:
                 continue
-            self._store.update(h, status=TaskStatus.adding)
+            self._store.update(h, status=TaskStatus.adding, progress=0.0, torrent_state="submitting", error_msg=None)
+            await self._emit_item_changed(h)
             await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": h, "name": item.name}))
             try:
                 ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
-                status = TaskStatus.success if ok else TaskStatus.error
+                status = TaskStatus.queued if ok else TaskStatus.error
                 if ok:
                     success += 1
+                    self._store.update(h, torrent_state="submitted", progress=0.0)
                 else:
                     self._store.update(h, error_msg=self._qbit.last_error or "qB 返回失败")
             except Exception as e:
                 status = TaskStatus.error
                 self._store.update(h, error_msg=str(e))
             self._store.update(h, status=status)
+            await self._emit_item_changed(h)
             item_updated = self._store.get(h)
             await self._bus.emit(Event(EventType.DOWNLOAD_RESULT, {
                 "hash": h, "status": status.value,
                 "error_msg": item_updated.error_msg if item_updated else None,
+                "progress": item_updated.progress if item_updated else 0.0,
+                "torrent_state": item_updated.torrent_state if item_updated else None,
             }))
             if i > 0:
                 await asyncio.sleep(0.3)

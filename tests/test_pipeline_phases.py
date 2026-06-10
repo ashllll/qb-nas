@@ -131,9 +131,10 @@ def test_pipeline_with_fake_phases():
     assert item_a is not None
     assert item_a.category == "电影"
 
-    # 验证下载被触发（auto_download=True）→ 状态变为 success
+    # 验证下载被触发（auto_download=True）→ 状态变为 queued，后续由 qB 同步器推进
     assert len(download_phase.called_with) >= 1
-    assert item_a.status == TaskStatus.success
+    assert item_a.status == TaskStatus.queued
+    assert item_a.torrent_state == "submitted"
 
 
 def test_pipeline_skip_download():

@@ -12,6 +12,8 @@ class TaskStatus(str, Enum):
     crawling    = "crawling"
     classifying = "classifying"
     adding      = "adding"
+    queued      = "queued"
+    downloading = "downloading"
     success     = "success"
     error       = "error"
     skipped     = "skipped"
@@ -26,6 +28,8 @@ class MagnetItem(BaseModel):
     category:   Optional[str] = None
     save_path:  Optional[str] = None
     status:     TaskStatus = TaskStatus.pending
+    progress:   float = 0.0
+    torrent_state: Optional[str] = None
     error_msg:  Optional[str] = None
 
 
@@ -58,4 +62,3 @@ class MetricSnapshot:
 
     def as_dict(self) -> dict:
         return {"namespace": self.namespace, **self.values}
-

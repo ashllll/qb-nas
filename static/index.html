@@ -227,12 +227,13 @@ function handleMsg(msg) {
     case 'crawl_start':     setProgress(10); setCrawling(true); addLog(`爬取开始: ${msg.url}`,'info'); break;
     case 'progress':        addLog(msg.msg+(msg.url?` [${shortUrl(msg.url)}]`:''),'default'); break;
     case 'magnet_found':    items.set(msg.item.hash,msg.item); updateCounts(); appendRow(msg.item); addLog(`✓ ${esc(msg.item.name.slice(0,50))}`,'found'); setProgress(Math.min(90,10+items.size)); break;
+    case 'store_changed':   if(msg.item){items.set(msg.item.hash,msg.item); if(document.getElementById(`row-${msg.item.hash}`)) updateRow(msg.item.hash); else appendRow(msg.item);} break;
     case 'classify_start':  addLog(`分类 ${msg.count} 个资源...`,'info'); break;
     case 'classify_done':   if(items.has(msg.hash)){items.get(msg.hash).category=msg.category;items.get(msg.hash).status='pending';updateRow(msg.hash);} break;
     case 'classify_all_done': addLog('✅ 分类完成','info'); break;
     case 'crawl_done':      setProgress(100); setTimeout(()=>setProgress(0),1500); setCrawling(false); addLog(`🏁 完成，${msg.total} 个磁力`,'info'); break;
     case 'download_start':  addLog(`↑ 发送: ${esc((items.get(msg.hash)||{}).name||'').slice(0,35)}`,'info'); break;
-    case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;if(msg.error_msg)it.error_msg=msg.error_msg;updateRow(msg.hash);const errSuffix=msg.error_msg?' — '+esc(msg.error_msg.slice(0,60)):'';addLog(`${msg.status==='success'?'✓':'✗'} ${esc(it.name.slice(0,35))}${errSuffix}`,msg.status==='success'?'found':'error');} break;
+    case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;if(msg.error_msg!==undefined)it.error_msg=msg.error_msg;if(msg.progress!==undefined)it.progress=msg.progress;if(msg.torrent_state!==undefined)it.torrent_state=msg.torrent_state;updateRow(msg.hash);logDownloadState(it, msg);} break;
     case 'items_cleared':   items.clear();selected.clear();renderTable(); break;
     case 'error':           addLog(`⚠ ${msg.msg}`,'error'); break;
   }
@@ -290,18 +291,20 @@ async function reclassifySelected() {
 async function clearAll() { if(confirm('清空所有记录？')) await fetch('/api/items',{method:'DELETE'}); }
 
 // ── Table ─────────────────────────────────────────────────
-const SI={pending:'○',classifying:'⋯',adding:'↑',success:'✓',error:'✗',skipped:'—'};
-const SC={pending:'var(--text2)',classifying:'var(--amber)',adding:'var(--amber)',success:'var(--green)',error:'var(--red)',skipped:'var(--text2)'};
+const SI={pending:'○',classifying:'⋯',adding:'↑',queued:'◌',downloading:'⇣',success:'✓',error:'✗',skipped:'—'};
+const SC={pending:'var(--text2)',classifying:'var(--amber)',adding:'var(--amber)',queued:'var(--accent)',downloading:'var(--green)',success:'var(--green)',error:'var(--red)',skipped:'var(--text2)'};
 const catCls = c => c ? `cat-${c}` : 'cat-pending';
 
 function rowHtml(item) {
   const vis = filter==='all' || item.category===filter;
+  const progress = Number(item.progress||0);
+  const statusTitle = item.error_msg || `${item.status}${item.torrent_state?` · ${item.torrent_state}`:''}${progress?` · ${progress}%`:''}`;
   return `<tr id="row-${item.hash}" class="${selected.has(item.hash)?'selected':''}" style="${vis?'':'display:none'}">
     <td><input type="checkbox" class="cb" ${selected.has(item.hash)?'checked':''} onchange="toggleRow('${item.hash}',this)"></td>
     <td class="name-td"><div class="name-main" title="${esc(item.name)}">${esc(item.name)}</div><div class="name-sub">${item.hash.slice(0,16)}…</div></td>
     <td><span class="cat-chip ${catCls(item.category)}">${esc(item.category||'—')}</span></td>
     <td class="size-td">${esc(item.size||'—')}</td>
-    <td class="status-icon" style="color:${SC[item.status]||SC.pending}" title="${esc(item.error_msg||item.status)}">${SI[item.status]||'○'}</td>
+    <td class="status-icon" style="color:${SC[item.status]||SC.pending}" title="${esc(statusTitle)}">${SI[item.status]||'○'}${item.status==='downloading'&&progress?` ${progress.toFixed(0)}%`:''}</td>
     <td class="src-td" title="${esc(item.source_url||'')}">${esc(shortUrl(item.source_url))}</td>
   </tr>`;
 }
@@ -312,7 +315,7 @@ function updateRow(hash) {
   const row=document.getElementById(`row-${hash}`); if(!row) return;
   row.style.display=(filter==='all'||it.category===filter)?'':'none';
   const ce=row.querySelector('.cat-chip'); if(ce){ce.className=`cat-chip ${catCls(it.category)}`;ce.textContent=it.category||'—';}
-  const se=row.querySelector('.status-icon'); if(se){se.textContent=SI[it.status]||'○';se.style.color=SC[it.status]||SC.pending;}
+  const se=row.querySelector('.status-icon'); if(se){const progress=Number(it.progress||0);se.textContent=`${SI[it.status]||'○'}${it.status==='downloading'&&progress?` ${progress.toFixed(0)}%`:''}`;se.style.color=SC[it.status]||SC.pending;se.title=it.error_msg||`${it.status}${it.torrent_state?` · ${it.torrent_state}`:''}${progress?` · ${progress}%`:''}`;}
   updateCounts();
 }
 function renderTable() {
@@ -333,6 +336,14 @@ function updateCounts(){document.getElementById('totalCount').textContent=items.
 // ── Utils ─────────────────────────────────────────────────
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function shortUrl(u){if(!u)return'—';try{const x=new URL(u);return x.hostname+x.pathname.slice(0,18);}catch{return String(u).slice(0,28);}}
+function logDownloadState(item, msg){
+  const label = (item.name||'').slice(0,35);
+  const progress = msg.progress ? ` ${Math.round(msg.progress)}%` : '';
+  if(msg.status==='queued') addLog(`⏳ 已进入 qB 队列: ${label}`,'info');
+  else if(msg.status==='downloading') addLog(`⇣ 下载中${progress}: ${label}`,'found');
+  else if(msg.status==='success') addLog(`✓ 下载完成: ${label}`,'found');
+  else if(msg.status==='error'){const errSuffix=msg.error_msg?' — '+msg.error_msg.slice(0,60):'';addLog(`✗ 下载失败: ${label}${errSuffix}`,'error');}
+}
 // FIX-L: 函数内变量用 logBox，不再遮蔽 window.console
 function addLog(msg,type='default'){const logBox=document.getElementById('logBox');const now=new Date().toTimeString().slice(0,8);const line=document.createElement('div');line.className='log-line';line.innerHTML=`<span class="log-time">${now}</span><span class="log-msg ${type}">${esc(msg)}</span>`;logBox.appendChild(line);logBox.scrollTop=logBox.scrollHeight;while(logBox.children.length>200)logBox.removeChild(logBox.firstChild);}
 function setCrawling(v){const b=document.getElementById('crawlBtn');b.disabled=v;b.classList.toggle('loading',v);b.textContent=v?'◉ 爬取中...':'▶ 开始爬取';}

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from magnet_harvester.config import QBitConfig, settings
+from magnet_harvester.models import TaskStatus
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,9 @@ class QBittorrentClient:
         }
         self._cached_default_path: str | None = None
         self.last_error: str | None = None
+        self._maindata_rid = 0
+        self._torrent_snapshot: Dict[str, dict] = {}
+        self._recently_removed: set[str] = set()
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -83,6 +87,7 @@ class QBittorrentClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+        self._cookie = None
 
     async def _login(self, force: bool = False) -> bool:
         if not force and self._cookie:
@@ -200,6 +205,65 @@ class QBittorrentClient:
         except Exception as e:
             log.warning(f"get_maindata 失败: {e}")
             return {}
+
+    async def poll_torrent_snapshot(self) -> Dict[str, dict]:
+        """增量同步 qB torrent 状态，并缓存当前快照。"""
+        data = await self.get_maindata(rid=self._maindata_rid)
+        if not data:
+            return dict(self._torrent_snapshot)
+
+        self._maindata_rid = data.get("rid", self._maindata_rid)
+
+        torrents = data.get("torrents", {}) or {}
+        for hash_key, info in torrents.items():
+            self._torrent_snapshot[hash_key.lower()] = info
+
+        removed = {str(h).lower() for h in data.get("torrents_removed", [])}
+        if removed:
+            self._recently_removed = removed
+            for hash_key in removed:
+                self._torrent_snapshot.pop(hash_key, None)
+        else:
+            self._recently_removed = set()
+
+        return dict(self._torrent_snapshot)
+
+    def take_recently_removed(self) -> set[str]:
+        removed = set(self._recently_removed)
+        self._recently_removed.clear()
+        return removed
+
+    @staticmethod
+    def map_torrent_status(torrent: dict) -> dict:
+        state = str(torrent.get("state", "") or "")
+        progress = float(torrent.get("progress") or 0.0)
+
+        queued_states = {"queuedDL", "queuedUP", "pausedDL", "pausedUP"}
+        downloading_states = {
+            "downloading", "forcedDL", "metaDL", "stalledDL",
+            "checkingDL", "checkingResumeData", "moving",
+        }
+        success_states = {
+            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP",
+        }
+        error_states = {"error", "missingFiles", "unknown"}
+
+        if state in error_states:
+            status = TaskStatus.error
+        elif state in downloading_states or 0.0 < progress < 1.0:
+            status = TaskStatus.downloading
+        elif state in queued_states:
+            status = TaskStatus.queued
+        elif progress >= 1.0 or state in success_states:
+            status = TaskStatus.success
+        else:
+            status = TaskStatus.queued
+
+        return {
+            "status": status,
+            "progress": round(progress * 100, 1),
+            "torrent_state": state or None,
+        }
 
     async def get_torrent_properties(self, hash: str) -> Dict[str, Any]:
         try:
@@ -337,14 +401,14 @@ class QBittorrentClient:
         self.stats.total_added += 1
 
         # 0. 校验磁力格式
-        btih_match = re.search(r'btih:([a-fA-F0-9]{8})', magnet)
+        btih_match = re.search(r'btih:([A-Za-z0-9]{8,40})', magnet)
         if not btih_match:
             self.last_error = "磁力链接格式无效（缺少 btih）"
             self.stats.total_failed += 1
             self.stats.consecutive_failures += 1
             self.stats.last_failure_time = time.time()
             return False
-        btih_prefix = btih_match.group(1)
+        btih_prefix = btih_match.group(1)[:8]
 
         # 1. 根据 qB 默认路径生成分类的 savePath（用于 createCategory，不用于 add）
         if save_path and not save_path.startswith("/"):
@@ -397,13 +461,20 @@ class QBittorrentClient:
             log.error(f"add_magnet 异常: {e}")
             return False
 
-    async def get_torrents(self, category: Optional[str] = None, status: Optional[str] = None) -> List[dict]:
+    async def get_torrents(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        hashes: Optional[List[str]] = None,
+    ) -> List[dict]:
         try:
             params = {}
             if category:
                 params["category"] = category
             if status:
                 params["status"] = status
+            if hashes:
+                params["hashes"] = "|".join(hashes)
             
             r = await self._req("GET", "/torrents/info", params=params)
             
@@ -447,4 +518,3 @@ class QBittorrentClient:
 
     def is_healthy(self) -> bool:
         return self.stats.consecutive_failures < 3
-
