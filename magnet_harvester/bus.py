@@ -62,10 +62,25 @@ class MessageBus:
 
     async def emit(self, event: Event):
         """发射事件到所有匹配的订阅者（并发执行）"""
+        tasks: list[asyncio.Task] = []
+
         for cb in self._global_subscribers:
-            asyncio.create_task(self._safe_call(cb, event), name=f"bus:global")
+            tasks.append(
+                asyncio.create_task(
+                    self._safe_call(cb, event),
+                    name="bus:global",
+                )
+            )
         for cb in self._subscribers.get(event.type, []):
-            asyncio.create_task(self._safe_call(cb, event), name=f"bus:{event.type.value}")
+            tasks.append(
+                asyncio.create_task(
+                    self._safe_call(cb, event),
+                    name=f"bus:{event.type.value}",
+                )
+            )
+
+        if tasks:
+            await asyncio.gather(*tasks)
 
     @staticmethod
     async def _safe_call(cb: Subscriber, event: Event):

@@ -48,9 +48,6 @@ async def test_broadcasts_event_to_all_connected_ws():
     event = Event(EventType.MAGNET_FOUND, {"item": {"hash": "ABC", "name": "Test"}})
     await bus.emit(event)
 
-    # Wait for async broadcast
-    await asyncio.sleep(0.05)
-
     assert len(ws1.sent) == 1
     assert len(ws2.sent) == 1
     data = json.loads(ws1.sent[0])
@@ -76,7 +73,6 @@ async def test_removes_dead_ws_on_broadcast_failure():
 
     event = Event(EventType.STORE_CHANGED, {"item": {}})
     await bus.emit(event)
-    await asyncio.sleep(0.05)
 
     # bad_ws should be removed, good_ws should still receive
     assert len(good_ws.sent) == 1
@@ -111,6 +107,5 @@ async def test_remove_disconnects_ws():
 
     event = Event(EventType.CRAWL_DONE, {"total": 5})
     await bus.emit(event)
-    await asyncio.sleep(0.05)
 
     assert len(ws.sent) == 0
