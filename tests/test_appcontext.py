@@ -317,11 +317,12 @@ def test_appcontext_runtime_service_slots_are_not_typed_as_any():
 
 def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     from magnet_harvester.api.websocket import WSBroadcaster
-    from magnet_harvester.pipeline import DownloadPhase, HarvestPipeline, MagnetItemTransitions
+    from magnet_harvester.pipeline import ClassifyPhase, DownloadPhase, HarvestPipeline, MagnetItemTransitions
     from magnet_harvester.services.agent_tools import ToolExecutor
     from magnet_harvester.services.qbit_sync import QBitSyncLoop
 
     websocket_hints = WSBroadcaster.__init__.__annotations__
+    classify_usage_hints = ClassifyPhase.usage.fget.__annotations__
     download_phase_hints = DownloadPhase.__annotations__
     transitions_hints = MagnetItemTransitions.__init__.__annotations__
     pipeline_hints = HarvestPipeline.__init__.__annotations__
@@ -329,6 +330,7 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     qbit_sync_hints = QBitSyncLoop.__init__.__annotations__
 
     assert "Any" not in str(websocket_hints["store"]), "WSBroadcaster.store"
+    assert "Any" not in str(classify_usage_hints["return"]), "ClassifyPhase.usage"
     assert "last_error" in download_phase_hints, "DownloadPhase.last_error"
     assert "Any" not in str(transitions_hints["store"]), "MagnetItemTransitions.store"
     assert "Any" not in str(pipeline_hints["store"]), "HarvestPipeline.store"

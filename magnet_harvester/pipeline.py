@@ -18,6 +18,11 @@ log = logging.getLogger(__name__)
 # ── Phase Protocols ──────────────────────────
 
 @runtime_checkable
+class UsageStats(Protocol):
+    def as_dict(self) -> dict: ...
+
+
+@runtime_checkable
 class CrawlPhase(Protocol):
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
 
@@ -26,7 +31,7 @@ class CrawlPhase(Protocol):
 class ClassifyPhase(Protocol):
     async def classify_stream_batch(self, items: List[dict], on_result: Callable[[int, dict], None] | None = None) -> None: ...
     @property
-    def usage(self) -> Any: ...
+    def usage(self) -> UsageStats: ...
     def get_cache_stats(self) -> dict: ...
 
 
