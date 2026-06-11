@@ -61,10 +61,9 @@ def test_core_modules_import_and_instantiate():
     assert ErrorCategory.CRAWLER.value == "crawler"
     assert ErrorSeverity.ERROR.value == "error"
 
-    from magnet_harvester.main import app, stats
+    from magnet_harvester.main import app
 
     assert len(app.routes) > 0
-    assert stats.as_dict()["api_calls"] >= 0
 
 
 if __name__ == "__main__":

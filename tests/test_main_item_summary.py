@@ -1,12 +1,10 @@
-"""
-测试 main._item_summary 的 API 序列化格式
-"""
+"""测试 serializers 的 API 序列化格式。"""
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.main import _item_payload, _item_summary
+from magnet_harvester.utils.serializers import _item_payload, _item_summary
 from magnet_harvester.models import MagnetItem, TaskStatus
 
 

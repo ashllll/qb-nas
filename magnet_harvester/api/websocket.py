@@ -5,14 +5,18 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 
 from magnet_harvester.bus import Event, MessageBus
 from magnet_harvester.utils.serializers import _item_payload
 
 log = logging.getLogger(__name__)
+router = APIRouter()
+STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
 
 
 class WSBroadcaster:
@@ -69,3 +73,16 @@ class WSBroadcaster:
             except Exception:
                 dead.add(ws)
         self._active_ws.difference_update(dead)
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    ctx = getattr(getattr(ws, "app", None), "state", None)
+    broadcaster = getattr(getattr(ctx, "ctx", None), "broadcaster", None)
+    if broadcaster:
+        await broadcaster.handle_connection(ws)
+
+
+@router.get("/")
+async def index():
+    return FileResponse(STATIC_DIR / "index.html")
