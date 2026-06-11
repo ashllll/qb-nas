@@ -73,8 +73,29 @@ def test_crawl_worker_reports_page_errors_and_finishes():
     assert messages[-1]["metrics"]["errors"] == 1
 
 
+def test_crawl_consumer_close_cleans_up_worker_session():
+    class SlowCrawler(MagnetCrawler):
+        async def start(self):
+            self._crawler = object()
+
+        async def _crawl_page(self, url, depth, visited, frontier, events):
+            await events.put({"type": "progress", "msg": "tick", "url": url})
+            await asyncio.sleep(0.02)
+
+    async def consume_and_close():
+        crawler = SlowCrawler(config=CrawlerConfig(concurrency=2))
+        stream = crawler.crawl("https://example.com", depth=1)
+        first = await anext(stream)
+        assert first["type"] == "progress"
+        async with asyncio.timeout(1):
+            await stream.aclose()
+
+    asyncio.run(consume_and_close())
+
+
 if __name__ == "__main__":
     test_extract_detail_links_filters_and_limits()
     test_claim_unvisited_links_reserves_before_await_points()
     test_crawl_worker_reports_page_errors_and_finishes()
+    test_crawl_consumer_close_cleans_up_worker_session()
     print("=== crawler detail link tests passed! ===")

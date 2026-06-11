@@ -124,44 +124,17 @@ class MagnetCrawler:
         visited: Set[str] = {url}
         frontier: asyncio.Queue[tuple[str, int]] = asyncio.Queue()
         events: asyncio.Queue[dict | None] = asyncio.Queue()
-        workers: list[asyncio.Task] = []
 
         await frontier.put((url, depth))
-
-        async def worker() -> None:
-            while True:
-                current_url, remaining_depth = await frontier.get()
-                try:
-                    await self._crawl_page(current_url, remaining_depth, visited, frontier, events)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    self._metrics.errors += 1
-                    log.warning(f"页面处理异常: {current_url} - {e}", exc_info=e)
-                    await events.put({"type": "error", "msg": str(e), "url": current_url})
-                finally:
-                    frontier.task_done()
-
-        worker_count = max(1, min(self._config.concurrency, 8))
-        for idx in range(worker_count):
-            workers.append(asyncio.create_task(worker(), name=f"crawl-worker:{idx}"))
-
-        async def finalize() -> None:
-            try:
-                await frontier.join()
-            finally:
-                for task in workers:
-                    task.cancel()
-                await asyncio.gather(*workers, return_exceptions=True)
-                await events.put({
-                    "type": "done",
-                    "total": self._metrics.magnets_found,
-                    "url": url,
-                    "metrics": self._metrics.as_dict(),
-                })
-                await events.put(None)
-
-        finalize_task = asyncio.create_task(finalize(), name="crawl-finalize")
+        session_task = asyncio.create_task(
+            self._run_crawl_session(
+                root_url=url,
+                visited=visited,
+                frontier=frontier,
+                events=events,
+            ),
+            name="crawl-session",
+        )
 
         try:
             while True:
@@ -173,7 +146,67 @@ class MagnetCrawler:
             log.error(f"爬取过程异常: {e}")
             yield {"type": "error", "msg": str(e), "url": url}
         finally:
-            await finalize_task
+            await session_task
+
+    async def _run_crawl_session(
+        self,
+        root_url: str,
+        visited: Set[str],
+        frontier: asyncio.Queue[tuple[str, int]],
+        events: asyncio.Queue[dict | None],
+    ) -> None:
+        workers: list[asyncio.Task] = []
+
+        try:
+            async with asyncio.TaskGroup() as task_group:
+                for idx in range(self._worker_count):
+                    workers.append(
+                        task_group.create_task(
+                            self._crawl_worker(visited, frontier, events),
+                            name=f"crawl-worker:{idx}",
+                        )
+                    )
+
+                await frontier.join()
+                for task in workers:
+                    task.cancel()
+        finally:
+            await events.put({
+                "type": "done",
+                "total": self._metrics.magnets_found,
+                "url": root_url,
+                "metrics": self._metrics.as_dict(),
+            })
+            await events.put(None)
+
+    async def _crawl_worker(
+        self,
+        visited: Set[str],
+        frontier: asyncio.Queue[tuple[str, int]],
+        events: asyncio.Queue[dict | None],
+    ) -> None:
+        while True:
+            current_url, remaining_depth = await frontier.get()
+            try:
+                await self._crawl_page(
+                    current_url,
+                    remaining_depth,
+                    visited,
+                    frontier,
+                    events,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self._metrics.errors += 1
+                log.warning(f"页面处理异常: {current_url} - {e}", exc_info=e)
+                await events.put({"type": "error", "msg": str(e), "url": current_url})
+            finally:
+                frontier.task_done()
+
+    @property
+    def _worker_count(self) -> int:
+        return max(1, min(self._config.concurrency, 8))
 
     async def _crawl_page(
         self,
