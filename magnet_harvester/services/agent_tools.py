@@ -5,18 +5,32 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Protocol
 
 from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.context.app_context import BackgroundTaskSpawner
+from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import _item_summary
 
 log = logging.getLogger(__name__)
 
 
+class PipelineToolTarget(Protocol):
+    async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
+    async def download(self, hashes: list[str]): ...
+    async def reclassify(self, hashes: list[str]): ...
+
+
 class ToolExecutor:
     """Dispatches 7 agent tools to ItemStore / HarvestPipeline operations."""
 
-    def __init__(self, store: Any, pipeline: Any, bus: MessageBus, task_manager: Any = None):
+    def __init__(
+        self,
+        store: ItemStore,
+        pipeline: PipelineToolTarget | None,
+        bus: MessageBus,
+        task_manager: BackgroundTaskSpawner | None = None,
+    ):
         self._store = store
         self._pipeline = pipeline
         self._bus = bus

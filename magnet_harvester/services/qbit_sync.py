@@ -5,14 +5,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Protocol
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import TaskStatus
+from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import _item_payload
 
 log = logging.getLogger(__name__)
+
+
+class QBitSyncClient(Protocol):
+    async def poll_torrent_snapshot(self) -> dict: ...
+    def take_recently_removed(self) -> set[str]: ...
+    def map_torrent_status(self, torrent) -> dict: ...
 
 
 class QBitSyncLoop:
@@ -20,8 +27,8 @@ class QBitSyncLoop:
 
     def __init__(
         self,
-        qbit_client: Any,
-        store: Any,
+        qbit_client: QBitSyncClient,
+        store: ItemStore,
         bus: MessageBus,
         poll_interval: float = 2.0,
         task_manager: BackgroundTaskSpawner | None = None,

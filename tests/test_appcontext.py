@@ -315,6 +315,20 @@ def test_appcontext_runtime_service_slots_are_not_typed_as_any():
         assert "Any" not in str(hints[field_name]), field_name
 
 
+def test_runtime_service_constructor_contracts_are_not_typed_as_any():
+    from magnet_harvester.services.agent_tools import ToolExecutor
+    from magnet_harvester.services.qbit_sync import QBitSyncLoop
+
+    tool_executor_hints = ToolExecutor.__init__.__annotations__
+    qbit_sync_hints = QBitSyncLoop.__init__.__annotations__
+
+    for field_name in ("store", "pipeline", "task_manager"):
+        assert "Any" not in str(tool_executor_hints[field_name]), f"ToolExecutor.{field_name}"
+
+    for field_name in ("qbit_client", "store"):
+        assert "Any" not in str(qbit_sync_hints[field_name]), f"QBitSyncLoop.{field_name}"
+
+
 if __name__ == "__main__":
     test_appcontext_holds_deps()
     test_appcontext_in_endpoint()
