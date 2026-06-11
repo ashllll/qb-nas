@@ -16,6 +16,8 @@ from magnet_harvester.models import TaskStatus
 
 log = logging.getLogger(__name__)
 
+QBitApiObject = dict[str, object]
+
 
 def _safe_fs_segment(name: str) -> str:
     """把分类名压成单个本地路径段，避免 FS_BASE_PATH 下目录穿越。"""
@@ -237,7 +239,7 @@ class QBittorrentClient:
             log.warning(f"qBittorrent ping 失败: {e}")
             return False
 
-    async def get_maindata(self, rid: int = 0) -> Dict[str, Any]:
+    async def get_maindata(self, rid: int = 0) -> QBitApiObject:
         try:
             r = await self._req("GET", f"/sync/maindata?rid={rid}")
             if r.status_code == 200:
@@ -278,7 +280,7 @@ class QBittorrentClient:
     def map_torrent_status(torrent: dict) -> dict:
         return TorrentStatusMapper.map(torrent)
 
-    async def get_torrent_properties(self, hash: str) -> Dict[str, Any]:
+    async def get_torrent_properties(self, hash: str) -> QBitApiObject:
         try:
             r = await self._req("GET", f"/torrents/properties?hash={hash}")
             if r.status_code == 200:
@@ -517,7 +519,7 @@ class QBittorrentClient:
         except Exception:
             return False
 
-    async def get_transfer_info(self) -> Dict[str, Any]:
+    async def get_transfer_info(self) -> QBitApiObject:
         try:
             r = await self._req("GET", "/transfer/info")
             if r.status_code == 200:
