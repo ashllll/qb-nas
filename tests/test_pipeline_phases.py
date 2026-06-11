@@ -71,9 +71,12 @@ class FakeDownloadPhase:
     def __init__(self, success: bool = True):
         self.success = success
         self.called_with: List[tuple] = []
+        self.last_error: str | None = None
 
     async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool:
         self.called_with.append((magnet[:20], category, save_path))
+        if not self.success:
+            self.last_error = "fake download failed"
         return self.success
 
     def close(self):
