@@ -10,7 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Callable, Coroutine, Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
@@ -34,13 +34,13 @@ class EventType(str, Enum):
 @dataclass
 class Event:
     type: EventType
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, object] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {"type": self.type.value, **self.data}
 
 
-Subscriber = Callable[[Event], Coroutine[Any, Any, None]]
+Subscriber = Callable[[Event], Coroutine[object, object, None]]
 
 
 class MessageBus:

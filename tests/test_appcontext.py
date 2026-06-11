@@ -316,6 +316,7 @@ def test_appcontext_runtime_service_slots_are_not_typed_as_any():
 
 
 def test_runtime_service_constructor_contracts_are_not_typed_as_any():
+    from magnet_harvester.bus import Event, Subscriber
     from magnet_harvester.api.websocket import WSBroadcaster
     from magnet_harvester.errors import ErrorRecord
     from magnet_harvester.models import MetricSnapshot
@@ -324,6 +325,7 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     from magnet_harvester.services.agent_tools import ToolExecutor
     from magnet_harvester.services.qbit_sync import QBitSyncLoop
 
+    event_hints = Event.__annotations__
     error_record_hints = ErrorRecord.__annotations__
     metric_snapshot_hints = MetricSnapshot.__annotations__
     qbit_client_hints = QBittorrentClient.get_maindata.__annotations__
@@ -337,6 +339,8 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     tool_executor_hints = ToolExecutor.__init__.__annotations__
     qbit_sync_hints = QBitSyncLoop.__init__.__annotations__
 
+    assert "Any" not in str(event_hints["data"]), "Event.data"
+    assert "Any" not in str(Subscriber), "Subscriber"
     assert "Any" not in str(error_record_hints["details"]), "ErrorRecord.details"
     assert "Any" not in str(metric_snapshot_hints["values"]), "MetricSnapshot.values"
     assert "Any" not in str(qbit_client_hints["return"]), "QBittorrentClient.get_maindata"
