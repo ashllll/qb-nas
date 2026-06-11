@@ -7,6 +7,8 @@ import asyncio
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
+
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
@@ -27,6 +29,15 @@ class FakePipeline:
 
     async def reclassify(self, hashes):
         self.reclassify_hashes.extend(hashes)
+
+
+class FakeTaskManager:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, coro, name=None):
+        self.calls.append(name)
+        return asyncio.create_task(coro, name=name)
 
 
 def test_get_stats():
@@ -65,23 +76,31 @@ def test_search_items():
     assert result["results"][0]["name"] == "Alpha Movie"
 
 
-def test_start_crawl():
+@pytest.mark.asyncio
+async def test_start_crawl():
     pipeline = FakePipeline()
-    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus())
-    result = asyncio.run(executor.execute("start_crawl", {"url": "https://example.com", "depth": 2}))
+    tasks = FakeTaskManager()
+    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus(), task_manager=tasks)
+    result = await executor.execute("start_crawl", {"url": "https://example.com", "depth": 2})
+    await asyncio.sleep(0)
 
     assert result["status"] == "started"
     assert pipeline.crawl_urls[0][0] == "https://example.com"
+    assert tasks.calls == ["crawl:https://example.com"]
 
 
-def test_add_to_queue():
+@pytest.mark.asyncio
+async def test_add_to_queue():
     pipeline = FakePipeline()
-    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus())
-    result = asyncio.run(executor.execute("add_to_queue", {"hashes": ["A", "B"]}))
+    tasks = FakeTaskManager()
+    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus(), task_manager=tasks)
+    result = await executor.execute("add_to_queue", {"hashes": ["A", "B"]})
+    await asyncio.sleep(0)
 
     assert result["status"] == "started"
     assert result["count"] == 2
     assert pipeline.download_hashes == ["A", "B"]
+    assert tasks.calls == ["download_batch"]
 
 
 def test_reclassify_item():

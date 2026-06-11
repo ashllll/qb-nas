@@ -158,10 +158,11 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             self.active_count = 0
 
     class FakeToolExecutor:
-        def __init__(self, store, pipeline, bus):
+        def __init__(self, store, pipeline, bus, task_manager=None):
             self.store = store
             self.pipeline = pipeline
             self.bus = bus
+            self.task_manager = task_manager
 
     monkeypatch.setattr(main_module, "MagnetCrawler", FakeCrawler)
     monkeypatch.setattr(main_module, "QBittorrentClient", FakeQbit)

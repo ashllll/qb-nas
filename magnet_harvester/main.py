@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
     bg_manager = BGTaskManager()
     broadcaster = WSBroadcaster(bus=bus, store=store)
     sync_loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus)
-    tool_executor = ToolExecutor(store=store, pipeline=pipeline, bus=bus)
+    tool_executor = ToolExecutor(store=store, pipeline=pipeline, bus=bus, task_manager=bg_manager)
 
     app.state.ctx = AppContext(
         store=store,

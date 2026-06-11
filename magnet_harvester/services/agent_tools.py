@@ -16,10 +16,16 @@ log = logging.getLogger(__name__)
 class ToolExecutor:
     """Dispatches 7 agent tools to ItemStore / HarvestPipeline operations."""
 
-    def __init__(self, store: Any, pipeline: Any, bus: MessageBus):
+    def __init__(self, store: Any, pipeline: Any, bus: MessageBus, task_manager: Any = None):
         self._store = store
         self._pipeline = pipeline
         self._bus = bus
+        self._task_manager = task_manager
+
+    def _spawn(self, coro, name: str):
+        if self._task_manager is not None:
+            return self._task_manager.create(coro, name=name)
+        return asyncio.create_task(coro, name=name)
 
     async def execute(self, name: str, inp: dict) -> dict:
         store = self._store
@@ -41,7 +47,7 @@ class ToolExecutor:
             if not url:
                 return {"status": "error", "reason": "url 不能为空"}
             depth = int(inp.get("depth", 1))
-            asyncio.create_task(
+            self._spawn(
                 pipeline.execute(url, depth=depth, auto_download=False),
                 name=f"crawl:{url[:40]}",
             )
@@ -52,7 +58,7 @@ class ToolExecutor:
             if hashes == ["all"]:
                 pending = store.get_pending()
                 hashes = [i.hash for i in pending]
-            asyncio.create_task(pipeline.download(hashes), name="download_batch")
+            self._spawn(pipeline.download(hashes), name="download_batch")
             return {"status": "started", "count": len(hashes)}
 
         if name == "reclassify_item":
