@@ -10,6 +10,7 @@ from typing import Any, AsyncGenerator, Callable, List, Optional, Protocol, runt
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.store import ItemStore
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class DownloadPhase(Protocol):
 class MagnetItemTransitions:
     """Applies Magnet item state changes and publishes matching events."""
 
-    def __init__(self, store: Any, bus: MessageBus):
+    def __init__(self, store: ItemStore, bus: MessageBus):
         self._store = store
         self._bus = bus
 
@@ -126,7 +127,7 @@ class HarvestPipeline:
         crawler: CrawlPhase,
         classifier: ClassifyPhase,
         qbit: DownloadPhase,
-        store: Any,
+        store: ItemStore,
         bus: MessageBus,
         task_manager: BackgroundTaskSpawner | None = None,
     ):
