@@ -3,8 +3,9 @@ Application context — dependency container for Magnet Harvester.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
 from fastapi import Request
 
@@ -17,6 +18,27 @@ if TYPE_CHECKING:
     from magnet_harvester.qbit_client import QBittorrentClient
 
 
+class StatsTracker(Protocol):
+    def record_crawl(self) -> None: ...
+    def record_download(self) -> None: ...
+    def record_api_call(self) -> None: ...
+    def as_dict(self) -> dict: ...
+
+
+class BackgroundTaskSpawner(Protocol):
+    def create(self, coro, name: str | None = None): ...
+
+
+class BroadcasterLike(Protocol):
+    @property
+    def active_count(self) -> int: ...
+    async def handle_connection(self, ws) -> None: ...
+
+
+class ToolExecutorLike(Protocol):
+    async def execute(self, name: str, inp: dict) -> dict: ...
+
+
 @dataclass
 class AppContext:
     store: ItemStore
@@ -25,11 +47,11 @@ class AppContext:
     crawler: MagnetCrawler
     classifier: LocalClassifier
     qbit: QBittorrentClient
-    stats: Any = None
-    bg_manager: Any = None
-    broadcaster: Any = None
-    tool_executor: Any = None
-    qbit_lock: Any = None
+    stats: StatsTracker | None = None
+    bg_manager: BackgroundTaskSpawner | None = None
+    broadcaster: BroadcasterLike | None = None
+    tool_executor: ToolExecutorLike | None = None
+    qbit_lock: asyncio.Lock | None = None
 
 
 @dataclass

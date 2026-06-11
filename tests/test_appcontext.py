@@ -304,6 +304,13 @@ def test_main_module_does_not_expose_legacy_runtime_globals():
         assert not hasattr(main_module, name), name
 
 
+def test_appcontext_runtime_service_slots_are_not_typed_as_any():
+    hints = AppContext.__annotations__
+
+    for field_name in ("stats", "bg_manager", "broadcaster", "tool_executor", "qbit_lock"):
+        assert "Any" not in str(hints[field_name]), field_name
+
+
 if __name__ == "__main__":
     test_appcontext_holds_deps()
     test_appcontext_in_endpoint()
