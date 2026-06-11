@@ -27,6 +27,14 @@
    └──────────────┘   └──────────────┘   └──────────────┘
 ```
 
+当前运行时装配采用集中式 `lifespan`：
+
+- `magnet_harvester/main.py` 只负责 FastAPI 入口与运行时装配
+- `magnet_harvester/api/` 提供 REST、WebSocket 和页面入口
+- `magnet_harvester/services/` 提供统计、后台同步、工具执行等服务
+- `magnet_harvester/context/` 定义 `AppContext` 与运行时替换 seam
+- `magnet_harvester/utils/` 提供后台任务与序列化等通用工具
+
 ## 快速开始
 
 ### 前置条件
@@ -56,20 +64,20 @@ cp .env.example .env
 
 `.env` 里最常用的配置项：
 
-| 变量 | 说明 | 默认值 |
-|---|---|---|
-| `QBIT_HOST` | qBittorrent Web UI 地址 | `http://192.168.1.69:8085` |
-| `QBIT_USERNAME` | qB 用户名 | `admin` |
-| `QBIT_PASSWORD` | qB 密码 | 留空 |
-| `SERVICE_HOST` | 服务监听地址 | `0.0.0.0` |
-| `SERVICE_PORT` | 服务端口 | `8899` |
-| `CRAWLER_TIMEOUT` | 单次抓取超时秒数 | `30` |
-| `CRAWLER_MAX_DEPTH` | 默认最大深度 | `2` |
-| `CRAWLER_CONCURRENCY` | 抓取并发数 | `3` |
-| `CRAWLER_HEADLESS` | 是否无头运行 | `true` |
-| `CRAWLER_ALLOWED_RESOLUTIONS` | 保留的分辨率关键词，逗号分隔 | `2160p,4k` |
-| `FS_BASE_PATH` | 可选，本地可写下载根目录 | 空 |
-| `MIN_DISK_SPACE_GB` | 磁盘告警阈值 | `10.0` |
+| 变量                          | 说明                         | 默认值                     |
+| ----------------------------- | ---------------------------- | -------------------------- |
+| `QBIT_HOST`                   | qBittorrent Web UI 地址      | `http://192.168.1.69:8085` |
+| `QBIT_USERNAME`               | qB 用户名                    | `admin`                    |
+| `QBIT_PASSWORD`               | qB 密码                      | 留空                       |
+| `SERVICE_HOST`                | 服务监听地址                 | `0.0.0.0`                  |
+| `SERVICE_PORT`                | 服务端口                     | `8899`                     |
+| `CRAWLER_TIMEOUT`             | 单次抓取超时秒数             | `30`                       |
+| `CRAWLER_MAX_DEPTH`           | 默认最大深度                 | `2`                        |
+| `CRAWLER_CONCURRENCY`         | 抓取并发数                   | `3`                        |
+| `CRAWLER_HEADLESS`            | 是否无头运行                 | `true`                     |
+| `CRAWLER_ALLOWED_RESOLUTIONS` | 保留的分辨率关键词，逗号分隔 | `2160p,4k`                 |
+| `FS_BASE_PATH`                | 可选，本地可写下载根目录     | 空                         |
+| `MIN_DISK_SPACE_GB`           | 磁盘告警阈值                 | `10.0`                     |
 
 `FS_BASE_PATH` 只在脚本需要主动创建真实目录时使用；留空时完全依赖 qBittorrent 分类目录管理。
 
@@ -99,29 +107,29 @@ uvicorn magnet_harvester.main:app --host 0.0.0.0 --port 8899
 
 ### 任务与数据
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `POST` | `/api/crawl` | 发起抓取任务 |
-| `POST` | `/api/download` | 批量添加选中的 hash |
-| `POST` | `/api/reclassify` | 批量重新分类 |
-| `GET` | `/api/items` | 列出条目，支持 `category`、`status`、`limit`、`offset` |
-| `GET` | `/api/items/search` | 按关键字搜索条目 |
-| `DELETE` | `/api/items` | 清空内存中的全部条目 |
-| `GET` | `/api/categories` | 获取内置分类列表 |
+| 方法     | 路径                | 说明                                                   |
+| -------- | ------------------- | ------------------------------------------------------ |
+| `POST`   | `/api/crawl`        | 发起抓取任务                                           |
+| `POST`   | `/api/download`     | 批量添加选中的 hash                                    |
+| `POST`   | `/api/reclassify`   | 批量重新分类                                           |
+| `GET`    | `/api/items`        | 列出条目，支持 `category`、`status`、`limit`、`offset` |
+| `GET`    | `/api/items/search` | 按关键字搜索条目                                       |
+| `DELETE` | `/api/items`        | 清空内存中的全部条目                                   |
+| `GET`    | `/api/categories`   | 获取内置分类列表                                       |
 
 ### 状态与配置
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `GET` | `/api/status` | qB 在线状态和条目数 |
-| `GET` | `/api/health` | 健康检查 |
-| `GET` | `/api/stats` | 服务运行统计 |
-| `GET` | `/api/errors` | 最近错误和错误统计 |
-| `POST` | `/api/errors/clear` | 清理已标记为 resolved 的错误 |
-| `GET` | `/api/config` | 获取当前 qB 连接配置 |
-| `PUT` | `/api/config` | 更新 qB 连接配置并重建客户端 |
-| `GET` | `/` | Web UI 页面 |
-| `WebSocket` | `/ws` | 实时推送抓取、分类、下载事件 |
+| 方法        | 路径                | 说明                         |
+| ----------- | ------------------- | ---------------------------- |
+| `GET`       | `/api/status`       | qB 在线状态和条目数          |
+| `GET`       | `/api/health`       | 健康检查                     |
+| `GET`       | `/api/stats`        | 服务运行统计                 |
+| `GET`       | `/api/errors`       | 最近错误和错误统计           |
+| `POST`      | `/api/errors/clear` | 清理已标记为 resolved 的错误 |
+| `GET`       | `/api/config`       | 获取当前 qB 连接配置         |
+| `PUT`       | `/api/config`       | 更新 qB 连接配置并重建客户端 |
+| `GET`       | `/`                 | Web UI 页面                  |
+| `WebSocket` | `/ws`               | 实时推送抓取、分类、下载事件 |
 
 ## 项目结构
 
@@ -135,6 +143,18 @@ qb-nas/
 │   └── index.html
 ├── magnet_harvester/
 │   ├── main.py
+│   ├── api/
+│   │   ├── routes.py
+│   │   └── websocket.py
+│   ├── services/
+│   │   ├── agent_tools.py
+│   │   ├── qbit_sync.py
+│   │   └── stats.py
+│   ├── context/
+│   │   └── app_context.py
+│   ├── utils/
+│   │   ├── bg_tasks.py
+│   │   └── serializers.py
 │   ├── config.py
 │   ├── crawler.py
 │   ├── magnet_parser.py
@@ -170,6 +190,15 @@ python3 tests/test_error_handler.py
 
 ## 实现说明
 
+- `magnet_harvester/main.py`：应用入口与集中式 `lifespan` 装配
+- `magnet_harvester/api/routes.py`：REST API
+- `magnet_harvester/api/websocket.py`：WebSocket 入口与页面入口
+- `magnet_harvester/services/agent_tools.py`：Agent 工具分发
+- `magnet_harvester/services/qbit_sync.py`：qB 状态同步循环
+- `magnet_harvester/services/stats.py`：运行时统计
+- `magnet_harvester/context/app_context.py`：请求级依赖容器与运行时替换上下文
+- `magnet_harvester/utils/bg_tasks.py`：后台任务创建与异常日志
+- `magnet_harvester/utils/serializers.py`：响应序列化辅助函数
 - `magnet_harvester/crawler.py`：基于 `crawl4ai` 抽取页面文本和子链接
 - `magnet_harvester/magnet_parser.py`：从文本、HTML、属性值和 Base64 中提取 magnet
 - `magnet_harvester/classifier/local_classifier.py`：本地规则分类与兜底策略
