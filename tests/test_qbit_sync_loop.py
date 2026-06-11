@@ -39,6 +39,15 @@ class FakeQbitClient:
         return {"status": TaskStatus.downloading, "progress": round(progress * 100, 1), "torrent_state": state}
 
 
+class FakeTaskManager:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, coro, name=None):
+        self.calls.append(name)
+        return asyncio.create_task(coro, name=name)
+
+
 @pytest.mark.asyncio
 async def test_lifecycle_start_stop():
     qbit = FakeQbitClient()
@@ -53,6 +62,28 @@ async def test_lifecycle_start_stop():
 
     await loop.stop()
     assert loop._task.done()
+
+
+@pytest.mark.asyncio
+async def test_start_uses_injected_task_manager():
+    qbit = FakeQbitClient()
+    store = FakeStore()
+    bus = MessageBus()
+    tasks = FakeTaskManager()
+
+    loop = QBitSyncLoop(
+        qbit_client=qbit,
+        store=store,
+        bus=bus,
+        poll_interval=0.05,
+        task_manager=tasks,
+    )
+
+    await loop.start()
+    assert loop._task is not None
+    assert tasks.calls == ["qbit-sync-loop"]
+
+    await loop.stop()
 
 
 @pytest.mark.asyncio

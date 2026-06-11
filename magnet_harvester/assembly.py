@@ -41,17 +41,23 @@ def build_runtime() -> AppRuntime:
     classifier = LocalClassifier()
     store = InMemoryItemStore()
     bus = MessageBus()
+    bg_manager = BGTaskManager()
     pipeline = HarvestPipeline(
         crawler=crawler,
         classifier=classifier,
         qbit=qbit,
         store=store,
         bus=bus,
+        task_manager=bg_manager,
     )
     app_stats = SystemStats()
-    bg_manager = BGTaskManager()
     broadcaster = WSBroadcaster(bus=bus, store=store)
-    sync_loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus)
+    sync_loop = QBitSyncLoop(
+        qbit_client=qbit,
+        store=store,
+        bus=bus,
+        task_manager=bg_manager,
+    )
     tool_executor = ToolExecutor(store=store, pipeline=pipeline, bus=bus, task_manager=bg_manager)
 
     ctx = AppContext(

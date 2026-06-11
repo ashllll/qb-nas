@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import TaskStatus
 from magnet_harvester.utils.serializers import _item_payload
 
@@ -23,17 +24,26 @@ class QBitSyncLoop:
         store: Any,
         bus: MessageBus,
         poll_interval: float = 2.0,
+        task_manager: BackgroundTaskSpawner | None = None,
     ):
         self._qbit = qbit_client
         self._store = store
         self._bus = bus
         self._poll_interval = poll_interval
+        self._task_manager = task_manager
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
     async def start(self):
-        self._task = asyncio.create_task(self._run())
+        if self._task_manager is not None:
+            self._task = self._task_manager.create(
+                self._run(),
+                name="qbit-sync-loop",
+            )
+            return
+
+        self._task = asyncio.create_task(self._run(), name="qbit-sync-loop")
 
     async def stop(self):
         self._stop_event.set()

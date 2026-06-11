@@ -8,6 +8,7 @@ import logging
 from typing import Any, AsyncGenerator, Callable, List, Optional, Protocol, runtime_checkable
 
 from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import MagnetItem, TaskStatus
 
 log = logging.getLogger(__name__)
@@ -120,13 +121,27 @@ class MagnetItemTransitions:
 
 
 class HarvestPipeline:
-    def __init__(self, crawler: CrawlPhase, classifier: ClassifyPhase, qbit: DownloadPhase, store: Any, bus: MessageBus):
+    def __init__(
+        self,
+        crawler: CrawlPhase,
+        classifier: ClassifyPhase,
+        qbit: DownloadPhase,
+        store: Any,
+        bus: MessageBus,
+        task_manager: BackgroundTaskSpawner | None = None,
+    ):
         self._crawler = crawler
         self._classifier = classifier
         self._qbit = qbit
         self._store = store
         self._bus = bus
+        self._task_manager = task_manager
         self._transitions = MagnetItemTransitions(store=store, bus=bus)
+
+    def _spawn(self, coro, *, name: str | None = None) -> asyncio.Task:
+        if self._task_manager is not None:
+            return self._task_manager.create(coro, name=name)
+        return asyncio.create_task(coro, name=name)
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))
@@ -170,7 +185,12 @@ class HarvestPipeline:
         def on_result(index: int, result: dict):
             h = index_to_hash.get(index)
             if h:
-                result_events.append(asyncio.create_task(self._transitions.classified(h, result)))
+                result_events.append(
+                    self._spawn(
+                        self._transitions.classified(h, result),
+                        name=f"classify:{h}",
+                    )
+                )
 
         await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
         if result_events:

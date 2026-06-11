@@ -3,6 +3,7 @@
 """
 import sys
 import os
+import asyncio
 from typing import AsyncGenerator, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -92,6 +93,15 @@ class RecordingBus(MessageBus):
 
     async def emit(self, event: Event):
         self.events.append(event)
+
+
+class FakeTaskManager:
+    def __init__(self):
+        self.calls: List[str | None] = []
+
+    def create(self, coro, name=None):
+        self.calls.append(name)
+        return asyncio.create_task(coro, name=name)
 
 
 def test_crawl_phase_protocol():
@@ -257,6 +267,26 @@ def test_no_new_items_skips_classify():
 
     assert len(classify_phase.called_with) == 0, "无新条目时不应分类"
     assert len(download_phase.called_with) == 0, "无新条目时不应下载"
+
+
+def test_classify_stream_uses_injected_task_manager():
+    store = FakeStore()
+    bus = NullBus()
+    tasks = FakeTaskManager()
+    item = MagnetItem(hash="FFFF", name="UsesTaskManager", magnet="magnet:?xt=urn:btih:FFFF")
+
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(),
+        classifier=FakeClassifyPhase(category="电影"),
+        qbit=FakeDownloadPhase(),
+        store=store,
+        bus=bus,
+        task_manager=tasks,
+    )
+
+    asyncio.run(pipeline._stream_classify([item]))
+
+    assert tasks.calls == ["classify:FFFF"]
 
 
 if __name__ == "__main__":

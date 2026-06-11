@@ -142,9 +142,10 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
         pass
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus):
+        def __init__(self, qbit_client, store, bus, task_manager=None):
             self.started = False
             self.stopped = False
+            self.task_manager = task_manager
 
         async def start(self):
             self.started = True
@@ -246,9 +247,10 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
             return {}
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus):
+        def __init__(self, qbit_client, store, bus, task_manager=None):
             self.started = False
             self.stopped = False
+            self.task_manager = task_manager
             created["sync_loop"] = self
 
         async def start(self):
