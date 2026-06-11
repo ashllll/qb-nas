@@ -55,7 +55,7 @@ def test_crawl_worker_reports_page_errors_and_finishes():
         async def start(self):
             self._crawler = object()
 
-        async def _crawl_page(self, url, depth, visited, frontier, events):
+        async def _crawl_page(self, url, depth, visited, frontier, events, seen):
             raise RuntimeError("boom")
 
     async def collect():
@@ -78,7 +78,7 @@ def test_crawl_consumer_close_cleans_up_worker_session():
         async def start(self):
             self._crawler = object()
 
-        async def _crawl_page(self, url, depth, visited, frontier, events):
+        async def _crawl_page(self, url, depth, visited, frontier, events, seen):
             await events.put({"type": "progress", "msg": "tick", "url": url})
             await asyncio.sleep(0.02)
 

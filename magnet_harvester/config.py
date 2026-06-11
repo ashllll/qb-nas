@@ -97,14 +97,34 @@ class Settings(BaseSettings):
         return self._service_config
 
     def update_qbit(self, host: str | None = None, username: str | None = None, password: str | None = None):
-        """动态更新 qB 配置（由前端配置面板调用）"""
-        if host:
+        """动态更新 qB 配置（由前端配置面板调用）
+
+        返回:
+            True — 更新成功
+            str  — 错误信息（验证失败）
+        """
+        if host is not None:
+            host = host.strip()
+            if not host:
+                return "qBittorrent 主机地址不能为空"
+            if not (host.startswith("http://") or host.startswith("https://")):
+                return f"非法的 qBittorrent 主机地址: {host}（必须以 http:// 或 https:// 开头）"
             self.QBIT_HOST = host
-        if username:
+
+        if username is not None:
+            username = username.strip()
+            if not username:
+                return "用户名不能为空"
             self.QBIT_USERNAME = username
-        if password:
+
+        if password is not None:
+            password = password.strip()
+            if not password:
+                return "密码不能为空"
             self.QBIT_PASSWORD = password
+
         self._qbit_config = None  # 下次调用 .qbit 时重建
+        return True
 
     @staticmethod
     def _parse_csv_tuple(value: str) -> tuple[str, ...]:

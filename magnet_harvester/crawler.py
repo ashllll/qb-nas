@@ -77,7 +77,6 @@ class MagnetCrawler:
             self._config = config
         self._crawler: Optional[AsyncWebCrawler] = None
         self._metrics: Optional[CrawlMetrics] = None
-        self._global_seen: Set[str] = set()
 
     async def start(self):
         """启动 crawl4ai 引擎"""
@@ -120,7 +119,7 @@ class MagnetCrawler:
             await self.start()
 
         self._metrics = CrawlMetrics()
-        self._global_seen.clear()
+        seen: Set[str] = set()
         visited: Set[str] = {url}
         frontier: asyncio.Queue[tuple[str, int]] = asyncio.Queue()
         events: asyncio.Queue[dict | None] = asyncio.Queue()
@@ -132,6 +131,7 @@ class MagnetCrawler:
                 visited=visited,
                 frontier=frontier,
                 events=events,
+                seen=seen,
             ),
             name="crawl-session",
         )
@@ -154,22 +154,26 @@ class MagnetCrawler:
         visited: Set[str],
         frontier: asyncio.Queue[tuple[str, int]],
         events: asyncio.Queue[dict | None],
+        seen: Set[str],
     ) -> None:
         workers: list[asyncio.Task] = []
 
         try:
-            async with asyncio.TaskGroup() as task_group:
-                for idx in range(self._worker_count):
-                    workers.append(
-                        task_group.create_task(
-                            self._crawl_worker(visited, frontier, events),
-                            name=f"crawl-worker:{idx}",
-                        )
+            for idx in range(self._worker_count):
+                workers.append(
+                    asyncio.create_task(
+                        self._crawl_worker(visited, frontier, events, seen),
+                        name=f"crawl-worker:{idx}",
                     )
+                )
 
-                await frontier.join()
-                for task in workers:
-                    task.cancel()
+            await frontier.join()
+
+            # 安全取消所有 worker（在 gather 外取消，避免 ExceptionGroup）
+            for task in workers:
+                task.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+
         finally:
             await events.put({
                 "type": "done",
@@ -184,6 +188,7 @@ class MagnetCrawler:
         visited: Set[str],
         frontier: asyncio.Queue[tuple[str, int]],
         events: asyncio.Queue[dict | None],
+        seen: Set[str],
     ) -> None:
         while True:
             current_url, remaining_depth = await frontier.get()
@@ -194,6 +199,7 @@ class MagnetCrawler:
                     visited,
                     frontier,
                     events,
+                    seen,
                 )
             except asyncio.CancelledError:
                 raise
@@ -215,6 +221,7 @@ class MagnetCrawler:
         visited: Set[str],
         frontier: asyncio.Queue[tuple[str, int]],
         events: asyncio.Queue[dict | None],
+        seen: Set[str],
     ) -> None:
         self._metrics.pages_crawled += 1
         await events.put({"type": "progress", "msg": "正在爬取...", "url": url, "depth": depth})
@@ -229,9 +236,9 @@ class MagnetCrawler:
         new_count = 0
         for item in items:
             hash_key = item["hash"]
-            if hash_key in self._global_seen:
+            if hash_key in seen:
                 continue
-            self._global_seen.add(hash_key)
+            seen.add(hash_key)
             new_count += 1
             self._metrics.magnets_found += 1
             await events.put({"type": "found", "item": item})

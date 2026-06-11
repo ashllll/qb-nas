@@ -5,88 +5,19 @@ import asyncio
 import logging
 import re
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
 
 from magnet_harvester.config import QBitConfig, settings
 from magnet_harvester.models import TaskStatus
+from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
+from magnet_harvester.qbit_client.paths import QBitPathResolver, _safe_fs_segment
+from magnet_harvester.qbit_client.stats import QBittorrentStats
 
 log = logging.getLogger(__name__)
 
 QBitApiObject = dict[str, object]
-
-
-def _safe_fs_segment(name: str) -> str:
-    """把分类名压成单个本地路径段，避免 FS_BASE_PATH 下目录穿越。"""
-    safe = re.sub(r"[\\/:\0]+", "_", name).strip().strip(".")
-    safe = re.sub(r"\s+", " ", safe)
-    return safe or "uncategorized"
-
-
-class TorrentStatusMapper:
-    @staticmethod
-    def map(torrent: dict) -> dict:
-        state = str(torrent.get("state", "") or "")
-        progress = float(torrent.get("progress") or 0.0)
-
-        queued_states = {"queuedDL", "pausedDL"}
-        downloading_states = {
-            "downloading", "forcedDL", "metaDL", "stalledDL",
-            "checkingDL", "checkingResumeData", "moving",
-        }
-        success_states = {
-            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
-        }
-        error_states = {"error", "missingFiles", "unknown"}
-
-        if state in error_states:
-            status = TaskStatus.error
-        elif progress >= 1.0 or state in success_states:
-            status = TaskStatus.success
-        elif state in downloading_states or 0.0 < progress < 1.0:
-            status = TaskStatus.downloading
-        elif state in queued_states:
-            status = TaskStatus.queued
-        else:
-            status = TaskStatus.queued
-
-        return {
-            "status": status,
-            "progress": round(progress * 100, 1),
-            "torrent_state": state or None,
-        }
-
-
-@dataclass
-class QBittorrentStats:
-    total_added: int = 0
-    total_success: int = 0
-    total_failed: int = 0
-    consecutive_failures: int = 0
-    last_success_time: Optional[float] = None
-    last_failure_time: Optional[float] = None
-    start_time: float = field(default_factory=time.time)
-    
-    @property
-    def success_rate(self) -> float:
-        if self.total_added == 0:
-            return 0.0
-        return self.total_success / self.total_added * 100
-    
-    def as_dict(self) -> dict:
-        return {
-            "total_added": self.total_added,
-            "total_success": self.total_success,
-            "total_failed": self.total_failed,
-            "success_rate": round(self.success_rate, 1),
-            "consecutive_failures": self.consecutive_failures,
-            "last_success": time.strftime("%H:%M:%S", time.localtime(self.last_success_time)) if self.last_success_time else None,
-            "last_failure": time.strftime("%H:%M:%S", time.localtime(self.last_failure_time)) if self.last_failure_time else None,
-            "uptime_sec": round(time.time() - self.start_time, 1),
-        }
 
 
 class QBittorrentClient:
@@ -116,6 +47,10 @@ class QBittorrentClient:
         self._maindata_rid = 0
         self._torrent_snapshot: Dict[str, dict] = {}
         self._recently_removed: set[str] = set()
+        self._path_resolver = QBitPathResolver(
+            get_categories=self.get_categories,
+            get_torrents=self._get_torrents_list,
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -300,6 +235,16 @@ class QBittorrentClient:
             log.warning(f"get_categories 异常: {e}")
             return {}
 
+    async def _get_torrents_list(self) -> list:
+        """辅助方法：获取种子列表（供 QBitPathResolver 使用）"""
+        try:
+            r = await self._req("GET", "/torrents/info")
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return []
+
     async def get_default_save_path(self) -> str | None:
         """获取 qBittorrent 默认保存路径（缓存）。
 
@@ -310,14 +255,8 @@ class QBittorrentClient:
         if self._cached_default_path:
             return self._cached_default_path
 
-        # 1. 从已有分类获取（qB API 直接返回真实路径）
-        path = await self._find_base_from_categories()
-        if path:
-            self._cached_default_path = path
-            return path
-
-        # 2. 从已有种子获取
-        path = await self._find_base_from_torrents()
+        # 1-2. 从已有分类/种子推断（通过 QBitPathResolver）
+        path = await self._path_resolver.resolve()
         if path:
             self._cached_default_path = path
             return path
@@ -342,38 +281,7 @@ class QBittorrentClient:
     def clear_cached_path(self):
         """清除缓存的路径，强制下次重新检测（/api/config PUT 时调用）"""
         self._cached_default_path = None
-
-    async def _find_base_from_categories(self) -> str | None:
-        """从已有分类的 savePath 提取基础下载路径（排除 Docker 内部路径）"""
-        try:
-            cats = await self.get_categories()
-            for name, info in cats.items():
-                sp = info.get("savePath", "")
-                if sp and not sp.startswith("/var/"):
-                    # 路径格式如 /vol2/1000/downloads/电影，取父目录
-                    if "/" in sp.strip("/"):
-                        base = "/".join(sp.rstrip("/").split("/")[:-1])
-                        log.info(f"基础路径（从分类 [{name}]）: {base}")
-                        return base
-        except Exception:
-            pass
-        return None
-
-    async def _find_base_from_torrents(self) -> str | None:
-        """从已有种子的 save_path 提取基础路径"""
-        try:
-            r = await self._req("GET", "/torrents/info")
-            if r.status_code != 200:
-                return None
-            for t in r.json():
-                sp = t.get("save_path", "")
-                if sp and not sp.startswith("/var/") and "/" in sp.strip("/"):
-                    base = "/".join(sp.rstrip("/").split("/")[:-1])
-                    log.info(f"基础路径（从种子 [{t.get('name','')[:20]}…]）: {base}")
-                    return base
-        except Exception:
-            pass
-        return None
+        self._path_resolver.clear_cache()
 
     async def get_base_save_path(self) -> str:
         """获取基础保存路径"""

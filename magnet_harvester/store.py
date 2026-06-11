@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol, runtime_checkable
 
+from pydantic import ValidationError
+
 from magnet_harvester.models import MagnetItem, TaskStatus
 
 log = logging.getLogger(__name__)
@@ -80,13 +82,28 @@ class InMemoryItemStore:
         return self._items.get(hash_key)
 
     def update(self, hash_key: str, **fields) -> bool:
-        """更新字段（category, save_path, status, error_msg 等）"""
+        """更新字段（category, save_path, status, error_msg 等）
+
+        通过 Pydantic model_validate 重新验证，保持类型安全。
+        如果任何字段非法或不存在，返回 False 且不修改原对象。
+        """
         item = self._items.get(hash_key)
         if not item:
             return False
-        for k, v in fields.items():
-            if hasattr(item, k):
-                setattr(item, k, v)
+
+        # 拒绝未知字段
+        unknown = [k for k in fields if k not in MagnetItem.model_fields]
+        if unknown:
+            return False
+
+        data = item.model_dump()
+        data.update(fields)
+        try:
+            new_item = MagnetItem.model_validate(data)
+        except ValidationError:
+            return False
+
+        self._items[hash_key] = new_item
         return True
 
     def remove(self, hash_key: str) -> bool:

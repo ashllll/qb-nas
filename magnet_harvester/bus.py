@@ -61,7 +61,10 @@ class MessageBus:
             self._subscribers[event_type] = [c for c in self._subscribers[event_type] if c != callback]
 
     async def emit(self, event: Event):
-        """发射事件到所有匹配的订阅者（并发执行）"""
+        """发射事件到所有匹配的订阅者（并发执行，带 1 秒超时）。
+
+        慢订阅者不会阻塞发送方。未完成的订阅者继续在后台运行。
+        """
         tasks: list[asyncio.Task] = []
 
         for cb in self._global_subscribers:
@@ -80,7 +83,13 @@ class MessageBus:
             )
 
         if tasks:
-            await asyncio.gather(*tasks)
+            # 等待最多 1 秒，避免慢订阅者阻塞发送方
+            done, pending = await asyncio.wait(tasks, timeout=1.0)
+            if pending:
+                log.debug(f"MessageBus: {len(pending)} 个订阅者处理超时，继续在后台运行")
+                # 让 pending 任务继续在后台运行，不取消它们
+                for task in pending:
+                    task.add_done_callback(lambda t: None)
 
     @staticmethod
     async def _safe_call(cb: Subscriber, event: Event):

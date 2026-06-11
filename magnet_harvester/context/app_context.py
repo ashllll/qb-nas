@@ -61,7 +61,8 @@ class RuntimeContext:
     async def replace_qbit(self, new_qbit):
         old_qbit = self.ctx.qbit
         self.ctx.qbit = new_qbit
-        self.ctx.pipeline.replace_download_phase(new_qbit)
+        if self.ctx.pipeline is not None:
+            self.ctx.pipeline.replace_download_phase(new_qbit)
         if old_qbit is not None:
             await old_qbit.close()
 
