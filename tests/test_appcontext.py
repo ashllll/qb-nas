@@ -359,6 +359,14 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
         assert "Any" not in str(qbit_sync_hints[field_name]), f"QBitSyncLoop.{field_name}"
 
 
+def test_core_modules_do_not_keep_stale_any_imports():
+    import magnet_harvester.pipeline as pipeline_module
+    import magnet_harvester.qbit_client as qbit_client_module
+
+    assert not hasattr(pipeline_module, "Any"), "pipeline.Any"
+    assert not hasattr(qbit_client_module, "Any"), "qbit_client.Any"
+
+
 if __name__ == "__main__":
     test_appcontext_holds_deps()
     test_appcontext_in_endpoint()

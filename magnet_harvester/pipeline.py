@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, Callable, List, Optional, Protocol, runtime_checkable
+from typing import AsyncGenerator, Callable, List, Optional, Protocol, runtime_checkable
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
