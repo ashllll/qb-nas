@@ -6,7 +6,7 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ErrorRecord:
     category: ErrorCategory
     severity: ErrorSeverity
     message: str
-    details: Dict[str, Any]
+    details: dict[str, object]
     timestamp: datetime = field(default_factory=datetime.now)
     traceback: Optional[str] = None
     count: int = 1
@@ -69,7 +69,7 @@ class ErrorHandler:
         category: ErrorCategory,
         severity: ErrorSeverity,
         message: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, object] | None = None,
         exc: Optional[Exception] = None,
     ) -> str:
         error_id = self._generate_error_id(category, message)

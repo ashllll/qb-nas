@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -58,7 +58,7 @@ class MetricSnapshot:
     每个适配器实现 snapshot() → MetricSnapshot，由 MetricsReport 合并。
     """
     namespace: str                          # e.g. "crawler", "classifier", "qbit"
-    values: Dict[str, Any] = field(default_factory=dict)
+    values: dict[str, object] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {"namespace": self.namespace, **self.values}
