@@ -115,6 +115,7 @@ def test_runtime_context_replaces_qbit_everywhere():
 @pytest.mark.asyncio
 async def test_main_lifespan_populates_runtime_services(monkeypatch):
     import magnet_harvester.main as main_module
+    import magnet_harvester.assembly as assembly_module
 
     class FakeCrawler:
         def __init__(self, config):
@@ -164,12 +165,12 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             self.bus = bus
             self.task_manager = task_manager
 
-    monkeypatch.setattr(main_module, "MagnetCrawler", FakeCrawler)
-    monkeypatch.setattr(main_module, "QBittorrentClient", FakeQbit)
-    monkeypatch.setattr(main_module, "LocalClassifier", FakeClassifier)
-    monkeypatch.setattr(main_module, "QBitSyncLoop", FakeSyncLoop)
-    monkeypatch.setattr(main_module, "WSBroadcaster", FakeBroadcaster)
-    monkeypatch.setattr(main_module, "ToolExecutor", FakeToolExecutor, raising=False)
+    monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
+    monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(assembly_module, "LocalClassifier", FakeClassifier)
+    monkeypatch.setattr(assembly_module, "QBitSyncLoop", FakeSyncLoop)
+    monkeypatch.setattr(assembly_module, "WSBroadcaster", FakeBroadcaster)
+    monkeypatch.setattr(assembly_module, "ToolExecutor", FakeToolExecutor, raising=False)
 
     test_app = FastAPI(lifespan=main_module.lifespan)
 
@@ -185,6 +186,7 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
 @pytest.mark.asyncio
 async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
     import magnet_harvester.main as main_module
+    import magnet_harvester.assembly as assembly_module
 
     created = {}
 
@@ -255,10 +257,10 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
         async def stop(self):
             self.stopped = True
 
-    monkeypatch.setattr(main_module, "MagnetCrawler", FakeCrawler)
-    monkeypatch.setattr(main_module, "LocalClassifier", FakeClassifier)
-    monkeypatch.setattr(main_module, "QBittorrentClient", FakeQbit)
-    monkeypatch.setattr(main_module, "QBitSyncLoop", FakeSyncLoop)
+    monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
+    monkeypatch.setattr(assembly_module, "LocalClassifier", FakeClassifier)
+    monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(assembly_module, "QBitSyncLoop", FakeSyncLoop)
 
     test_app = FastAPI(lifespan=main_module.lifespan)
 
