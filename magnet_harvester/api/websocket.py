@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Optional, Protocol
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -16,10 +16,14 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class BroadcasterStore(Protocol):
+    def list(self, limit: int = 20): ...
+
+
 class WSBroadcaster:
     """Subscribes to MessageBus and broadcasts events to all active WebSocket clients."""
 
-    def __init__(self, bus: MessageBus, store: Any = None):
+    def __init__(self, bus: MessageBus, store: BroadcasterStore | None = None):
         self._bus = bus
         self._store = store
         self._active_ws: set[WebSocket] = set()

@@ -316,11 +316,15 @@ def test_appcontext_runtime_service_slots_are_not_typed_as_any():
 
 
 def test_runtime_service_constructor_contracts_are_not_typed_as_any():
+    from magnet_harvester.api.websocket import WSBroadcaster
     from magnet_harvester.services.agent_tools import ToolExecutor
     from magnet_harvester.services.qbit_sync import QBitSyncLoop
 
+    websocket_hints = WSBroadcaster.__init__.__annotations__
     tool_executor_hints = ToolExecutor.__init__.__annotations__
     qbit_sync_hints = QBitSyncLoop.__init__.__annotations__
+
+    assert "Any" not in str(websocket_hints["store"]), "WSBroadcaster.store"
 
     for field_name in ("store", "pipeline", "task_manager"):
         assert "Any" not in str(tool_executor_hints[field_name]), f"ToolExecutor.{field_name}"
