@@ -65,7 +65,6 @@ def test_update_qbit_rejects_empty_values():
 
 async def test_replace_qbit_closes_old_client():
     """替换 qBittorrent 客户端时，旧客户端应被关闭"""
-    import asyncio
     from magnet_harvester.context.app_context import AppContext, RuntimeContext
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.config import QBitConfig

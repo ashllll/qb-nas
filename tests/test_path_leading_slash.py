@@ -4,7 +4,6 @@ P3-31: 路径丢失前导斜杠测试
 缺陷: _extract_base_from_path 返回的路径缺少前导 /（如 "downloads" 而非 "/downloads"）
 修复: 返回时添加前导斜杠
 """
-import pytest
 from magnet_harvester.qbit_client.paths import _extract_base_from_path
 
 

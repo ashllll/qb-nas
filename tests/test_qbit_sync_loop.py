@@ -11,7 +11,7 @@ import pytest
 
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
-from magnet_harvester.bus import MessageBus, Event, EventType
+from magnet_harvester.bus import MessageBus
 from magnet_harvester.services.qbit_sync import QBitSyncLoop
 
 

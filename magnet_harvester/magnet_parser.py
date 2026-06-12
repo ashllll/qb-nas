@@ -123,9 +123,9 @@ def try_decode_base64(text: str) -> List[str]:
                         results.append(magnet)
 
         except (binascii.Error, ValueError, UnicodeDecodeError):
-            log.debug(f"Base64 解码失败 (非磁力内容)")
+            log.debug("Base64 解码失败 (非磁力内容)")
         except Exception:
-            log.debug(f"Base64 解码未知错误")
+            log.debug("Base64 解码未知错误")
 
     return list(set(results))
 

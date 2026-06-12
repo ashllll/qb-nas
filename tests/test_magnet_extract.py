@@ -8,12 +8,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.magnet_parser import (
-    MAGNET_RE,
     HASH_RE,
     JSON_MAGNET_RE,
-    BASE64_MAGNET_RE,
-    parse_magnet,
-    try_decode_base64,
     extract_from_text,
 )
 

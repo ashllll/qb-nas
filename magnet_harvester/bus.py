@@ -10,7 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Coroutine, Dict, List, Optional
+from typing import Callable, Coroutine, Dict, List
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class MessageBus:
                     timeout=1.0,
                 )
             except asyncio.TimeoutError:
-                log.debug(f"MessageBus: 订阅者处理超时，取消剩余任务")
+                log.debug("MessageBus: 订阅者处理超时，取消剩余任务")
                 for task in tasks:
                     if not task.done():
                         task.cancel()

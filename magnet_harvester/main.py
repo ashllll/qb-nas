@@ -1,7 +1,6 @@
 """Magnet Harvester v3.0 — app entrypoint and lifespan assembly."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 

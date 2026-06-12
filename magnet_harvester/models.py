@@ -7,6 +7,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from magnet_harvester.utils.url_validator import URLValidationError, validate_crawl_url
+
 
 class TaskStatus(str, Enum):
     pending     = "pending"
@@ -34,9 +36,6 @@ class MagnetItem(BaseModel):
     error_msg:  Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
-
-
-from magnet_harvester.utils.url_validator import validate_crawl_url, URLValidationError
 
 
 class CrawlRequest(BaseModel):

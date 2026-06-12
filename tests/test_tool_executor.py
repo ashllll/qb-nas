@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.services.agent_tools import ToolExecutor

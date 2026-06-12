@@ -56,7 +56,7 @@ class ErrorRecord:
 
 class ErrorHandler:
     def __init__(self):
-        self._errors: Dict[str, ErrorRecord] = {}
+        self._errors: dict[str, ErrorRecord] = {}
         self._max_errors = 1000
 
     def _generate_error_id(self, category: ErrorCategory, message: str) -> str:

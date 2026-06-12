@@ -5,10 +5,8 @@ P3-20: 重试延迟无抖动测试
       多个 worker 可能在同一时刻重试，形成惊群效应
 修复: 添加随机抖动 delay = 2 ** retry_count + random.uniform(0, 1)
 """
-import asyncio
-import random
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from magnet_harvester.crawler import MagnetCrawler
 
 
@@ -30,8 +28,6 @@ async def test_retry_delay_has_jitter():
     crawler._metrics.retries = 0
 
     delays = []
-    original_sleep = asyncio.sleep
-
     async def tracked_sleep(delay):
         delays.append(delay)
         # 不实际 sleep，加速测试

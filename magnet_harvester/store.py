@@ -8,7 +8,6 @@ ItemStore — 磁力链接中央存储（深模块）
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol, runtime_checkable
 

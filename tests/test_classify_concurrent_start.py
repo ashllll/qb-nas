@@ -8,7 +8,7 @@ import asyncio
 import pytest
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.store import InMemoryItemStore
-from magnet_harvester.bus import MessageBus, EventType
+from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 
 

@@ -7,7 +7,7 @@ P2-24: Agent 工具路径测试
 import pytest
 from magnet_harvester.services.agent_tools import ToolExecutor
 from magnet_harvester.store import InMemoryItemStore
-from magnet_harvester.bus import MessageBus, EventType
+from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 
 

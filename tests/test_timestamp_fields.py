@@ -5,8 +5,7 @@ P2-16: 时间戳字段测试
 修复: 添加 created_at 和 updated_at 字段，default_factory=datetime.now
 """
 from datetime import datetime
-import pytest
-from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.models import MagnetItem
 
 
 def test_magnet_item_has_timestamp_fields():

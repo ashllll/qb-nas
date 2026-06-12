@@ -1,10 +1,7 @@
 """Tests for CORS configuration."""
 from __future__ import annotations
 
-import pytest
-from fastapi.testclient import TestClient
 
-from magnet_harvester.main import app
 from magnet_harvester.config import settings
 
 
@@ -13,11 +10,6 @@ class TestCORS:
 
     def test_no_cors_middleware_when_empty(self):
         settings.CORS_ALLOWED_ORIGINS = ""
-        # Re-check by inspecting middleware stack
-        cors_middlewares = [
-            m for m in app.user_middleware
-            if m.cls.__name__ == "CORSMiddleware"
-        ]
         # When empty, no CORS middleware should be registered
         # (but we can't easily remove already-registered middleware in tests)
         # So we verify the config parsing instead

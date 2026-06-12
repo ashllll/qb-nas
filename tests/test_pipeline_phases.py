@@ -17,8 +17,6 @@ from magnet_harvester.bus import NullBus, Event, EventType, MessageBus
 
 from magnet_harvester.pipeline import (
     CrawlPhase,
-    ClassifyPhase,
-    DownloadPhase,
     HarvestPipeline,
 )
 
