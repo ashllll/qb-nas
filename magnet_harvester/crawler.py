@@ -15,6 +15,7 @@ import asyncio
 import logging
 import random
 import time
+from contextvars import ContextVar
 from urllib.parse import urljoin, urlparse
 from typing import AsyncGenerator, List, Optional, Set
 
@@ -86,12 +87,22 @@ class MagnetCrawler:
             self._config = config
         self._crawler: Optional[AsyncWebCrawler] = None
         self._metrics: Optional[CrawlMetrics] = None
+        self._session_metrics: ContextVar[CrawlMetrics | None] = ContextVar(
+            "crawl_session_metrics",
+            default=None,
+        )
         self._visited_lock = asyncio.Lock()
         self._seen_lock = asyncio.Lock()
         self._target_admission = target_admission or CrawlTargetAdmission()
 
     async def admit_url(self, url: str) -> str:
         return await self._target_admission.admit(url)
+
+    def _current_metrics(self) -> CrawlMetrics:
+        metrics = self._session_metrics.get() or self._metrics
+        if metrics is None:
+            raise RuntimeError("crawl metrics are only available during a Crawl session")
+        return metrics
 
     async def start(self):
         """启动 crawl4ai 引擎"""
@@ -134,7 +145,7 @@ class MagnetCrawler:
         if not self._crawler:
             await self.start()
 
-        self._metrics = CrawlMetrics()
+        self._session_metrics.set(CrawlMetrics())
         seen: Set[str] = set()
         visited: Set[str] = {url}
         frontier: asyncio.Queue[tuple[str, int]] = asyncio.Queue()
@@ -163,6 +174,7 @@ class MagnetCrawler:
             yield {"type": "error", "msg": str(e), "url": url}
         finally:
             await session_task
+            self._session_metrics.set(None)
 
     async def _run_crawl_session(
         self,
@@ -191,11 +203,12 @@ class MagnetCrawler:
             await asyncio.gather(*workers, return_exceptions=True)
 
         finally:
+            metrics = self._current_metrics()
             await events.put({
                 "type": "done",
-                "total": self._metrics.magnets_found,
+                "total": metrics.magnets_found,
                 "url": root_url,
-                "metrics": self._metrics.as_dict(),
+                "metrics": metrics.as_dict(),
             })
             await events.put(None)
 
@@ -220,7 +233,7 @@ class MagnetCrawler:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                self._metrics.errors += 1
+                self._current_metrics().errors += 1
                 log.warning(f"页面处理异常: {current_url} - {e}", exc_info=e)
                 await events.put({"type": "error", "msg": str(e), "url": current_url})
             finally:
@@ -239,12 +252,13 @@ class MagnetCrawler:
         events: asyncio.Queue[dict | None],
         seen: Set[str],
     ) -> None:
-        self._metrics.pages_crawled += 1
+        metrics = self._current_metrics()
+        metrics.pages_crawled += 1
         await events.put({"type": "progress", "msg": "正在爬取...", "url": url, "depth": depth})
 
         result = await self._fetch_with_retry(url)
         if result is None:
-            self._metrics.errors += 1
+            metrics.errors += 1
             await events.put({"type": "error", "msg": "页面加载失败", "url": url})
             return
 
@@ -257,14 +271,14 @@ class MagnetCrawler:
                     continue
                 seen.add(hash_key)
             new_count += 1
-            self._metrics.magnets_found += 1
+            metrics.magnets_found += 1
             await events.put({"type": "found", "item": item})
 
         await events.put({
             "type": "progress",
             "msg": f"发现 {new_count} 个新磁力",
             "url": url,
-            "metrics": self._metrics.as_dict(),
+            "metrics": metrics.as_dict(),
         })
 
         if depth <= 1:
@@ -303,7 +317,7 @@ class MagnetCrawler:
                 if retry_count >= 2:
                     log.warning(f"页面加载最终失败: {url} - {e}")
                     return None
-                self._metrics.retries += 1
+                self._current_metrics().retries += 1
                 delay = 2 ** retry_count + random.uniform(0, 1)
                 log.info(f"页面加载失败，重试 {retry_count + 1}: {url} - {e}")
                 await asyncio.sleep(delay)
