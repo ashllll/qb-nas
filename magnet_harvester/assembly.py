@@ -30,6 +30,8 @@ class AppRuntime:
 
     async def stop(self):
         await self.sync_loop.stop()
+        if self.ctx.bg_manager is not None:
+            await self.ctx.bg_manager.shutdown()
         await self.ctx.crawler.stop()
         await self.ctx.qbit.close()
 

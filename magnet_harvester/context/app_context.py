@@ -27,6 +27,7 @@ class StatsTracker(Protocol):
 
 class BackgroundTaskSpawner(Protocol):
     def create(self, coro, name: str | None = None): ...
+    async def shutdown(self) -> None: ...
 
 
 class BroadcasterLike(Protocol):
