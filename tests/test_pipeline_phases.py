@@ -28,6 +28,9 @@ class FakeCrawlPhase:
         self.items = items or []
         self.called_with: List[tuple] = []
 
+    async def admit_url(self, url: str) -> str:
+        return url
+
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]:
         self.called_with.append((url, depth))
         yield {"type": "progress", "msg": "fake crawl"}

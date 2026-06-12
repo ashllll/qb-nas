@@ -1,6 +1,8 @@
 """Tests for API key authentication middleware."""
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,9 @@ from magnet_harvester.config import settings
 @pytest.fixture
 def client():
     with TestClient(app) as c:
+        c.app.state.ctx.pipeline.admit_crawl_target = AsyncMock(
+            return_value="https://example.com"
+        )
         yield c
 
 

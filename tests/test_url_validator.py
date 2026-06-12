@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from magnet_harvester.utils.url_validator import validate_crawl_url, URLValidationError
+from magnet_harvester.utils.url_validator import (
+    CrawlTargetAdmission,
+    URLValidationError,
+    validate_crawl_url,
+)
 
 
 class TestValidateCrawlUrl:
@@ -72,3 +76,33 @@ class TestValidateCrawlUrl:
 
     def test_accepts_public_ip_https(self):
         assert validate_crawl_url("https://1.1.1.1") is True
+
+
+@pytest.mark.asyncio
+async def test_admission_rejects_hostname_resolving_to_private_address():
+    async def private_resolver(_hostname, _port):
+        return ["10.0.0.5"]
+
+    admission = CrawlTargetAdmission(resolver=private_resolver)
+
+    with pytest.raises(URLValidationError, match="private"):
+        await admission.admit("https://public-looking.example")
+
+
+@pytest.mark.asyncio
+async def test_admission_rejects_redirect_to_private_address():
+    async def resolver(hostname, _port):
+        return ["10.0.0.5"] if hostname == "internal.example" else ["93.184.216.34"]
+
+    async def redirect_probe(url):
+        if url == "https://public.example":
+            return "http://internal.example/admin"
+        return None
+
+    admission = CrawlTargetAdmission(
+        resolver=resolver,
+        redirect_probe=redirect_probe,
+    )
+
+    with pytest.raises(URLValidationError, match="private"):
+        await admission.admit_redirect_chain("https://public.example")

@@ -8,12 +8,24 @@ P3-20: 重试延迟无抖动测试
 import pytest
 from unittest.mock import MagicMock, patch
 from magnet_harvester.crawler import MagnetCrawler
+from magnet_harvester.utils.url_validator import CrawlTargetAdmission
 
 
 @pytest.mark.asyncio
 async def test_retry_delay_has_jitter():
     """验证重试延迟有随机抖动，不是固定值"""
-    crawler = MagnetCrawler()
+    async def public_resolver(_hostname, _port):
+        return ["93.184.216.34"]
+
+    async def no_redirect(_url):
+        return None
+
+    crawler = MagnetCrawler(
+        target_admission=CrawlTargetAdmission(
+            resolver=public_resolver,
+            redirect_probe=no_redirect,
+        )
+    )
     crawler._crawler = MagicMock()
 
     # 模拟 arun 总是失败

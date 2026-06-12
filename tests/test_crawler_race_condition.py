@@ -7,12 +7,30 @@ P0-2: 爬虫 Set 竞态条件测试
 import asyncio
 import pytest
 from magnet_harvester.crawler import MagnetCrawler
+from magnet_harvester.utils.url_validator import CrawlTargetAdmission
+
+
+async def public_resolver(_hostname, _port):
+    return ["93.184.216.34"]
+
+
+async def no_redirect(_url):
+    return None
+
+
+def make_crawler():
+    return MagnetCrawler(
+        target_admission=CrawlTargetAdmission(
+            resolver=public_resolver,
+            redirect_probe=no_redirect,
+        )
+    )
 
 
 @pytest.mark.asyncio
 async def test_claim_unvisited_links_is_async_and_thread_safe():
     """验证 _claim_unvisited_links 是 async 的，且使用锁保护 visited Set"""
-    crawler = MagnetCrawler()
+    crawler = make_crawler()
     visited = {"https://example.com/already-visited"}
     links = [
         "https://example.com/new-1",
@@ -30,7 +48,7 @@ async def test_claim_unvisited_links_is_async_and_thread_safe():
 @pytest.mark.asyncio
 async def test_concurrent_claim_no_duplicates():
     """模拟 4 个 worker 并发调用 _claim_unvisited_links，验证无重复"""
-    crawler = MagnetCrawler()
+    crawler = make_crawler()
     visited = set()
     all_links = [f"https://example.com/page-{i}" for i in range(100)]
 

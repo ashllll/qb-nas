@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 class PipelineToolTarget(Protocol):
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
+    async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
     async def reclassify(self, hashes: list[str]): ...
 
@@ -60,6 +61,10 @@ class ToolExecutor:
             url = inp.get("url", "").strip()
             if not url:
                 return {"status": "error", "reason": "url 不能为空"}
+            try:
+                await pipeline.admit_crawl_target(url)
+            except ValueError as exc:
+                return {"status": "error", "reason": str(exc)}
             depth = int(inp.get("depth", 1))
             depth = max(1, min(depth, 3))  # 限制深度 1-3，防止指数爆炸
             self._spawn(

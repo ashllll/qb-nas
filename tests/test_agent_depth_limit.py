@@ -15,6 +15,9 @@ class FakePipeline:
     def __init__(self):
         self.last_depth = None
 
+    async def admit_crawl_target(self, url):
+        return url
+
     async def execute(self, url, depth=1, auto_download=False):
         self.last_depth = depth
 

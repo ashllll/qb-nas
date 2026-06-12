@@ -21,6 +21,9 @@ class FakePipeline:
         self.download_hashes = []
         self.reclassify_hashes = []
 
+    async def admit_crawl_target(self, url):
+        return url
+
     async def execute(self, url, depth=1, auto_download=False):
         self.crawl_urls.append((url, depth, auto_download))
 
@@ -87,6 +90,21 @@ async def test_start_crawl():
     assert result["status"] == "started"
     assert pipeline.crawl_urls[0][0] == "https://example.com"
     assert tasks.calls == ["crawl:https://example.com"]
+
+
+@pytest.mark.asyncio
+async def test_start_crawl_rejects_target_denied_by_pipeline():
+    pipeline = FakePipeline()
+
+    async def reject(_url):
+        raise ValueError("URL resolves to a private address")
+
+    pipeline.admit_crawl_target = reject
+    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus())
+
+    result = await executor.execute("start_crawl", {"url": "https://internal.example"})
+
+    assert result == {"status": "error", "reason": "URL resolves to a private address"}
 
 
 @pytest.mark.asyncio

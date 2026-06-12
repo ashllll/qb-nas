@@ -1,6 +1,8 @@
 """Integration tests for SSRF protection at API level."""
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -31,11 +33,8 @@ class TestCrawlSSRFProtection:
         assert r.status_code == 422
 
     def test_accepts_valid_public_url(self, client):
-        # We can't actually crawl, but validation should pass
+        client.app.state.ctx.pipeline.admit_crawl_target = AsyncMock(
+            return_value="https://example.com"
+        )
         r = client.post("/api/crawl", json={"url": "https://example.com", "depth": 1})
-        # 200 = started (background task), 422 = validation error
-        assert r.status_code in (200, 422)
-        if r.status_code == 422:
-            # If it fails, it should NOT be due to SSRF rules
-            assert "private" not in r.text.lower()
-            assert "unsupported protocol" not in r.text.lower()
+        assert r.status_code == 200

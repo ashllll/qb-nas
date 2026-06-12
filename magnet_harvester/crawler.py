@@ -15,13 +15,17 @@ import asyncio
 import logging
 import random
 import time
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from typing import AsyncGenerator, List, Optional, Set
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_parser import extract_from_text
+from magnet_harvester.utils.url_validator import (
+    CrawlTargetAdmission,
+    URLValidationError,
+)
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +69,11 @@ class MagnetCrawler:
         crawl(url, depth=1)    — 异步生成器，产出事件消息
     """
 
-    def __init__(self, config: CrawlerConfig = None):
+    def __init__(
+        self,
+        config: CrawlerConfig = None,
+        target_admission: CrawlTargetAdmission | None = None,
+    ):
         if config is None:
             self._config = CrawlerConfig(
                 timeout=settings.CRAWLER_TIMEOUT,
@@ -80,6 +88,10 @@ class MagnetCrawler:
         self._metrics: Optional[CrawlMetrics] = None
         self._visited_lock = asyncio.Lock()
         self._seen_lock = asyncio.Lock()
+        self._target_admission = target_admission or CrawlTargetAdmission()
+
+    async def admit_url(self, url: str) -> str:
+        return await self._target_admission.admit(url)
 
     async def start(self):
         """启动 crawl4ai 引擎"""
@@ -118,6 +130,7 @@ class MagnetCrawler:
             {"type": "error", ...}                — 错误信息
             {"type": "done", "total": N, ...}     — 爬取完成
         """
+        url = await self.admit_url(url)
         if not self._crawler:
             await self.start()
 
@@ -273,6 +286,7 @@ class MagnetCrawler:
     async def _fetch_with_retry(self, url: str):
         for retry_count in range(3):
             try:
+                await self._target_admission.admit_redirect_chain(url)
                 run_cfg = CrawlerRunConfig(
                     cache_mode=CacheMode.ENABLED,
                     word_count_threshold=1,
@@ -283,6 +297,8 @@ class MagnetCrawler:
                 if result.success:
                     return result
                 raise RuntimeError(getattr(result, "error_message", "") or "页面加载失败")
+            except URLValidationError:
+                raise
             except Exception as e:
                 if retry_count >= 2:
                     log.warning(f"页面加载最终失败: {url} - {e}")
@@ -323,6 +339,7 @@ class MagnetCrawler:
             if not href or href in seen_links:
                 continue
 
+            href = urljoin(parent_url, href)
             parsed = urlparse(href)
             if parsed_parent.netloc and parsed.netloc and parsed_parent.netloc != parsed.netloc:
                 continue
@@ -345,8 +362,13 @@ class MagnetCrawler:
 
     async def _claim_unvisited_links(self, links: List[str], visited: Set[str]) -> List[str]:
         claimed: List[str] = []
-        async with self._visited_lock:
-            for link in links:
+        for link in links:
+            try:
+                await self.admit_url(link)
+            except URLValidationError:
+                log.warning("跳过不安全的详情页链接: %s", link)
+                continue
+            async with self._visited_lock:
                 if link in visited:
                     continue
                 visited.add(link)

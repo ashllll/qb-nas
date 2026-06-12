@@ -25,6 +25,7 @@ class UsageStats(Protocol):
 @runtime_checkable
 class CrawlPhase(Protocol):
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
+    async def admit_url(self, url: str) -> str: ...
 
 
 @runtime_checkable
@@ -149,6 +150,9 @@ class HarvestPipeline:
         if self._task_manager is not None:
             return self._task_manager.create(coro, name=name)
         return asyncio.create_task(coro, name=name)
+
+    async def admit_crawl_target(self, url: str) -> str:
+        return await self._crawler.admit_url(url)
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))

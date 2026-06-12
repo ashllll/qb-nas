@@ -84,6 +84,10 @@ async def search_items(
 
 @router.post("/api/crawl")
 async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+    try:
+        await ctx.pipeline.admit_crawl_target(req.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if ctx.stats is not None:
         ctx.stats.record_crawl()
     ctx.bg_manager.create(
