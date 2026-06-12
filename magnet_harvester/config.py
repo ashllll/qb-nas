@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     MIN_DISK_SPACE_GB: float = 10.0
     AUTO_CREATE_DIRS: bool = True
 
+    API_KEY: str = ""  # 为空则禁用 API Key 认证（向后兼容）
+    CORS_ALLOWED_ORIGINS: str = ""  # 为空则禁用 CORS（只允许同域），逗号分隔多个域名
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     def __init__(self, **kwargs):

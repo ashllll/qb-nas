@@ -13,6 +13,7 @@ from magnet_harvester.context.app_context import AppContext, RuntimeContext, get
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, error_handler
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.qbit_client import QBittorrentClient
+from magnet_harvester.utils.auth import require_api_key
 from magnet_harvester.utils.serializers import _item_payload, _item_summary
 
 router = APIRouter()
@@ -81,7 +82,7 @@ async def search_items(
 
 
 @router.post("/api/crawl")
-async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context)):
+async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     if ctx.stats is not None:
         ctx.stats.record_crawl()
     ctx.bg_manager.create(
@@ -92,7 +93,7 @@ async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context))
 
 
 @router.post("/api/download")
-async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_context)):
+async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     if ctx.stats is not None:
         ctx.stats.record_download()
     ctx.bg_manager.create(ctx.pipeline.download(req.hashes), name="download_selected")
@@ -100,7 +101,7 @@ async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_
 
 
 @router.post("/api/reclassify")
-async def reclassify(req: DownloadRequest, ctx: AppContext = Depends(get_context)):
+async def reclassify(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     ctx.bg_manager.create(ctx.pipeline.reclassify(req.hashes), name="reclassify")
     return {"status": "started"}
 
@@ -121,7 +122,7 @@ async def get_errors(
 
 
 @router.post("/api/errors/clear")
-async def clear_resolved_errors():
+async def clear_resolved_errors(_=Depends(require_api_key)):
     error_handler.clear_resolved()
     return {"status": "cleared"}
 
@@ -141,7 +142,7 @@ async def get_config():
 
 
 @router.put("/api/config")
-async def update_config(data: dict, ctx: AppContext = Depends(get_context)):
+async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     host = data.get("qbit_host")
     username = data.get("qbit_username")
     password = data.get("qbit_password")
@@ -161,7 +162,7 @@ async def update_config(data: dict, ctx: AppContext = Depends(get_context)):
 
 
 @router.delete("/api/items")
-async def clear_items(ctx: AppContext = Depends(get_context)):
+async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     count = ctx.store.count
     ctx.store.clear()
     await ctx.bus.emit(Event(EventType.ERROR, {"type": "items_cleared"}))

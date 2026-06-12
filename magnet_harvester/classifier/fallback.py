@@ -30,7 +30,7 @@ def classify_local(name: str) -> str:
     for pattern, cat in LOCAL_RULES:
         if re.search(pattern, n, re.IGNORECASE):
             return cat
-    return "电影"
+    return "其他"
 
 
 def make_fallback(name: str, reason: str = "local_fallback") -> dict:

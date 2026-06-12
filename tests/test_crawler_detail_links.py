@@ -25,10 +25,10 @@ def test_extract_detail_links_filters_and_limits():
         ]
     }
 
-    result = crawler._claim_unvisited_links(
+    result = asyncio.run(crawler._claim_unvisited_links(
         crawler._extract_detail_links("https://example.com/list", links),
         visited,
-    )
+    ))
 
     assert "https://example.com/details/123" in result
     assert "https://example.com/view/abc" in result
@@ -43,8 +43,8 @@ def test_claim_unvisited_links_reserves_before_await_points():
     visited = set()
     links = ["https://example.com/details/123"]
 
-    first_claim = crawler._claim_unvisited_links(links, visited)
-    second_claim = crawler._claim_unvisited_links(links, visited)
+    first_claim = asyncio.run(crawler._claim_unvisited_links(links, visited))
+    second_claim = asyncio.run(crawler._claim_unvisited_links(links, visited))
 
     assert first_claim == ["https://example.com/details/123"]
     assert second_claim == []

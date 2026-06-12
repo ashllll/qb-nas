@@ -71,12 +71,12 @@ def test_invalid_hash_too_short():
 def test_base64_encoded_magnet():
     """Base64 编码的磁力链接"""
     import base64
-    magnet = "magnet:?xt=urn:btih:FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEE&dn=Base64+Test"
+    magnet = "magnet:?xt=urn:btih:FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE&dn=Base64+Test"
     encoded = base64.b64encode(magnet.encode()).decode()
     text = f"隐藏链接: {encoded}"
     items = extract_from_text(text)
     assert len(items) == 1, f"应从 Base64 中提取磁力链接，实际找到 {len(items)}"
-    assert items[0]["hash"] == "FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEE"
+    assert items[0]["hash"] == "FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE"
 
 
 def test_magnet_in_json():

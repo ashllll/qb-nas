@@ -3,6 +3,7 @@ WebSocket broadcaster — manages active connections and broadcasts events.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Optional, Protocol
@@ -68,11 +69,14 @@ class WSBroadcaster:
             return
         data = json.dumps(event.as_dict(), ensure_ascii=False)
         dead = set()
-        for ws in self._active_ws:
+
+        async def _send(ws: WebSocket):
             try:
                 await ws.send_text(data)
             except Exception:
                 dead.add(ws)
+
+        await asyncio.gather(*[_send(ws) for ws in self._active_ws], return_exceptions=True)
         self._active_ws.difference_update(dead)
 
 

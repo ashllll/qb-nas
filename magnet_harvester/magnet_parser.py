@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 # ── 正则表达式 ──────────────────────────────
 
 MAGNET_RE = re.compile(
-    r'magnet:\?xt=urn:btih:[a-fA-F0-9]{32,64}(?:[^\s\'"<>\)]+)?',
+    r'magnet:\?xt=urn:btih:[a-fA-F0-9]{32,40}(?![a-fA-F0-9])(?:[^\s\'"<>\)]+)?',
     re.IGNORECASE,
 )
 
@@ -30,7 +30,7 @@ MAGNET_FULL_RE = re.compile(
     re.IGNORECASE,
 )
 
-HASH_RE = re.compile(r'btih:([a-fA-F0-9]{32,64})', re.IGNORECASE)
+HASH_RE = re.compile(r'btih:([a-fA-F0-9]{32,40})(?![a-fA-F0-9])', re.IGNORECASE)
 
 SIZE_RE = re.compile(r'xl=(?:(\d+)|size=(\d+))', re.IGNORECASE)
 
@@ -45,7 +45,7 @@ JSON_MAGNET_RE = re.compile(
 )
 
 BTIH_PATTERN_RE = re.compile(
-    r'btih:([a-fA-F0-9]{32,40})',
+    r'btih:([a-fA-F0-9]{32,40})(?![a-fA-F0-9])',
     re.IGNORECASE,
 )
 

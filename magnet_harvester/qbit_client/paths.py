@@ -28,7 +28,7 @@ def _extract_base_from_path(save_path: str) -> Optional[str]:
     stripped = save_path.strip("/")
     if "/" not in stripped:
         return None
-    return "/".join(stripped.split("/")[:-1])
+    return "/" + "/".join(stripped.split("/")[:-1])
 
 
 class QBitPathResolver:

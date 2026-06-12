@@ -141,7 +141,7 @@ class InMemoryItemStore:
     def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         """支持通过 hash 前缀查找完整 hash（Agent 用）"""
         p = prefix.lower()
-        return [h for h in self._items if h.lower().startswith(p)]
+        return [h for h in list(self._items.keys()) if h.lower().startswith(p)]
 
     # ── 统计 ──────────────────────────────
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from urllib.parse import urlparse
 from typing import AsyncGenerator, List, Optional, Set
@@ -77,6 +78,8 @@ class MagnetCrawler:
             self._config = config
         self._crawler: Optional[AsyncWebCrawler] = None
         self._metrics: Optional[CrawlMetrics] = None
+        self._visited_lock = asyncio.Lock()
+        self._seen_lock = asyncio.Lock()
 
     async def start(self):
         """启动 crawl4ai 引擎"""
@@ -236,9 +239,10 @@ class MagnetCrawler:
         new_count = 0
         for item in items:
             hash_key = item["hash"]
-            if hash_key in seen:
-                continue
-            seen.add(hash_key)
+            async with self._seen_lock:
+                if hash_key in seen:
+                    continue
+                seen.add(hash_key)
             new_count += 1
             self._metrics.magnets_found += 1
             await events.put({"type": "found", "item": item})
@@ -253,19 +257,17 @@ class MagnetCrawler:
         if depth <= 1:
             return
 
-        detail_links = self._claim_unvisited_links(
-            self._extract_detail_links(url, result.links),
-            visited,
-        )
-        if detail_links:
+        detail_links = self._extract_detail_links(url, result.links)
+        claimed = await self._claim_unvisited_links(detail_links, visited)
+        if claimed:
             await events.put({
                 "type": "progress",
-                "msg": f"并发排队 {len(detail_links)} 个详情页",
+                "msg": f"并发排队 {len(claimed)} 个详情页",
                 "url": url,
                 "depth": depth,
             })
 
-        for link in detail_links:
+        for link in claimed:
             await frontier.put((link, depth - 1))
 
     async def _fetch_with_retry(self, url: str):
@@ -286,7 +288,7 @@ class MagnetCrawler:
                     log.warning(f"页面加载最终失败: {url} - {e}")
                     return None
                 self._metrics.retries += 1
-                delay = 2 ** retry_count
+                delay = 2 ** retry_count + random.uniform(0, 1)
                 log.info(f"页面加载失败，重试 {retry_count + 1}: {url} - {e}")
                 await asyncio.sleep(delay)
 
@@ -341,11 +343,12 @@ class MagnetCrawler:
 
         return detail_links
 
-    def _claim_unvisited_links(self, links: List[str], visited: Set[str]) -> List[str]:
+    async def _claim_unvisited_links(self, links: List[str], visited: Set[str]) -> List[str]:
         claimed: List[str] = []
-        for link in links:
-            if link in visited:
-                continue
-            visited.add(link)
-            claimed.append(link)
+        async with self._visited_lock:
+            for link in links:
+                if link in visited:
+                    continue
+                visited.add(link)
+                claimed.append(link)
         return claimed

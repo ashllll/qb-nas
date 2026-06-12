@@ -183,8 +183,10 @@ class HarvestPipeline:
         index_to_hash = {i: item.hash for i, item in enumerate(items)}
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
-        for item in items:
-            await self._transitions.classification_started(item.hash)
+        await asyncio.gather(*[
+            self._transitions.classification_started(item.hash)
+            for item in items
+        ])
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
         result_events: list[asyncio.Task] = []
@@ -204,22 +206,25 @@ class HarvestPipeline:
             await asyncio.gather(*result_events)
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
 
-    async def _download_items(self, hashes: List[str]):
-        for i, h in enumerate(hashes):
+    async def _download_items(self, hashes: List[str], concurrency: int = 3):
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _download_one(h: str):
             item = self._store.get(h)
             if not item or not item.category:
-                continue
+                return
             await self._transitions.download_submitting(h)
-            try:
-                ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
-                if ok:
-                    await self._transitions.download_submitted(h)
-                else:
-                    await self._transitions.download_failed(h, self._qbit.last_error or "qB 返回失败")
-            except Exception as e:
-                await self._transitions.download_failed(h, str(e))
-            if i > 0:
-                await asyncio.sleep(0.3)
+            async with semaphore:
+                try:
+                    ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
+                    if ok:
+                        await self._transitions.download_submitted(h)
+                    else:
+                        await self._transitions.download_failed(h, self._qbit.last_error or "qB 返回失败")
+                except Exception as e:
+                    await self._transitions.download_failed(h, str(e))
+
+        await asyncio.gather(*[_download_one(h) for h in hashes])
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]
