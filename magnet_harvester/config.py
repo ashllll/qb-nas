@@ -103,28 +103,46 @@ class Settings(BaseSettings):
             True — 更新成功
             str  — 错误信息（验证失败）
         """
-        if host is not None:
-            host = host.strip()
-            if not host:
-                return "qBittorrent 主机地址不能为空"
-            if not (host.startswith("http://") or host.startswith("https://")):
-                return f"非法的 qBittorrent 主机地址: {host}（必须以 http:// 或 https:// 开头）"
-            self.QBIT_HOST = host
-
-        if username is not None:
-            username = username.strip()
-            if not username:
-                return "用户名不能为空"
-            self.QBIT_USERNAME = username
-
-        if password is not None:
-            password = password.strip()
-            if not password:
-                return "密码不能为空"
-            self.QBIT_PASSWORD = password
-
-        self._qbit_config = None  # 下次调用 .qbit 时重建
+        try:
+            candidate = self.build_qbit_config(host=host, username=username, password=password)
+        except ValueError as exc:
+            return str(exc)
+        self.commit_qbit_config(candidate)
         return True
+
+    def build_qbit_config(
+        self,
+        host: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> QBitConfig:
+        """Build a fully validated candidate without mutating live settings."""
+        candidate_host = self.QBIT_HOST if host is None else host.strip()
+        candidate_username = self.QBIT_USERNAME if username is None else username.strip()
+        candidate_password = self.QBIT_PASSWORD if password is None else password.strip()
+
+        if not candidate_host:
+            raise ValueError("qBittorrent 主机地址不能为空")
+        if not candidate_host.startswith(("http://", "https://")):
+            raise ValueError(
+                f"非法的 qBittorrent 主机地址: {candidate_host}（必须以 http:// 或 https:// 开头）"
+            )
+        if not candidate_username:
+            raise ValueError("用户名不能为空")
+        if not candidate_password:
+            raise ValueError("密码不能为空")
+
+        return QBitConfig(
+            host=candidate_host,
+            username=candidate_username,
+            password=candidate_password,
+        )
+
+    def commit_qbit_config(self, config: QBitConfig) -> None:
+        self.QBIT_HOST = config.host
+        self.QBIT_USERNAME = config.username
+        self.QBIT_PASSWORD = config.password
+        self._qbit_config = None
 
     @staticmethod
     def _parse_csv_tuple(value: str) -> tuple[str, ...]:

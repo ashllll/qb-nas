@@ -59,6 +59,20 @@ def test_update_qbit_rejects_empty_values():
     assert settings.QBIT_HOST == original_host
 
 
+def test_update_qbit_does_not_partially_mutate_on_late_validation_failure():
+    settings = Settings()
+    original = (settings.QBIT_HOST, settings.QBIT_USERNAME, settings.QBIT_PASSWORD)
+
+    result = settings.update_qbit(
+        host="http://new.example:8080",
+        username="new-user",
+        password="",
+    )
+
+    assert result is not True
+    assert (settings.QBIT_HOST, settings.QBIT_USERNAME, settings.QBIT_PASSWORD) == original
+
+
 # ═══════════════════════════════════════════════════
 # 增量测试 4: RuntimeContext.replace_qbit() 应关闭旧客户端
 # ═══════════════════════════════════════════════════
@@ -85,6 +99,43 @@ async def test_replace_qbit_closes_old_client():
 
     # 旧客户端应被关闭（_client 为 None 或 is_closed）
     assert ctx.qbit is new_qbit
+
+
+async def test_replace_qbit_updates_download_state_sync():
+    from magnet_harvester.context.app_context import AppContext, RuntimeContext
+
+    class FakeQbit:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    class FakeSync:
+        def __init__(self):
+            self.qbit = None
+
+        async def replace_qbit_client(self, new_qbit):
+            self.qbit = new_qbit
+
+    old_qbit = FakeQbit()
+    new_qbit = FakeQbit()
+    sync = FakeSync()
+    ctx = AppContext(
+        store=None,
+        bus=None,
+        pipeline=None,
+        crawler=None,
+        classifier=None,
+        qbit=old_qbit,
+        qbit_sync=sync,
+    )
+
+    await RuntimeContext(ctx).replace_qbit(new_qbit)
+
+    assert sync.qbit is new_qbit
+    assert ctx.qbit is new_qbit
+    assert old_qbit.closed is True
 
 
 if __name__ == "__main__":

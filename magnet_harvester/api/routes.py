@@ -3,9 +3,10 @@ REST routes backed by AppContext dependency injection.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from magnet_harvester.bus import Event, EventType
 from magnet_harvester.config import settings
@@ -147,18 +148,25 @@ async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=De
     username = data.get("qbit_username")
     password = data.get("qbit_password")
 
-    settings.update_qbit(host=host, username=username, password=password)
-    new_qbit = QBittorrentClient(config=settings.qbit)
+    lock = ctx.qbit_lock or asyncio.Lock()
+    async with lock:
+        try:
+            candidate = settings.build_qbit_config(
+                host=host,
+                username=username,
+                password=password,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if ctx.qbit_lock is not None:
-        async with ctx.qbit_lock:
-            await RuntimeContext(ctx).replace_qbit(new_qbit)
-            ok = await new_qbit.ping()
-    else:
+        new_qbit = QBittorrentClient(config=candidate)
+        if not await new_qbit.ping():
+            await new_qbit.close()
+            return {"status": "failed", "connected": False}
+
         await RuntimeContext(ctx).replace_qbit(new_qbit)
-        ok = await new_qbit.ping()
-
-    return {"status": "ok" if ok else "failed", "connected": ok}
+        settings.commit_qbit_config(candidate)
+        return {"status": "ok", "connected": True}
 
 
 @router.delete("/api/items")

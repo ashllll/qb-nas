@@ -260,3 +260,51 @@ def test_update_config_replaces_qbit_client(monkeypatch):
     assert ctx.qbit is created[0]
     assert ctx.pipeline.replaced_qbit is created[0]
     assert old_qbit.closed is True
+
+
+def test_update_config_keeps_current_client_when_candidate_cannot_connect(monkeypatch):
+    from magnet_harvester.api import routes as routes_module
+
+    class OfflineQbit(FakeQbit):
+        def __init__(self, config):
+            super().__init__()
+            self.config = config
+            self.ping_ok = False
+
+    monkeypatch.setattr(routes_module, "QBittorrentClient", OfflineQbit)
+    app, ctx = _make_app()
+    old_qbit = ctx.qbit
+
+    with TestClient(app) as client:
+        resp = client.put(
+            "/api/config",
+            json={
+                "qbit_host": "http://offline.example:8080",
+                "qbit_username": "tester",
+                "qbit_password": "secret",
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "failed", "connected": False}
+    assert ctx.qbit is old_qbit
+    assert old_qbit.closed is False
+
+
+def test_update_config_rejects_invalid_candidate_without_mutating_runtime():
+    app, ctx = _make_app()
+    old_qbit = ctx.qbit
+
+    with TestClient(app) as client:
+        resp = client.put(
+            "/api/config",
+            json={
+                "qbit_host": "invalid-host",
+                "qbit_username": "tester",
+                "qbit_password": "secret",
+            },
+        )
+
+    assert resp.status_code == 422
+    assert ctx.qbit is old_qbit
+    assert old_qbit.closed is False

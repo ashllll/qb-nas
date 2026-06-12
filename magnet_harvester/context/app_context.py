@@ -39,6 +39,10 @@ class ToolExecutorLike(Protocol):
     async def execute(self, name: str, inp: dict) -> dict: ...
 
 
+class QBitSyncLike(Protocol):
+    async def replace_qbit_client(self, new_qbit) -> None: ...
+
+
 @dataclass
 class AppContext:
     store: ItemStore
@@ -51,6 +55,7 @@ class AppContext:
     bg_manager: BackgroundTaskSpawner | None = None
     broadcaster: BroadcasterLike | None = None
     tool_executor: ToolExecutorLike | None = None
+    qbit_sync: QBitSyncLike | None = None
     qbit_lock: asyncio.Lock | None = None
 
 
@@ -60,6 +65,8 @@ class RuntimeContext:
 
     async def replace_qbit(self, new_qbit):
         old_qbit = self.ctx.qbit
+        if self.ctx.qbit_sync is not None:
+            await self.ctx.qbit_sync.replace_qbit_client(new_qbit)
         self.ctx.qbit = new_qbit
         if self.ctx.pipeline is not None:
             self.ctx.pipeline.replace_download_phase(new_qbit)
