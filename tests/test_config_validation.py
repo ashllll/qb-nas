@@ -5,6 +5,8 @@ TDD 循环 5: 配置验证与动态更新的原子性
 import sys
 import os
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import Settings
@@ -71,6 +73,36 @@ def test_update_qbit_does_not_partially_mutate_on_late_validation_failure():
 
     assert result is not True
     assert (settings.QBIT_HOST, settings.QBIT_USERNAME, settings.QBIT_PASSWORD) == original
+
+
+def test_security_posture_allows_loopback_without_api_key():
+    settings = Settings(SERVICE_HOST="127.0.0.1", API_KEY="")
+    settings.validate_security_posture()
+
+
+def test_security_posture_rejects_exposed_unauthenticated_writes():
+    settings = Settings(
+        SERVICE_HOST="0.0.0.0",
+        API_KEY="",
+        ALLOW_INSECURE_WRITE_API=False,
+    )
+
+    with pytest.raises(RuntimeError, match="Refusing"):
+        settings.validate_security_posture()
+
+
+def test_security_posture_allows_authenticated_network_listener():
+    settings = Settings(SERVICE_HOST="0.0.0.0", API_KEY="strong-random-key")
+    settings.validate_security_posture()
+
+
+def test_security_posture_allows_explicit_insecure_development_override():
+    settings = Settings(
+        SERVICE_HOST="0.0.0.0",
+        API_KEY="",
+        ALLOW_INSECURE_WRITE_API=True,
+    )
+    settings.validate_security_posture()
 
 
 # ═══════════════════════════════════════════════════

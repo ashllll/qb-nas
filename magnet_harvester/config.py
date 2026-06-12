@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import ipaddress
 from dataclasses import dataclass
 from typing import Optional
 
@@ -29,7 +30,7 @@ class QBitConfig:
 
 @dataclass
 class ServiceConfig:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8899
 
 
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     QBIT_USERNAME: str = "admin"
     QBIT_PASSWORD: str = "adminadmin"
 
-    SERVICE_HOST: str = "0.0.0.0"
+    SERVICE_HOST: str = "127.0.0.1"
     SERVICE_PORT: int = 8899
 
     CRAWLER_TIMEOUT: int = 30
@@ -55,6 +56,7 @@ class Settings(BaseSettings):
     AUTO_CREATE_DIRS: bool = True
 
     API_KEY: str = ""  # 为空则禁用 API Key 认证（向后兼容）
+    ALLOW_INSECURE_WRITE_API: bool = False
     CORS_ALLOWED_ORIGINS: str = ""  # 为空则禁用 CORS（只允许同域），逗号分隔多个域名
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
@@ -143,6 +145,23 @@ class Settings(BaseSettings):
         self.QBIT_USERNAME = config.username
         self.QBIT_PASSWORD = config.password
         self._qbit_config = None
+
+    def validate_security_posture(self) -> None:
+        """Reject network-exposed write endpoints without explicit protection."""
+        host = self.SERVICE_HOST.strip().lower()
+        loopback = host == "localhost"
+        if not loopback:
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = False
+
+        if loopback or self.API_KEY.strip() or self.ALLOW_INSECURE_WRITE_API:
+            return
+        raise RuntimeError(
+            "Refusing to expose unauthenticated write endpoints on a non-loopback address. "
+            "Configure API_KEY or set ALLOW_INSECURE_WRITE_API=true for deliberate development use."
+        )
 
     @staticmethod
     def _parse_csv_tuple(value: str) -> tuple[str, ...]:

@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_security_posture()
     runtime = build_runtime()
     app.state.ctx = runtime.ctx
     await runtime.start()

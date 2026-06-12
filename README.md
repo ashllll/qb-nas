@@ -69,7 +69,9 @@ cp .env.example .env
 | `QBIT_HOST`                   | qBittorrent Web UI 地址      | `http://192.168.1.69:8085` |
 | `QBIT_USERNAME`               | qB 用户名                    | `admin`                    |
 | `QBIT_PASSWORD`               | qB 密码                      | 留空                       |
-| `SERVICE_HOST`                | 服务监听地址                 | `0.0.0.0`                  |
+| `SERVICE_HOST`                | 服务监听地址                 | `127.0.0.1`                |
+| `API_KEY`                     | 写操作的 `X-API-Key`         | 空（仅允许 loopback）      |
+| `ALLOW_INSECURE_WRITE_API`    | 允许非 loopback 无认证写操作 | `false`                    |
 | `SERVICE_PORT`                | 服务端口                     | `8899`                     |
 | `CRAWLER_TIMEOUT`             | 单次抓取超时秒数             | `30`                       |
 | `CRAWLER_MAX_DEPTH`           | 默认最大深度                 | `2`                        |
