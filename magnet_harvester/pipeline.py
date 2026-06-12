@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import AsyncGenerator, Callable, List, Optional, Protocol, runtime_checkable
+from typing import AsyncGenerator, Callable, List, Protocol, runtime_checkable
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
@@ -25,6 +25,7 @@ class UsageStats(Protocol):
 @runtime_checkable
 class CrawlPhase(Protocol):
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
+    async def admit_url(self, url: str) -> str: ...
 
 
 @runtime_checkable
@@ -150,6 +151,9 @@ class HarvestPipeline:
             return self._task_manager.create(coro, name=name)
         return asyncio.create_task(coro, name=name)
 
+    async def admit_crawl_target(self, url: str) -> str:
+        return await self._crawler.admit_url(url)
+
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))
         new_hashes: List[str] = []
@@ -183,8 +187,10 @@ class HarvestPipeline:
         index_to_hash = {i: item.hash for i, item in enumerate(items)}
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
-        for item in items:
-            await self._transitions.classification_started(item.hash)
+        await asyncio.gather(*[
+            self._transitions.classification_started(item.hash)
+            for item in items
+        ])
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
         result_events: list[asyncio.Task] = []
@@ -204,22 +210,25 @@ class HarvestPipeline:
             await asyncio.gather(*result_events)
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
 
-    async def _download_items(self, hashes: List[str]):
-        for i, h in enumerate(hashes):
+    async def _download_items(self, hashes: List[str], concurrency: int = 3):
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _download_one(h: str):
             item = self._store.get(h)
             if not item or not item.category:
-                continue
+                return
             await self._transitions.download_submitting(h)
-            try:
-                ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
-                if ok:
-                    await self._transitions.download_submitted(h)
-                else:
-                    await self._transitions.download_failed(h, self._qbit.last_error or "qB 返回失败")
-            except Exception as e:
-                await self._transitions.download_failed(h, str(e))
-            if i > 0:
-                await asyncio.sleep(0.3)
+            async with semaphore:
+                try:
+                    ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
+                    if ok:
+                        await self._transitions.download_submitted(h)
+                    else:
+                        await self._transitions.download_failed(h, self._qbit.last_error or "qB 返回失败")
+                except Exception as e:
+                    await self._transitions.download_failed(h, str(e))
+
+        await asyncio.gather(*[_download_one(h) for h in hashes])
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]

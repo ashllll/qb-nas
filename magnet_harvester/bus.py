@@ -10,7 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Coroutine, Dict, List, Optional
+from typing import Callable, Coroutine, Dict, List
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class EventType(str, Enum):
     DOWNLOAD_DONE = "download_done"
     ERROR = "error"
     STORE_CHANGED = "store_changed"
+    ITEMS_CLEARED = "items_cleared"
 
 
 @dataclass
@@ -63,7 +64,7 @@ class MessageBus:
     async def emit(self, event: Event):
         """发射事件到所有匹配的订阅者（并发执行，带 1 秒超时）。
 
-        慢订阅者不会阻塞发送方。未完成的订阅者继续在后台运行。
+        慢订阅者不会阻塞发送方。超时的订阅者会被取消。
         """
         tasks: list[asyncio.Task] = []
 
@@ -84,12 +85,18 @@ class MessageBus:
 
         if tasks:
             # 等待最多 1 秒，避免慢订阅者阻塞发送方
-            done, pending = await asyncio.wait(tasks, timeout=1.0)
-            if pending:
-                log.debug(f"MessageBus: {len(pending)} 个订阅者处理超时，继续在后台运行")
-                # 让 pending 任务继续在后台运行，不取消它们
-                for task in pending:
-                    task.add_done_callback(lambda t: None)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=1.0,
+                )
+            except asyncio.TimeoutError:
+                log.debug("MessageBus: 订阅者处理超时，取消剩余任务")
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                # 等待取消完成，忽略 CancelledError
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     @staticmethod
     async def _safe_call(cb: Subscriber, event: Event):

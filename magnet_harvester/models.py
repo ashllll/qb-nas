@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+from magnet_harvester.utils.url_validator import URLValidationError, validate_crawl_url
 
 
 class TaskStatus(str, Enum):
@@ -31,6 +34,8 @@ class MagnetItem(BaseModel):
     progress:   float = 0.0
     torrent_state: Optional[str] = None
     error_msg:  Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class CrawlRequest(BaseModel):
@@ -43,6 +48,15 @@ class CrawlRequest(BaseModel):
     @classmethod
     def clamp_depth(cls, v: int) -> int:
         return max(1, min(v, 3))
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        try:
+            validate_crawl_url(v)
+        except URLValidationError as e:
+            raise ValueError(str(e))
+        return v
 
 
 class DownloadRequest(BaseModel):

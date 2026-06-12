@@ -3,9 +3,10 @@ REST routes backed by AppContext dependency injection.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from magnet_harvester.bus import Event, EventType
 from magnet_harvester.config import settings
@@ -13,6 +14,7 @@ from magnet_harvester.context.app_context import AppContext, RuntimeContext, get
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, error_handler
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.qbit_client import QBittorrentClient
+from magnet_harvester.utils.auth import require_api_key
 from magnet_harvester.utils.serializers import _item_payload, _item_summary
 
 router = APIRouter()
@@ -81,7 +83,11 @@ async def search_items(
 
 
 @router.post("/api/crawl")
-async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context)):
+async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+    try:
+        await ctx.pipeline.admit_crawl_target(req.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if ctx.stats is not None:
         ctx.stats.record_crawl()
     ctx.bg_manager.create(
@@ -92,7 +98,7 @@ async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context))
 
 
 @router.post("/api/download")
-async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_context)):
+async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     if ctx.stats is not None:
         ctx.stats.record_download()
     ctx.bg_manager.create(ctx.pipeline.download(req.hashes), name="download_selected")
@@ -100,7 +106,7 @@ async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_
 
 
 @router.post("/api/reclassify")
-async def reclassify(req: DownloadRequest, ctx: AppContext = Depends(get_context)):
+async def reclassify(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     ctx.bg_manager.create(ctx.pipeline.reclassify(req.hashes), name="reclassify")
     return {"status": "started"}
 
@@ -121,7 +127,7 @@ async def get_errors(
 
 
 @router.post("/api/errors/clear")
-async def clear_resolved_errors():
+async def clear_resolved_errors(_=Depends(require_api_key)):
     error_handler.clear_resolved()
     return {"status": "cleared"}
 
@@ -141,30 +147,37 @@ async def get_config():
 
 
 @router.put("/api/config")
-async def update_config(data: dict, ctx: AppContext = Depends(get_context)):
+async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     host = data.get("qbit_host")
     username = data.get("qbit_username")
     password = data.get("qbit_password")
 
-    settings.update_qbit(host=host, username=username, password=password)
-    new_qbit = QBittorrentClient(config=settings.qbit)
+    lock = ctx.qbit_lock or asyncio.Lock()
+    async with lock:
+        try:
+            candidate = settings.build_qbit_config(
+                host=host,
+                username=username,
+                password=password,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if ctx.qbit_lock is not None:
-        async with ctx.qbit_lock:
-            await RuntimeContext(ctx).replace_qbit(new_qbit)
-            ok = await new_qbit.ping()
-    else:
+        new_qbit = QBittorrentClient(config=candidate)
+        if not await new_qbit.ping():
+            await new_qbit.close()
+            return {"status": "failed", "connected": False}
+
         await RuntimeContext(ctx).replace_qbit(new_qbit)
-        ok = await new_qbit.ping()
-
-    return {"status": "ok" if ok else "failed", "connected": ok}
+        settings.commit_qbit_config(candidate)
+        return {"status": "ok", "connected": True}
 
 
 @router.delete("/api/items")
-async def clear_items(ctx: AppContext = Depends(get_context)):
+async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     count = ctx.store.count
     ctx.store.clear()
-    await ctx.bus.emit(Event(EventType.ERROR, {"type": "items_cleared"}))
+    await ctx.bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
     return {"status": "cleared", "removed": count}
 
 

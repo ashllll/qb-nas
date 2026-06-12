@@ -74,3 +74,35 @@ async def test_cancelled_task_does_not_log(caplog):
         await task
 
     assert "test_cancel" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_and_awaits_all_tasks():
+    cancelled = asyncio.Event()
+
+    async def slow():
+        try:
+            await asyncio.sleep(10)
+        finally:
+            cancelled.set()
+
+    mgr = BGTaskManager()
+    mgr.create(slow(), name="slow")
+    await asyncio.sleep(0)
+
+    await mgr.shutdown()
+
+    assert cancelled.is_set()
+    assert mgr.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_shutdown_rejects_new_tasks_without_leaking_coroutine():
+    mgr = BGTaskManager()
+    await mgr.shutdown()
+
+    async def work():
+        return None
+
+    with pytest.raises(RuntimeError, match="shutting down"):
+        mgr.create(work(), name="late")

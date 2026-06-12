@@ -6,7 +6,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import InMemoryItemStore, ItemStore, StoreStats
 
 

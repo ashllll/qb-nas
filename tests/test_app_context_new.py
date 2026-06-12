@@ -9,7 +9,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
-from magnet_harvester.models import MagnetItem
 from magnet_harvester.context.app_context import AppContext, RuntimeContext, get_context
 
 

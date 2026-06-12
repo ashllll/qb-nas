@@ -57,6 +57,11 @@ class QBitSyncLoop:
         if self._task:
             await self._task
 
+    async def replace_qbit_client(self, new_qbit: QBitSyncClient) -> None:
+        """Align future sync polls with a newly committed qB adapter."""
+        async with self._lock:
+            self._qbit = new_qbit
+
     async def _emit_store_changed(
         self, hash_key: str, previous_status: TaskStatus | None = None
     ):

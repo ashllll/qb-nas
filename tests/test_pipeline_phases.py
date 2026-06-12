@@ -17,8 +17,6 @@ from magnet_harvester.bus import NullBus, Event, EventType, MessageBus
 
 from magnet_harvester.pipeline import (
     CrawlPhase,
-    ClassifyPhase,
-    DownloadPhase,
     HarvestPipeline,
 )
 
@@ -29,6 +27,9 @@ class FakeCrawlPhase:
     def __init__(self, items: Optional[List[MagnetItem]] = None):
         self.items = items or []
         self.called_with: List[tuple] = []
+
+    async def admit_url(self, url: str) -> str:
+        return url
 
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]:
         self.called_with.append((url, depth))

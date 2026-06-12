@@ -5,12 +5,12 @@ import asyncio
 import logging
 import re
 import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
 
 from magnet_harvester.config import QBitConfig, settings
-from magnet_harvester.models import TaskStatus
 from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
 from magnet_harvester.qbit_client.paths import QBitPathResolver, _safe_fs_segment
 from magnet_harvester.qbit_client.stats import QBittorrentStats
@@ -122,7 +122,7 @@ class QBittorrentClient:
                     if auth_retry_count >= max_auth_retries:
                         raise RuntimeError(f"qBittorrent Session 过期（已重试{max_auth_retries}次）")
                     
-                    log.warning(f"qBittorrent Session 过期，重新登录...")
+                    log.warning("qBittorrent Session 过期，重新登录...")
                     self._cookie = None
                     auth_retry_count += 1
                     ok = await self._login(force=True)

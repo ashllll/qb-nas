@@ -59,17 +59,17 @@ def test_variety():
 
 
 def test_movie_default():
-    """纯电影名（无剧集/动漫/音乐特征）→ 电影"""
+    """纯电影名（无剧集/动漫/音乐特征）→ 其他（不再默认电影）"""
     clf = LocalClassifier()
     result = clf.classify_one("Avatar.The.Way.of.Water.2022.2160p.BluRay")
-    assert result["category"] == "电影"
+    assert result["category"] == "其他"
 
 
 def test_unknown_default():
-    """完全无法识别的名称 → 电影"""
+    """完全无法识别的名称 → 其他"""
     clf = LocalClassifier()
     result = clf.classify_one("abc123xyz")
-    assert result["category"] == "电影"
+    assert result["category"] == "其他"
 
 
 def test_batch_classify():
@@ -83,7 +83,7 @@ def test_batch_classify():
     assert len(results) == 3
     assert results[0]["category"] == "电视剧"
     assert results[1]["category"] == "音乐"
-    assert results[2]["category"] == "电影"
+    assert results[2]["category"] == "其他"
 
 
 if __name__ == "__main__":

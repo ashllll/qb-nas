@@ -1,7 +1,6 @@
 """Magnet Harvester v3.0 — app entrypoint and lifespan assembly."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -27,6 +26,7 @@ log = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_security_posture()
     runtime = build_runtime()
     app.state.ctx = runtime.ctx
     await runtime.start()
@@ -44,9 +44,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Magnet Harvester v3.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-)
+
+# CORS: empty string = disabled (same-origin only); comma-separated list = allowed origins
+_cors_origins = [o.strip() for o in settings.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 app.include_router(pages_router)
 app.include_router(api_router)
 app.include_router(ws_router)

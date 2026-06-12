@@ -8,7 +8,6 @@ ItemStore — 磁力链接中央存储（深模块）
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol, runtime_checkable
 
@@ -141,7 +140,7 @@ class InMemoryItemStore:
     def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         """支持通过 hash 前缀查找完整 hash（Agent 用）"""
         p = prefix.lower()
-        return [h for h in self._items if h.lower().startswith(p)]
+        return [h for h in list(self._items.keys()) if h.lower().startswith(p)]
 
     # ── 统计 ──────────────────────────────
 

@@ -11,9 +11,6 @@ import logging
 from typing import Callable
 
 from magnet_harvester.classifier.fallback import (
-    LOCAL_RULES,
-    VALID_CATEGORIES,
-    classify_local,
     make_fallback,
 )
 from magnet_harvester.keyword_recognizer import KeywordCategoryRecognizer

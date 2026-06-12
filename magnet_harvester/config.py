@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
-import shutil
+import ipaddress
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 from pydantic_settings import BaseSettings
 
@@ -32,7 +30,7 @@ class QBitConfig:
 
 @dataclass
 class ServiceConfig:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8899
 
 
@@ -43,7 +41,7 @@ class Settings(BaseSettings):
     QBIT_USERNAME: str = "admin"
     QBIT_PASSWORD: str = "adminadmin"
 
-    SERVICE_HOST: str = "0.0.0.0"
+    SERVICE_HOST: str = "127.0.0.1"
     SERVICE_PORT: int = 8899
 
     CRAWLER_TIMEOUT: int = 30
@@ -56,6 +54,10 @@ class Settings(BaseSettings):
 
     MIN_DISK_SPACE_GB: float = 10.0
     AUTO_CREATE_DIRS: bool = True
+
+    API_KEY: str = ""  # 为空则禁用 API Key 认证（向后兼容）
+    ALLOW_INSECURE_WRITE_API: bool = False
+    CORS_ALLOWED_ORIGINS: str = ""  # 为空则禁用 CORS（只允许同域），逗号分隔多个域名
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -103,28 +105,63 @@ class Settings(BaseSettings):
             True — 更新成功
             str  — 错误信息（验证失败）
         """
-        if host is not None:
-            host = host.strip()
-            if not host:
-                return "qBittorrent 主机地址不能为空"
-            if not (host.startswith("http://") or host.startswith("https://")):
-                return f"非法的 qBittorrent 主机地址: {host}（必须以 http:// 或 https:// 开头）"
-            self.QBIT_HOST = host
-
-        if username is not None:
-            username = username.strip()
-            if not username:
-                return "用户名不能为空"
-            self.QBIT_USERNAME = username
-
-        if password is not None:
-            password = password.strip()
-            if not password:
-                return "密码不能为空"
-            self.QBIT_PASSWORD = password
-
-        self._qbit_config = None  # 下次调用 .qbit 时重建
+        try:
+            candidate = self.build_qbit_config(host=host, username=username, password=password)
+        except ValueError as exc:
+            return str(exc)
+        self.commit_qbit_config(candidate)
         return True
+
+    def build_qbit_config(
+        self,
+        host: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> QBitConfig:
+        """Build a fully validated candidate without mutating live settings."""
+        candidate_host = self.QBIT_HOST if host is None else host.strip()
+        candidate_username = self.QBIT_USERNAME if username is None else username.strip()
+        candidate_password = self.QBIT_PASSWORD if password is None else password.strip()
+
+        if not candidate_host:
+            raise ValueError("qBittorrent 主机地址不能为空")
+        if not candidate_host.startswith(("http://", "https://")):
+            raise ValueError(
+                f"非法的 qBittorrent 主机地址: {candidate_host}（必须以 http:// 或 https:// 开头）"
+            )
+        if not candidate_username:
+            raise ValueError("用户名不能为空")
+        if not candidate_password:
+            raise ValueError("密码不能为空")
+
+        return QBitConfig(
+            host=candidate_host,
+            username=candidate_username,
+            password=candidate_password,
+        )
+
+    def commit_qbit_config(self, config: QBitConfig) -> None:
+        self.QBIT_HOST = config.host
+        self.QBIT_USERNAME = config.username
+        self.QBIT_PASSWORD = config.password
+        self._qbit_config = None
+
+    def validate_security_posture(self) -> None:
+        """Reject network-exposed write endpoints without explicit protection."""
+        host = self.SERVICE_HOST.strip().lower()
+        loopback = host == "localhost"
+        if not loopback:
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = False
+
+        if loopback or self.API_KEY.strip() or self.ALLOW_INSECURE_WRITE_API:
+            return
+        raise RuntimeError(
+            "Refusing to expose unauthenticated write endpoints on a non-loopback address. "
+            "Configure API_KEY or set ALLOW_INSECURE_WRITE_API=true for deliberate development use."
+        )
 
     @staticmethod
     def _parse_csv_tuple(value: str) -> tuple[str, ...]:

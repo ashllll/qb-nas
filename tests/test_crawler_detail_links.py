@@ -9,10 +9,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
+from magnet_harvester.utils.url_validator import CrawlTargetAdmission
+
+
+async def public_resolver(_hostname, _port):
+    return ["93.184.216.34"]
+
+
+async def no_redirect(_url):
+    return None
+
+
+def make_crawler(**config):
+    return MagnetCrawler(
+        config=CrawlerConfig(**config),
+        target_admission=CrawlTargetAdmission(
+            resolver=public_resolver,
+            redirect_probe=no_redirect,
+        ),
+    )
 
 
 def test_extract_detail_links_filters_and_limits():
-    crawler = MagnetCrawler(config=CrawlerConfig())
+    crawler = make_crawler()
     visited = {"https://example.com/details/old"}
     links = {
         "internal": [
@@ -25,10 +44,10 @@ def test_extract_detail_links_filters_and_limits():
         ]
     }
 
-    result = crawler._claim_unvisited_links(
+    result = asyncio.run(crawler._claim_unvisited_links(
         crawler._extract_detail_links("https://example.com/list", links),
         visited,
-    )
+    ))
 
     assert "https://example.com/details/123" in result
     assert "https://example.com/view/abc" in result
@@ -39,12 +58,12 @@ def test_extract_detail_links_filters_and_limits():
 
 
 def test_claim_unvisited_links_reserves_before_await_points():
-    crawler = MagnetCrawler(config=CrawlerConfig())
+    crawler = make_crawler()
     visited = set()
     links = ["https://example.com/details/123"]
 
-    first_claim = crawler._claim_unvisited_links(links, visited)
-    second_claim = crawler._claim_unvisited_links(links, visited)
+    first_claim = asyncio.run(crawler._claim_unvisited_links(links, visited))
+    second_claim = asyncio.run(crawler._claim_unvisited_links(links, visited))
 
     assert first_claim == ["https://example.com/details/123"]
     assert second_claim == []
@@ -59,7 +78,13 @@ def test_crawl_worker_reports_page_errors_and_finishes():
             raise RuntimeError("boom")
 
     async def collect():
-        crawler = ExplodingCrawler(config=CrawlerConfig(concurrency=1))
+        crawler = ExplodingCrawler(
+            config=CrawlerConfig(concurrency=1),
+            target_admission=CrawlTargetAdmission(
+                resolver=public_resolver,
+                redirect_probe=no_redirect,
+            ),
+        )
         messages = []
         async with asyncio.timeout(1):
             async for message in crawler.crawl("https://example.com", depth=1):
@@ -83,7 +108,13 @@ def test_crawl_consumer_close_cleans_up_worker_session():
             await asyncio.sleep(0.02)
 
     async def consume_and_close():
-        crawler = SlowCrawler(config=CrawlerConfig(concurrency=2))
+        crawler = SlowCrawler(
+            config=CrawlerConfig(concurrency=2),
+            target_admission=CrawlTargetAdmission(
+                resolver=public_resolver,
+                redirect_probe=no_redirect,
+            ),
+        )
         stream = crawler.crawl("https://example.com", depth=1)
         first = await anext(stream)
         assert first["type"] == "progress"

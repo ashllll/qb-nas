@@ -3,7 +3,6 @@ Test WSBroadcaster — WebSocket event broadcast service.
 """
 import sys
 import os
-import asyncio
 import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -29,7 +28,7 @@ class FakeWebSocket:
 @pytest.mark.asyncio
 async def test_subscribes_to_bus_on_init():
     bus = MessageBus()
-    broadcaster = WSBroadcaster(bus=bus)
+    WSBroadcaster(bus=bus)
 
     # WSBroadcaster should have subscribed to bus
     assert len(bus._global_subscribers) == 1

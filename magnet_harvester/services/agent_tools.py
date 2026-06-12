@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 class PipelineToolTarget(Protocol):
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
+    async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
     async def reclassify(self, hashes: list[str]): ...
 
@@ -60,7 +61,12 @@ class ToolExecutor:
             url = inp.get("url", "").strip()
             if not url:
                 return {"status": "error", "reason": "url 不能为空"}
+            try:
+                await pipeline.admit_crawl_target(url)
+            except ValueError as exc:
+                return {"status": "error", "reason": str(exc)}
             depth = int(inp.get("depth", 1))
+            depth = max(1, min(depth, 3))  # 限制深度 1-3，防止指数爆炸
             self._spawn(
                 pipeline.execute(url, depth=depth, auto_download=False),
                 name=f"crawl:{url[:40]}",
@@ -83,7 +89,7 @@ class ToolExecutor:
             matches = store.get_hashes_by_prefix(h)
             if matches:
                 match = matches[0]
-                store.update(match, category=cat, save_path=cat)
+                store.update(match, category=cat, save_path="")
                 await self._bus.emit(
                     Event(
                         EventType.CLASSIFY_DONE,
@@ -108,7 +114,7 @@ class ToolExecutor:
                 return {"status": "cancelled", "reason": "需要 confirm=true"}
             count = store.count
             store.clear()
-            await self._bus.emit(Event(EventType.ERROR, {"type": "items_cleared"}))
+            await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
             return {"status": "cleared", "removed": count}
 
         return {"error": f"未知工具: {name}"}

@@ -8,12 +8,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.magnet_parser import (
-    MAGNET_RE,
     HASH_RE,
     JSON_MAGNET_RE,
-    BASE64_MAGNET_RE,
-    parse_magnet,
-    try_decode_base64,
     extract_from_text,
 )
 
@@ -71,12 +67,12 @@ def test_invalid_hash_too_short():
 def test_base64_encoded_magnet():
     """Base64 编码的磁力链接"""
     import base64
-    magnet = "magnet:?xt=urn:btih:FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEE&dn=Base64+Test"
+    magnet = "magnet:?xt=urn:btih:FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE&dn=Base64+Test"
     encoded = base64.b64encode(magnet.encode()).decode()
     text = f"隐藏链接: {encoded}"
     items = extract_from_text(text)
     assert len(items) == 1, f"应从 Base64 中提取磁力链接，实际找到 {len(items)}"
-    assert items[0]["hash"] == "FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEE"
+    assert items[0]["hash"] == "FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE"
 
 
 def test_magnet_in_json():
