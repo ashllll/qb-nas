@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from magnet_harvester.bus import EventType
 from magnet_harvester.main import app
 from magnet_harvester.config import settings
 
@@ -67,6 +68,21 @@ class TestAPIKeyAuth:
     def test_delete_items_without_key_returns_401(self, client):
         r = client.delete("/api/items")
         assert r.status_code == 401
+
+    def test_delete_items_broadcasts_items_cleared(self, client):
+        events = []
+
+        async def capture(event):
+            events.append(event)
+
+        client.app.state.ctx.bus.subscribe(EventType.ITEMS_CLEARED, capture)
+        r = client.delete(
+            "/api/items",
+            headers={"X-API-Key": "test-secret-key-123"},
+        )
+
+        assert r.status_code == 200
+        assert [event.type for event in events] == [EventType.ITEMS_CLEARED]
 
     def test_read_endpoints_still_open(self, client):
         """GET endpoints should remain unauthenticated for UI access."""

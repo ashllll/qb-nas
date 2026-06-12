@@ -165,7 +165,7 @@ async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=De
 async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     count = ctx.store.count
     ctx.store.clear()
-    await ctx.bus.emit(Event(EventType.ERROR, {"type": "items_cleared"}))
+    await ctx.bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
     return {"status": "cleared", "removed": count}
 
 
