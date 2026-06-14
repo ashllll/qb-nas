@@ -1,15 +1,15 @@
 # Magnet Harvester
 
-通用磁力链接采集与分类服务。它会抓取网页中的 magnet 链接，用本地规则分类，并将任务发送到 qBittorrent 下载到 NAS。
+通用磁力链接采集与分类服务。抓取网页中的 magnet 链接，用本地规则智能分类，并将任务发送到 qBittorrent 下载到 NAS。
 
 ## 当前能力
 
-- 基于 `crawl4ai` 抓取页面和子链接中的 magnet
-- 本地规则分类，无需外部 AI 服务
-- 支持按内容特征进行本地分类与目录路由
-- 通过 qBittorrent Web API 自动建分类并添加下载
-- 单页 Web UI，支持实时进度、筛选、重分类和批量下载
-- 提供 qBittorrent 连接配置面板和健康检查接口
+- 基于 `crawl4ai` (Playwright) 抓取页面和子链接中的 magnet
+- **三层分类引擎**：工作室识别 → 关键词匹配 → 通用规则（47 条）
+- 支持站点 Cookie 注入，爬取需要登录的网站
+- 通过 qBittorrent Web API v2 自动建分类并添加下载
+- 单页 Web UI，实时进度、筛选、重分类和批量下载
+- qB 连接状态面板（在线/离线/检测中 + 状态指示灯）
 
 ## 架构
 
@@ -17,31 +17,34 @@
 ┌─────────────┐     ┌─────────────┐     ┌────────────────┐
 │   Web UI    │────▶│  FastAPI    │────▶│  MagnetCrawler │
 │ index.html  │◀────│  main.py    │◀────│   crawl4ai     │
-└─────────────┘     └──────┬──────┘     └────────────────┘
-                           │
-        ┌──────────────────┼───────────────────┐
-        ▼                  ▼                   ▼
-   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-   │ LocalClassifier│  │ MagnetParser │   │ qBittorrent  │
-   │ + Rule Engine │   │ regex/base64 │   │ Web API v2   │
-   └──────────────┘   └──────────────┘   └──────────────┘
+└─────────────┘     └──────┬──────┘     └───────┬────────┘
+                           │                    │
+        ┌──────────────────┼────────────────────┼──────────────┐
+        ▼                  ▼                    ▼              ▼
+   ┌───────────┐    ┌──────────────┐    ┌────────────┐  ┌──────────┐
+   │ Classifier│    │ SiteAuth     │    │MagnetParser│  │ qBittorrent
+   │ 3-layer   │    │ Cookie注入    │    │ regex      │  │ Client  │
+   └───────────┘    └──────────────┘    └────────────┘  └──────────┘
 ```
 
-当前运行时装配采用集中式 `lifespan`：
+### 分类引擎
 
-- `magnet_harvester/main.py` 只负责 FastAPI 入口与运行时装配
-- `magnet_harvester/api/` 提供 REST、WebSocket 和页面入口
-- `magnet_harvester/services/` 提供统计、后台同步、工具执行等服务
-- `magnet_harvester/context/` 定义 `AppContext` 与运行时替换 seam
-- `magnet_harvester/utils/` 提供后台任务与序列化等通用工具
+```
+输入标题
+  ├─ 1. 关键词  (keyword_recognizer) → "ubuntu" → 软件
+  ├─ 2. 工作室  (studio_recognizer)  → "SexArt 26 05 20..." → SexArt
+  └─ 3. 通用规则 (fallback.py 47条) → "BluRay.2024..." → 电影
+```
+
+支持 36 个已知工作室自动映射，覆盖电影/剧集/动漫/音乐/游戏/软件/综艺/纪录片八大类别。
 
 ## 快速开始
 
 ### 前置条件
 
 - Python 3.11+
-- 可访问的 qBittorrent Web UI
-- 首次使用 `crawl4ai` 时需要初始化浏览器
+- 可访问的 qBittorrent Web UI (v4.1+)
+- Playwright Chromium (`playwright install chromium`)
 
 ### 安装
 
@@ -49,164 +52,133 @@
 git clone https://github.com/ashllll/qb-nas.git
 cd qb-nas
 
-python3 -m pip install -r requirements.txt
-
-# 如果需要跑测试或开发工具
-python3 -m pip install -e ".[dev]"
-
-# 初始化 crawl4ai 浏览器环境
-crawl4ai-setup
+python -m pip install -r requirements.txt
+playwright install chromium
 
 cp .env.example .env
+# 编辑 .env 填入 qBittorrent 连接信息
 ```
 
 ### 配置
 
-`.env` 里最常用的配置项：
+`.env` 常用配置项：
 
-| 变量                          | 说明                         | 默认值                     |
-| ----------------------------- | ---------------------------- | -------------------------- |
-| `QBIT_HOST`                   | qBittorrent Web UI 地址      | `http://192.168.1.69:8085` |
-| `QBIT_USERNAME`               | qB 用户名                    | `admin`                    |
-| `QBIT_PASSWORD`               | qB 密码                      | 留空                       |
-| `SERVICE_HOST`                | 服务监听地址                 | `127.0.0.1`                |
-| `API_KEY`                     | 写操作的 `X-API-Key`         | 空（仅允许 loopback）      |
-| `ALLOW_INSECURE_WRITE_API`    | 允许非 loopback 无认证写操作 | `false`                    |
-| `SERVICE_PORT`                | 服务端口                     | `8899`                     |
-| `CRAWLER_TIMEOUT`             | 单次抓取超时秒数             | `30`                       |
-| `CRAWLER_MAX_DEPTH`           | 默认最大深度                 | `2`                        |
-| `CRAWLER_CONCURRENCY`         | 抓取并发数                   | `3`                        |
-| `CRAWLER_HEADLESS`            | 是否无头运行                 | `true`                     |
-| `CRAWLER_ALLOWED_RESOLUTIONS` | 保留的分辨率关键词，逗号分隔 | `2160p,4k`                 |
-| `FS_BASE_PATH`                | 可选，本地可写下载根目录     | 空                         |
-| `MIN_DISK_SPACE_GB`           | 磁盘告警阈值                 | `10.0`                     |
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `QBIT_HOST` | qBittorrent Web UI 地址 | `http://192.168.1.100:8080` |
+| `QBIT_USERNAME` | qB 用户名 | `admin` |
+| `QBIT_PASSWORD` | qB 密码 | — |
+| `SERVICE_HOST` | 服务监听地址 | `127.0.0.1` |
+| `SERVICE_PORT` | 服务端口 | `8899` |
+| `API_KEY` | 写操作 `X-API-Key` | 空（仅 loopback） |
+| `ALLOW_INSECURE_WRITE_API` | 允许非 loopback 无认证 | `false` |
+| `SITE_COOKIES` | 站点 Cookie 注入 | `{}` |
+| `CRAWLER_TIMEOUT` | 抓取超时秒 | `30` |
+| `CRAWLER_MAX_DEPTH` | 最大深度 | `2` |
+| `CRAWLER_CONCURRENCY` | 并发数 | `3` |
+| `FS_BASE_PATH` | 本地可写目录（可选） | 空 |
+| `MIN_DISK_SPACE_GB` | 磁盘告警阈值 | `10.0` |
 
-`FS_BASE_PATH` 只在脚本需要主动创建真实目录时使用；留空时完全依赖 qBittorrent 分类目录管理。
+#### 爬取需要登录的网站
+
+```bash
+# .env 中添加
+SITE_COOKIES={"example.com": "uid=123; sid=abc; token=xyz"}
+```
+
+获取方式：浏览器登录目标网站 → F12 → Application → Cookies → 拼接为 `name=value; name2=value2` 格式。重启服务后自动注入到爬虫浏览器。
 
 ### 启动
 
 ```bash
-python3 run.py
+python run.py
 ```
 
-或：
+访问 http://localhost:8899
 
-```bash
-uvicorn magnet_harvester.main:app --host 0.0.0.0 --port 8899
-```
+## Web UI
 
-启动后访问 [http://localhost:8899](http://localhost:8899)。
-
-## Web UI 使用
-
-1. 输入要抓取的页面 URL。
-2. 选择抓取深度，范围会被限制在 1 到 3。
-3. 选择是否自动下载。
-4. 在结果表格中筛选、重分类或批量发送到 qB。
-5. 右侧配置面板可直接修改 qB 连接信息并测试连通性。
+1. 输入目标 URL，选择爬取深度（1-3）
+2. 可选开启自动下载
+3. 磁力实时出现在中央表格，按分类筛选
+4. 选择条目点击"下载"发送到 qBittorrent
+5. 右侧面板可修改 qB 连接并测试
 
 ## API
 
-### 任务与数据
-
-| 方法     | 路径                | 说明                                                   |
-| -------- | ------------------- | ------------------------------------------------------ |
-| `POST`   | `/api/crawl`        | 发起抓取任务                                           |
-| `POST`   | `/api/download`     | 批量添加选中的 hash                                    |
-| `POST`   | `/api/reclassify`   | 批量重新分类                                           |
-| `GET`    | `/api/items`        | 列出条目，支持 `category`、`status`、`limit`、`offset` |
-| `GET`    | `/api/items/search` | 按关键字搜索条目                                       |
-| `DELETE` | `/api/items`        | 清空内存中的全部条目                                   |
-| `GET`    | `/api/categories`   | 获取内置分类列表                                       |
-
-### 状态与配置
-
-| 方法        | 路径                | 说明                         |
-| ----------- | ------------------- | ---------------------------- |
-| `GET`       | `/api/status`       | qB 在线状态和条目数          |
-| `GET`       | `/api/health`       | 健康检查                     |
-| `GET`       | `/api/stats`        | 服务运行统计                 |
-| `GET`       | `/api/errors`       | 最近错误和错误统计           |
-| `POST`      | `/api/errors/clear` | 清理已标记为 resolved 的错误 |
-| `GET`       | `/api/config`       | 获取当前 qB 连接配置         |
-| `PUT`       | `/api/config`       | 更新 qB 连接配置并重建客户端 |
-| `GET`       | `/`                 | Web UI 页面                  |
-| `WebSocket` | `/ws`               | 实时推送抓取、分类、下载事件 |
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/crawl` | 发起爬取 |
+| `POST` | `/api/download` | 批量下载 |
+| `POST` | `/api/reclassify` | 重新分类 |
+| `GET` | `/api/items` | 列出条目（支持筛选/分页） |
+| `GET` | `/api/items/search` | 关键字搜索 |
+| `DELETE` | `/api/items` | 清空条目 |
+| `GET` | `/api/categories` | 分类列表 |
+| `GET` | `/api/status` | qB 状态 + 条目数 |
+| `GET` | `/api/health` | 健康检查 |
+| `GET` | `/api/config` | qB 连接配置 |
+| `PUT` | `/api/config` | 更新 qB 连接 |
+| `GET` | `/api/errors` | 错误列表 |
+| `WebSocket` | `/ws` | 实时事件推送 |
 
 ## 项目结构
 
 ```text
 qb-nas/
-├── run.py
-├── pyproject.toml
-├── requirements.txt
-├── .env.example
-├── static/
-│   └── index.html
+├── run.py                          # 入口脚本
 ├── magnet_harvester/
-│   ├── main.py
+│   ├── main.py                     # FastAPI 应用 + lifespan
+│   ├── config.py                   # Pydantic 配置 (Settings)
+│   ├── models.py                   # Pydantic 模型
+│   ├── errors.py                   # 错误处理 (ErrorHandler)
+│   ├── crawler.py                  # crawl4ai 爬虫 + Cookie 注入
+│   ├── magnet_parser.py            # magnet 正则提取
+│   ├── pipeline.py                 # 爬取→分类→下载管道
+│   ├── store.py                    # ItemStore (内存存储)
+│   ├── bus.py                      # MessageBus (事件总线)
+│   ├── assembly.py                 # 运行时装配 (build_runtime)
 │   ├── api/
-│   │   ├── routes.py
-│   │   └── websocket.py
+│   │   ├── routes.py               # REST API
+│   │   ├── websocket.py            # WebSocket 广播
+│   │   └── pages.py                # 静态页面路由
+│   ├── classifier/
+│   │   ├── local_classifier.py     # 主分类器 (3层)
+│   │   ├── studio_recognizer.py    # 工作室/厂牌识别 (36个)
+│   │   ├── keyword_recognizer.py   # 关键词匹配
+│   │   └── fallback.py             # 通用规则 (47条)
+│   ├── qbit_client/
+│   │   ├── client.py               # qB API v2 客户端
+│   │   ├── paths.py                # 路径解析 + 安全处理
+│   │   └── __init__.py
 │   ├── services/
-│   │   ├── agent_tools.py
-│   │   ├── qbit_sync.py
-│   │   └── stats.py
+│   │   ├── qbit_sync.py            # qB 状态同步循环
+│   │   ├── site_auth.py            # 站点 Cookie 注入
+│   │   ├── stats.py                # 运行时统计
+│   │   └── __init__.py
 │   ├── context/
-│   │   └── app_context.py
-│   ├── utils/
-│   │   ├── bg_tasks.py
-│   │   └── serializers.py
-│   ├── config.py
-│   ├── crawler.py
-│   ├── magnet_parser.py
-│   ├── models.py
-│   ├── pipeline.py
-│   ├── qbit_client.py
-│   ├── store.py
-│   ├── bus.py
-│   ├── errors.py
-│   ├── keyword_recognizer.py
-│   └── classifier/
-│       ├── __init__.py
-│       ├── fallback.py
-│       └── local_classifier.py
-└── tests/
+│   │   └── app_context.py          # AppContext + 依赖注入
+│   └── utils/
+│       ├── auth.py                 # API Key 认证
+│       ├── url_validator.py        # SSRF 防护 + URL 验证
+│       ├── serializers.py          # 响应序列化
+│       └── bg_tasks.py             # 后台任务管理
+├── static/
+│   └── index.html                  # Web UI 单页应用
+├── config/
+│   └── category_keywords.json      # 关键词规则配置
+├── tests/                          # 单元测试
+├── .env.example                    # 环境变量模板
+└── requirements.txt
 ```
 
-## 测试
+## 核心实现
 
-安装开发依赖后运行：
-
-```bash
-python3 -m pytest tests -q
-```
-
-也可以运行部分脚本：
-
-```bash
-python3 tests/test_imports.py
-python3 tests/test_pipeline_phases.py
-python3 tests/test_error_handler.py
-```
-
-## 实现说明
-
-- `magnet_harvester/main.py`：应用入口与集中式 `lifespan` 装配
-- `magnet_harvester/api/routes.py`：REST API
-- `magnet_harvester/api/websocket.py`：WebSocket 入口与页面入口
-- `magnet_harvester/services/agent_tools.py`：Agent 工具分发
-- `magnet_harvester/services/qbit_sync.py`：qB 状态同步循环
-- `magnet_harvester/services/stats.py`：运行时统计
-- `magnet_harvester/context/app_context.py`：请求级依赖容器与运行时替换上下文
-- `magnet_harvester/utils/bg_tasks.py`：后台任务创建与异常日志
-- `magnet_harvester/utils/serializers.py`：响应序列化辅助函数
-- `magnet_harvester/crawler.py`：基于 `crawl4ai` 抽取页面文本和子链接
-- `magnet_harvester/magnet_parser.py`：从文本、HTML、属性值和 Base64 中提取 magnet
-- `magnet_harvester/classifier/local_classifier.py`：本地规则分类与兜底策略
-- `magnet_harvester/keyword_recognizer.py`：通用关键词分类辅助模块，可按需扩展或替换
-- `magnet_harvester/qbit_client.py`：管理 qB 登录、重试、分类目录和下载添加
-- `magnet_harvester/pipeline.py`：编排抓取、分类、下载三阶段
+- **分类引擎**：三层次：关键词精确匹配 > 工作室自动提取 > 47 条通用正则。工作室识别支持 36 个已知厂牌 + 未知厂牌自动发现，兼容空格/点/横线分隔的日期格式
+- **Cookie 注入**：`SITE_COOKIES` JSON 配置 → `BrowserConfig.cookies` → crawl4ai 浏览器自动携带，支持多域名
+- **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由
+- **状态同步**：QBitSyncLoop 每 2 秒轮询 `/sync/maindata`，仅终态变化时触发前端通知，避免日志刷屏
+- **URL 安全**：RFC 1918 精确检查（10/172.16/192.168 + fc00::/7），DNS 解析后验证，防 SSRF
 
 ## License
 
