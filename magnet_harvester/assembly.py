@@ -62,7 +62,7 @@ def build_runtime() -> AppRuntime:
         task_manager=bg_manager,
     )
     tool_executor = ToolExecutor(store=store, pipeline=pipeline, bus=bus, task_manager=bg_manager)
-    clipboard_monitor = ClipboardMonitor(bus=bus, store=store, classifier=classifier)
+    clipboard_monitor = ClipboardMonitor(bus=bus, store=store, classifier=classifier, pipeline=pipeline)
 
     ctx = AppContext(
         store=store,

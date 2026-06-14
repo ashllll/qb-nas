@@ -16,6 +16,7 @@ import pyperclip
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import _item_payload
 
@@ -44,18 +45,20 @@ def extract_display_name(magnet: str) -> str:
 
 
 class ClipboardMonitor:
-    """轮询系统剪贴板，检测新磁力链接并通过 MessageBus 发布事件。"""
+    """轮询系统剪贴板，检测新磁力链接自动分类并下载。"""
 
     def __init__(
         self,
         bus: MessageBus,
         store: ItemStore,
         classifier: LocalClassifier,
+        pipeline: "HarvestPipeline | None" = None,
         poll_interval: float = 1.0,
     ):
         self._bus = bus
         self._store = store
         self._classifier = classifier
+        self._pipeline = pipeline
         self._poll_interval = poll_interval
         self._running = False
         self._stop_event = asyncio.Event()
@@ -167,3 +170,8 @@ class ClipboardMonitor:
             "item": _item_payload(item),
         }))
         log.info(f"剪贴板捕获磁力: {name[:50]} → {category}")
+
+        # 自动发送到 qBittorrent
+        if self._pipeline:
+            await self._pipeline.download([btih])
+            log.info(f"剪贴板自动下载: {name[:40]}")
