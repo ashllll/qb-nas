@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     ALLOW_INSECURE_WRITE_API: bool = False
     CORS_ALLOWED_ORIGINS: str = ""  # 为空则禁用 CORS（只允许同域），逗号分隔多个域名
 
+    SITE_COOKIES: str = "{}"  # JSON: {"domain": "cookie1=val1; cookie2=val2"}
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     def __init__(self, **kwargs):

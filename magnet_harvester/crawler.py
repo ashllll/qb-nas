@@ -23,6 +23,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_parser import extract_from_text
+from magnet_harvester.services.site_auth import parse_site_cookies, get_cookies_for_url
 from magnet_harvester.utils.url_validator import (
     CrawlTargetAdmission,
     URLValidationError,
@@ -98,6 +99,34 @@ class MagnetCrawler:
     async def admit_url(self, url: str) -> str:
         return await self._target_admission.admit(url)
 
+    @staticmethod
+    def _build_site_cookies() -> list[dict]:
+        """从配置构建全局站点 cookie 列表（Playwright 格式）。"""
+        site_cookies = parse_site_cookies(settings.SITE_COOKIES)
+        all_cookies: list[dict] = []
+        for domain, cookie_str in site_cookies.items():
+            if not domain or not cookie_str:
+                continue
+            # 解析 cookie 字符串为列表
+            for item in cookie_str.split(";"):
+                item = item.strip()
+                if "=" not in item:
+                    continue
+                name, _, value = item.partition("=")
+                name = name.strip()
+                value = value.strip()
+                if not name:
+                    continue
+                all_cookies.append({
+                    "name": name,
+                    "value": value,
+                    "domain": domain,
+                    "path": "/",
+                })
+        if all_cookies:
+            log.info(f"已加载 {len(all_cookies)} 个站点 cookie，覆盖 {len(site_cookies)} 个域名")
+        return all_cookies
+
     def _current_metrics(self) -> CrawlMetrics:
         metrics = self._session_metrics.get() or self._metrics
         if metrics is None:
@@ -106,6 +135,9 @@ class MagnetCrawler:
 
     async def start(self):
         """启动 crawl4ai 引擎"""
+        # 构建站点 cookie 列表
+        site_cookies = self._build_site_cookies()
+
         browser_cfg = BrowserConfig(
             browser_type="chromium",
             headless=self._config.headless,
@@ -116,6 +148,7 @@ class MagnetCrawler:
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
             text_mode=True,
+            cookies=site_cookies if site_cookies else None,
         )
         self._crawler = AsyncWebCrawler(config=browser_cfg)
         await self._crawler.start()
