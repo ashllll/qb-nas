@@ -59,6 +59,7 @@ class AppContext:
     tool_executor: ToolExecutorLike | None = None
     qbit_sync: QBitSyncLike | None = None
     qbit_lock: asyncio.Lock | None = None
+    clipboard_monitor: "ClipboardMonitorLike | None" = None
 
 
 @dataclass

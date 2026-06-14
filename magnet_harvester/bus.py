@@ -30,6 +30,7 @@ class EventType(str, Enum):
     ERROR = "error"
     STORE_CHANGED = "store_changed"
     ITEMS_CLEARED = "items_cleared"
+    CLIPBOARD_STATUS = "clipboard_status"
 
 
 @dataclass

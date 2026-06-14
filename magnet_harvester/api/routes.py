@@ -184,3 +184,29 @@ async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_
 @router.get("/api/categories")
 async def get_categories():
     return {"categories": ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"]}
+
+
+@router.get("/api/clipboard")
+async def clipboard_status(ctx: AppContext = Depends(get_context)):
+    monitor = ctx.clipboard_monitor
+    if monitor is None:
+        return {"running": False, "magnet_count": 0}
+    return {"running": monitor.is_running, "magnet_count": monitor.magnet_count}
+
+
+@router.post("/api/clipboard/start")
+async def clipboard_start(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+    monitor = ctx.clipboard_monitor
+    if monitor is None:
+        raise HTTPException(status_code=501, detail="Clipboard monitor not available")
+    await monitor.start()
+    return {"running": True}
+
+
+@router.post("/api/clipboard/stop")
+async def clipboard_stop(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+    monitor = ctx.clipboard_monitor
+    if monitor is None:
+        raise HTTPException(status_code=501, detail="Clipboard monitor not available")
+    await monitor.stop()
+    return {"running": False}

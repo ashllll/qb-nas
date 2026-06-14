@@ -124,6 +124,10 @@ tr.selected td{background:rgba(124,77,255,.06)}
     <div class="status-strip">
       <div class="pill"><span class="dot dot-spin" id="dotQbit"></span><span>qB: </span><span id="qbitStatus">检测中</span></div>
       <div class="pill" style="color:var(--green)">● 本地分类器</div>
+      <div class="pill" id="clipPill" style="cursor:pointer" onclick="toggleClipboard()" title="点击开关剪贴板监控">
+        <span class="dot dot-off" id="dotClip"></span>
+        <span>剪贴板监控: </span><span id="clipStatus">已关闭</span>
+      </div>
     </div>
   </header>
 
@@ -236,6 +240,7 @@ function handleMsg(msg) {
     case 'download_result': if(items.has(msg.hash)){const it=items.get(msg.hash);it.status=msg.status;if(msg.error_msg!==undefined)it.error_msg=msg.error_msg;if(msg.progress!==undefined)it.progress=msg.progress;if(msg.torrent_state!==undefined)it.torrent_state=msg.torrent_state;updateRow(msg.hash);logDownloadState(it, msg);} break;
     case 'items_cleared':   items.clear();selected.clear();renderTable(); break;
     case 'error':           addLog(`⚠ ${msg.msg}`,'error'); break;
+    case 'clipboard_status':clipRunning=msg.running;clipCount=msg.magnet_count||clipCount;updateClipUI(msg.running); break;
   }
 }
 
@@ -366,9 +371,33 @@ async function checkStatus(){
   }catch(e){}
 }
 
+// ── Clipboard ─────────────────────────────────────────────
+let clipRunning=false, clipCount=0;
+async function toggleClipboard(){
+  try{
+    const r=clipRunning
+      ? await fetch('/api/clipboard/stop',{method:'POST'})
+      : await fetch('/api/clipboard/start',{method:'POST'});
+    if(r.ok){const d=await r.json();updateClipUI(d.running);}
+  }catch(e){}
+}
+function updateClipUI(running){
+  clipRunning=running;
+  document.getElementById('dotClip').className='dot '+(running?'dot-spin':'dot-off');
+  document.getElementById('clipStatus').textContent=running?`已开启 (${clipCount})`:'已关闭';
+  document.getElementById('clipStatus').style.color=running?'var(--green)':'var(--text2)';
+}
+async function initClipStatus(){
+  try{
+    const d=await fetch('/api/clipboard').then(r=>r.json());
+    clipCount=d.magnet_count||0;
+    updateClipUI(d.running);
+  }catch(e){}
+}
+
 // ── Init ──────────────────────────────────────────────────
 document.getElementById('urlInput').addEventListener('keydown',e=>{if(e.key==='Enter')startCrawl();});
-connectWS(); loadConfig(); checkStatus(); setInterval(checkStatus,30000);
+connectWS(); loadConfig(); checkStatus(); initClipStatus(); setInterval(checkStatus,30000);
 </script>
 </body>
 </html>
