@@ -26,6 +26,7 @@ class QBitConfig:
     host: str = "http://192.168.1.100:8080"
     username: str = "admin"
     password: str = "adminadmin"
+    fs_base_path: str = ""  # 真实文件系统路径，用于 mkdir（如 Z:\downloads）
 
 
 @dataclass
@@ -76,6 +77,7 @@ class Settings(BaseSettings):
                 host=self.QBIT_HOST,
                 username=self.QBIT_USERNAME,
                 password=self.QBIT_PASSWORD,
+                fs_base_path=self.FS_BASE_PATH,
             )
         return self._qbit_config
 
@@ -140,6 +142,7 @@ class Settings(BaseSettings):
             host=candidate_host,
             username=candidate_username,
             password=candidate_password,
+            fs_base_path=self.FS_BASE_PATH,
         )
 
     def commit_qbit_config(self, config: QBitConfig) -> None:
