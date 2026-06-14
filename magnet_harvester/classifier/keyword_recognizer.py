@@ -57,3 +57,19 @@ class KeywordCategoryRecognizer:
 
     def reload(self):
         self.__init__(self._rules_file)
+
+    @classmethod
+    def from_keywords(cls, keywords: List[Dict[str, str]]) -> "KeywordCategoryRecognizer":
+        """Create a recognizer from inline keyword rules (no JSON file needed)."""
+        instance = cls.__new__(cls)
+        instance._rules_file = KEYWORD_FILE  # still references default file for reload
+        instance._keywords = keywords
+        instance._patterns: List[tuple[re.Pattern, Dict[str, str]]] = []
+        for rule in keywords:
+            keyword = re.escape(rule["keyword"])
+            pattern = re.compile(
+                rf"(?:^|[. _\[\]()\-])(?:{keyword})(?:$|[. _\[\]()\-])",
+                re.IGNORECASE,
+            )
+            instance._patterns.append((pattern, rule))
+        return instance

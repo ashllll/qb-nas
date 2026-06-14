@@ -38,17 +38,7 @@ class KeywordRule:
 
     def __init__(self, keywords: list[dict] | None = None):
         if keywords is not None:
-            self._recognizer = KeywordCategoryRecognizer()
-            self._recognizer._keywords = keywords
-            self._recognizer._patterns = []
-            import re
-            for rule in keywords:
-                keyword = re.escape(rule["keyword"])
-                pattern = re.compile(
-                    rf"(?:^|[. _\[\]()\-])(?:{keyword})(?:$|[. _\[\]()\-])",
-                    re.IGNORECASE,
-                )
-                self._recognizer._patterns.append((pattern, rule))
+            self._recognizer = KeywordCategoryRecognizer.from_keywords(keywords)
         else:
             self._recognizer = KeywordCategoryRecognizer()
 

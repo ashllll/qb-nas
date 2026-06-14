@@ -10,7 +10,7 @@ from typing import Protocol
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.store import ItemStore
-from magnet_harvester.utils.serializers import _item_summary
+from magnet_harvester.utils.serializers import item_summary
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class ToolExecutor:
             status = inp.get("status", "all")
             limit = int(inp.get("limit", 20))
             items = store.list(category=cat, status=status, limit=limit)
-            return {"count": len(items), "items": [_item_summary(i) for i in items]}
+            return {"count": len(items), "items": [item_summary(i) for i in items]}
 
         if name == "start_crawl":
             url = inp.get("url", "").strip()
@@ -107,7 +107,7 @@ class ToolExecutor:
         if name == "search_items":
             query = inp.get("query", "")
             hits = store.search(query)
-            return {"count": len(hits), "results": [_item_summary(i) for i in hits[:20]]}
+            return {"count": len(hits), "results": [item_summary(i) for i in hits[:20]]}
 
         if name == "clear_all":
             if not inp.get("confirm"):

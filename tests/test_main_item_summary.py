@@ -4,7 +4,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.utils.serializers import _item_payload, _item_summary
+from magnet_harvester.utils.serializers import item_payload, item_summary
 from magnet_harvester.models import MagnetItem, TaskStatus
 
 
@@ -17,7 +17,7 @@ def test_item_summary_uses_status_value():
         status=TaskStatus.pending,
     )
 
-    result = _item_summary(item)
+    result = item_summary(item)
 
     assert result == {
         "hash": "ABCDEF1234567890",
@@ -36,7 +36,7 @@ def test_item_payload_uses_status_value():
         status=TaskStatus.downloading,
     )
 
-    result = _item_payload(item)
+    result = item_payload(item)
 
     assert result["status"] == "downloading"
 
@@ -44,4 +44,4 @@ def test_item_payload_uses_status_value():
 if __name__ == "__main__":
     test_item_summary_uses_status_value()
     test_item_payload_uses_status_value()
-    print("=== main._item_summary tests passed! ===")
+    print("=== item_summary tests passed! ===")

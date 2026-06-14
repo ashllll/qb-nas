@@ -15,7 +15,7 @@ from magnet_harvester.errors import ErrorCategory, ErrorSeverity
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.utils.auth import require_api_key
-from magnet_harvester.utils.serializers import _item_payload, _item_summary
+from magnet_harvester.utils.serializers import item_payload, item_summary
 
 router = APIRouter()
 
@@ -67,7 +67,7 @@ async def get_items(
         "total": total,
         "limit": limit,
         "offset": offset,
-        "items": [_item_payload(i) for i in items[offset:offset + limit]],
+        "items": [item_payload(i) for i in items[offset:offset + limit]],
     }
 
 
@@ -80,7 +80,7 @@ async def search_items(
     if ctx.stats is not None:
         ctx.stats.record_api_call()
     hits = ctx.store.search(q)
-    return {"count": len(hits), "results": [_item_summary(i) for i in hits[:limit]]}
+    return {"count": len(hits), "results": [item_summary(i) for i in hits[:limit]]}
 
 
 @router.post("/api/crawl")

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from magnet_harvester.bus import Event, EventType
 from magnet_harvester.models import TaskStatus
-from magnet_harvester.utils.serializers import _item_payload
+from magnet_harvester.utils.serializers import item_payload
 
 if TYPE_CHECKING:
     from magnet_harvester.bus import MessageBus
@@ -37,7 +37,7 @@ class ItemEventEmitter:
         item = self._store.get(hash_key)
         if item is not None:
             await self._bus.emit(
-                Event(EventType.STORE_CHANGED, {"item": _item_payload(item)})
+                Event(EventType.STORE_CHANGED, {"item": item_payload(item)})
             )
 
     async def emit_download_result(

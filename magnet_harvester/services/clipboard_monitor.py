@@ -18,7 +18,7 @@ from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.store import ItemStore
-from magnet_harvester.utils.serializers import _item_payload
+from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class ClipboardMonitor:
             "item": item.model_dump(),
         }))
         await self._bus.emit(Event(EventType.STORE_CHANGED, {
-            "item": _item_payload(item),
+            "item": item_payload(item),
         }))
         log.info(f"剪贴板捕获磁力: {name[:50]} → {category}")
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 from magnet_harvester.models import MagnetItem
 
 
-def _item_summary(item) -> dict:
+def item_summary(item) -> dict:
     """Short form for list views — truncated hash."""
     return {
         "hash": item.hash[:16],
@@ -16,7 +16,7 @@ def _item_summary(item) -> dict:
     }
 
 
-def _item_payload(item: MagnetItem) -> dict:
+def item_payload(item: MagnetItem) -> dict:
     """Full form for detail views — complete model dump."""
     data = item.model_dump()
     data["status"] = item.status.value

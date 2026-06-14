@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from magnet_harvester.bus import Event, MessageBus
-from magnet_harvester.utils.serializers import _item_payload
+from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,7 +53,7 @@ class WSBroadcaster:
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store:
-            items = [_item_payload(i) for i in self._store.list(limit=10000)]
+            items = [item_payload(i) for i in self._store.list(limit=10000)]
             await self.send_init(ws, items)
         else:
             await self.send_init(ws, [])

@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.utils.serializers import _item_summary, _item_payload
+from magnet_harvester.utils.serializers import item_summary, item_payload
 
 
 def test_item_summary_returns_truncated_hash_and_basic_fields():
@@ -19,7 +19,7 @@ def test_item_summary_returns_truncated_hash_and_basic_fields():
         status=TaskStatus.pending,
     )
 
-    result = _item_summary(item)
+    result = item_summary(item)
 
     assert result == {
         "hash": "0123456789ABCDEF",
@@ -39,7 +39,7 @@ def test_item_payload_returns_full_model_dump_with_status_value():
         progress=42.0,
     )
 
-    result = _item_payload(item)
+    result = item_payload(item)
 
     assert result["hash"] == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     assert result["name"] == "Test"
