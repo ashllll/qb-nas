@@ -69,6 +69,7 @@ def build_runtime() -> AppRuntime:
         crawler=crawler,
         classifier=classifier,
         qbit=qbit,
+        api_key=settings.API_KEY,
         stats=app_stats,
         bg_manager=bg_manager,
         broadcaster=broadcaster,

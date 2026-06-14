@@ -20,16 +20,22 @@ Resolver = Callable[[str, int], Awaitable[list[str]]]
 RedirectProbe = Callable[[str], Awaitable[str | None]]
 
 
+_RFC1918_NETS = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv6Network("fc00::/7"),
+)
+
+
 def _is_unsafe_address(value: str) -> bool:
     ip = ipaddress.ip_address(value)
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+        return True
+    for net in _RFC1918_NETS:
+        if ip in net:
+            return True
+    return False
 
 
 def validate_crawl_url(url: str) -> bool:

@@ -6,6 +6,7 @@ P0-2: 爬虫 Set 竞态条件测试
 """
 import asyncio
 import pytest
+from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.utils.url_validator import CrawlTargetAdmission
 
@@ -20,6 +21,7 @@ async def no_redirect(_url):
 
 def make_crawler():
     return MagnetCrawler(
+        config=CrawlerConfig(),
         target_admission=CrawlTargetAdmission(
             resolver=public_resolver,
             redirect_probe=no_redirect,
@@ -77,7 +79,7 @@ async def test_concurrent_claim_no_duplicates():
 @pytest.mark.asyncio
 async def test_seen_set_uses_lock():
     """验证 seen Set 也使用锁保护（已在 _crawl_page 中实现）"""
-    crawler = MagnetCrawler()
+    crawler = MagnetCrawler(config=CrawlerConfig())
     seen = set()
 
     async def add_hash(h):

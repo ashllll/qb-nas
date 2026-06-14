@@ -52,6 +52,7 @@ class AppContext:
     crawler: MagnetCrawler
     classifier: LocalClassifier
     qbit: QBittorrentClient
+    api_key: str = ""
     stats: StatsTracker | None = None
     bg_manager: BackgroundTaskSpawner | None = None
     broadcaster: BroadcasterLike | None = None

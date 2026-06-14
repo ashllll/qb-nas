@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
-CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
+CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config"
 KEYWORD_FILE = CONFIG_DIR / "category_keywords.json"
 
 

@@ -25,8 +25,8 @@ header{grid-column:1/-1;background:var(--bg1);border-bottom:1px solid var(--line
 .status-strip{display:flex;gap:8px;align-items:center}
 .pill{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:3px;font-size:10px;background:var(--bg2);border:1px solid var(--line)}
 .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.dot-on{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2s infinite}
-.dot-off{background:var(--red)}
+.dot-on{background:var(--green);box-shadow:0 0 8px var(--green)}
+.dot-off{background:var(--red);box-shadow:0 0 8px var(--red)}
 .dot-spin{background:var(--amber);animation:blink .8s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
@@ -122,7 +122,7 @@ tr.selected td{background:rgba(124,77,255,.06)}
       <h1>Magnet Harvester <span style="font-size:9px;color:var(--text2);font-weight:400">v4</span></h1>
     </div>
     <div class="status-strip">
-      <div class="pill"><span class="dot dot-spin" id="dotQbit"></span><span>qBittorrent</span></div>
+      <div class="pill"><span class="dot dot-spin" id="dotQbit"></span><span>qB: </span><span id="qbitStatus">检测中</span></div>
       <div class="pill" style="color:var(--green)">● 本地分类器</div>
     </div>
   </header>
@@ -192,7 +192,7 @@ tr.selected td{background:rgba(124,77,255,.06)}
     <div class="chat-messages" id="configPanel" style="padding:8px">
       <div style="margin-bottom:8px">
         <label style="font-size:10px;color:var(--text2);display:block;margin-bottom:2px">服务器地址</label>
-        <input class="url-input" id="cfgHost" value="" placeholder="http://192.168.1.69:8085" style="font-size:11px">
+        <input class="url-input" id="cfgHost" value="" placeholder="http://nas-ip:8085" style="font-size:11px">
       </div>
       <div style="margin-bottom:8px">
         <label style="font-size:10px;color:var(--text2);display:block;margin-bottom:2px">用户名</label>
@@ -276,8 +276,11 @@ async function saveConfig() {
 // ── Crawl & Actions ───────────────────────────────────────
 async function startCrawl() {
   const url=document.getElementById('urlInput').value.trim(); if(!url) return;
-  await fetch('/api/crawl',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({url,depth:+document.getElementById('depthSelect').value,auto_download:document.getElementById('autoToggle').classList.contains('on')})});
+  try {
+    const r=await fetch('/api/crawl',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url,depth:+document.getElementById('depthSelect').value,auto_download:document.getElementById('autoToggle').classList.contains('on')})});
+    if(!r.ok){const d=await r.json().catch(()=>({detail:r.statusText}));addLog(`请求失败 (${r.status}): ${d.detail||'未知错误'}`,'error');return;}
+  }catch(e){addLog(`网络错误: ${e.message}`,'error');}
 }
 async function downloadSelected() {
   if(!selected.size) return;
@@ -354,8 +357,12 @@ function updateUsage(d){/* removed AI usage tracking */}
 async function checkStatus(){
   try{
     const d=await fetch('/api/status').then(r=>r.json());
-    const setDot=(id,s)=>document.getElementById(id).className=`dot dot-${s==='online'?'on':s==='checking'?'spin':'off'}`;
-    setDot('dotQbit',d.qbittorrent);
+    const state=d.qbittorrent;
+    const dot=document.getElementById('dotQbit');
+    const text=document.getElementById('qbitStatus');
+    if(state==='online'){dot.className='dot dot-on';text.textContent='在线';text.style.color='var(--green)';}
+    else if(state==='checking'){dot.className='dot dot-spin';text.textContent='检测中';text.style.color='var(--amber)';}
+    else{dot.className='dot dot-off';text.textContent='离线';text.style.color='var(--red)';}
   }catch(e){}
 }
 

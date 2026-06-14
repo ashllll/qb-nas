@@ -10,7 +10,9 @@ from magnet_harvester.main import app
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    from magnet_harvester.config import settings
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     with TestClient(app) as c:
         yield c
 

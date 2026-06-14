@@ -17,13 +17,13 @@ def test_core_modules_import_and_instantiate():
     from magnet_harvester.classifier import LocalClassifier
     from magnet_harvester.config import settings
     from magnet_harvester.crawler import CrawlMetrics, MagnetCrawler
-    from magnet_harvester.errors import ErrorCategory, ErrorSeverity, error_handler
+    from magnet_harvester.errors import ErrorCategory, ErrorHandler, ErrorSeverity
     from magnet_harvester.magnet_parser import parse_magnet
     from magnet_harvester.models import CrawlRequest, MagnetItem, TaskStatus
     from magnet_harvester.pipeline import ClassifyPhase, CrawlPhase, DownloadPhase, HarvestPipeline
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.store import FakeStore, InMemoryItemStore, ItemStore, StoreStats
-    from magnet_harvester.keyword_recognizer import KeywordCategoryRecognizer
+    from magnet_harvester.classifier.keyword_recognizer import KeywordCategoryRecognizer
 
     item = MagnetItem(hash="ABC123", name="测试", magnet="magnet:?xt=urn:btih:ABC123")
     assert item.status == TaskStatus.pending
@@ -57,7 +57,7 @@ def test_core_modules_import_and_instantiate():
     assert recognizer.recognize("Ubuntu.24.04.Desktop.iso") is not None
 
     assert QBittorrentClient(config=settings.qbit) is not None
-    assert error_handler is not None
+    assert ErrorHandler() is not None
     assert ErrorCategory.CRAWLER.value == "crawler"
     assert ErrorSeverity.ERROR.value == "error"
 

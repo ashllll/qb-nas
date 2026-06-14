@@ -5,6 +5,7 @@ import asyncio
 
 import pytest
 
+from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
 
 
@@ -13,7 +14,7 @@ class TestCrawlerConcurrency:
 
     @pytest.fixture
     def crawler(self):
-        return MagnetCrawler()
+        return MagnetCrawler(config=CrawlerConfig())
 
     def test_claim_unvisited_links_is_atomic(self, crawler):
         """Simulate two workers racing to claim the same link."""

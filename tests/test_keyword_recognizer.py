@@ -7,7 +7,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.keyword_recognizer import KeywordCategoryRecognizer
+from magnet_harvester.classifier.keyword_recognizer import KeywordCategoryRecognizer
 
 
 def test_keyword_at_name_start_is_recognized(tmp_path):

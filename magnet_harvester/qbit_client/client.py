@@ -5,31 +5,87 @@ import asyncio
 import logging
 import re
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
 
 from magnet_harvester.config import QBitConfig, settings
-from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
+from magnet_harvester.models import TaskStatus
 from magnet_harvester.qbit_client.paths import QBitPathResolver, _safe_fs_segment
-from magnet_harvester.qbit_client.stats import QBittorrentStats
 
 log = logging.getLogger(__name__)
 
 QBitApiObject = dict[str, object]
 
 
-class QBittorrentClient:
-    def __init__(self, config: QBitConfig = None):
-        if config is None:
-            self._config = QBitConfig(
-                host=settings.QBIT_HOST,
-                username=settings.QBIT_USERNAME,
-                password=settings.QBIT_PASSWORD,
-            )
+@dataclass
+class QBittorrentStats:
+    total_added: int = 0
+    total_success: int = 0
+    total_failed: int = 0
+    consecutive_failures: int = 0
+    last_success_time: Optional[float] = None
+    last_failure_time: Optional[float] = None
+    start_time: float = field(default_factory=time.time)
+
+    @property
+    def success_rate(self) -> float:
+        if self.total_added == 0:
+            return 0.0
+        return self.total_success / self.total_added * 100
+
+    def as_dict(self) -> dict:
+        return {
+            "total_added": self.total_added,
+            "total_success": self.total_success,
+            "total_failed": self.total_failed,
+            "success_rate": round(self.success_rate, 1),
+            "consecutive_failures": self.consecutive_failures,
+            "last_success": time.strftime("%H:%M:%S", time.localtime(self.last_success_time)) if self.last_success_time else None,
+            "last_failure": time.strftime("%H:%M:%S", time.localtime(self.last_failure_time)) if self.last_failure_time else None,
+            "uptime_sec": round(time.time() - self.start_time, 1),
+        }
+
+
+class TorrentStatusMapper:
+    @staticmethod
+    def map(torrent: dict) -> dict:
+        state = str(torrent.get("state", "") or "")
+        progress = float(torrent.get("progress") or 0.0)
+
+        queued_states = {"queuedDL", "pausedDL"}
+        downloading_states = {
+            "downloading", "forcedDL", "metaDL", "stalledDL",
+            "checkingDL", "checkingResumeData", "moving",
+        }
+        success_states = {
+            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
+        }
+        error_states = {"error", "missingFiles", "unknown"}
+
+        if state in error_states:
+            status = TaskStatus.error
+        elif progress >= 1.0 or state in success_states:
+            status = TaskStatus.success
+        elif state in downloading_states or 0.0 < progress < 1.0:
+            status = TaskStatus.downloading
+        elif state in queued_states:
+            status = TaskStatus.queued
         else:
-            self._config = config
+            status = TaskStatus.queued
+
+        return {
+            "status": status,
+            "progress": round(progress * 100, 1),
+            "torrent_state": state or None,
+        }
+
+
+class QBittorrentClient:
+    def __init__(self, config: QBitConfig):
+        self._config = config
         self.host     = self._config.host.rstrip("/")
         self.username = self._config.username
         self.password = self._config.password
@@ -43,6 +99,7 @@ class QBittorrentClient:
             "retry_on": [408, 429, 500, 502, 503, 504],
         }
         self._cached_default_path: str | None = None
+        self._category_locks: dict[str, asyncio.Lock] = {}
         self.last_error: str | None = None
         self._maindata_rid = 0
         self._torrent_snapshot: Dict[str, dict] = {}
@@ -213,7 +270,36 @@ class QBittorrentClient:
 
     @staticmethod
     def map_torrent_status(torrent: dict) -> dict:
-        return TorrentStatusMapper.map(torrent)
+        state = str(torrent.get("state", "") or "")
+        progress = float(torrent.get("progress") or 0.0)
+
+        queued_states = {"queuedDL"}
+        downloading_states = {
+            "downloading", "forcedDL", "metaDL", "stalledDL",
+            "checkingDL", "checkingResumeData", "moving",
+            "pausedDL",  # qB 队列管理临时暂停，视为下载中避免状态震荡
+        }
+        success_states = {
+            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
+        }
+        error_states = {"error", "missingFiles", "unknown"}
+
+        if state in error_states:
+            status = TaskStatus.error
+        elif progress >= 1.0 or state in success_states:
+            status = TaskStatus.success
+        elif state in downloading_states or 0.0 < progress < 1.0:
+            status = TaskStatus.downloading
+        elif state in queued_states:
+            status = TaskStatus.queued
+        else:
+            status = TaskStatus.queued
+
+        return {
+            "status": status,
+            "progress": round(progress * 100, 1),
+            "torrent_state": state or None,
+        }
 
     async def get_torrent_properties(self, hash: str) -> QBitApiObject:
         try:
@@ -234,6 +320,20 @@ class QBittorrentClient:
         except Exception as e:
             log.warning(f"get_categories 异常: {e}")
             return {}
+
+    async def _find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
+        """在 qB 种子列表中查找 hash 前缀匹配的种子（去重检测）。"""
+        try:
+            r = await self._req("GET", "/torrents/info")
+            if r.status_code != 200:
+                return None
+            torrents = r.json()
+            for t in torrents:
+                if t.get("hash", "").startswith(hash_prefix):
+                    return t
+        except Exception:
+            pass
+        return None
 
     async def _get_torrents_list(self) -> list:
         """辅助方法：获取种子列表（供 QBitPathResolver 使用）"""
@@ -288,30 +388,34 @@ class QBittorrentClient:
         return await self.get_default_save_path() or "/volume1/downloads"
 
     async def ensure_category(self, name: str, save_path: str, max_retries: int = 2):
-        for attempt in range(max_retries):
-            try:
-                cats = await self.get_categories()
-                
-                if name not in cats:
-                    await self._req("POST", "/torrents/createCategory",
-                                    data={"category": name, "savePath": save_path})
-                    log.info(f"创建分类: [{name}] → {save_path}")
-                    await asyncio.sleep(0.5)
+        # 对同一分类串行化，防止并发创建/编辑竞态
+        lock = self._category_locks.setdefault(name, asyncio.Lock())
+        async with lock:
+            for attempt in range(max_retries):
+                try:
                     cats = await self.get_categories()
-                
-                if name in cats and cats[name].get("savePath", "") != save_path:
-                    await self._req("POST", "/torrents/editCategory",
-                                    data={"category": name, "savePath": save_path})
-                    log.info(f"更新分类路径: [{name}] → {save_path}")
-                
-                return True
-                
-            except Exception as e:
-                log.warning(f"ensure_category 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1)
-        
-        return False
+
+                    if name not in cats:
+                        await self._req("POST", "/torrents/createCategory",
+                                        data={"category": name, "savePath": save_path})
+                        log.info(f"创建分类: [{name}] → {save_path}")
+                        await asyncio.sleep(0.5)
+                        cats = await self.get_categories()
+
+                    if name in cats and cats[name].get("savePath", "") != save_path:
+                        await self._req("POST", "/torrents/editCategory",
+                                        data={"category": name, "savePath": save_path})
+                        log.info(f"更新分类路径: [{name}] → {save_path}")
+
+                    return True
+
+                except Exception as e:
+                    log.warning(f"ensure_category 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1)
+
+            return False
+
 
     async def add_magnet(self, magnet: str, category: str, save_path: str = "") -> bool:
         """添加磁力链接到 qBittorrent。
@@ -333,13 +437,15 @@ class QBittorrentClient:
             return False
         btih_prefix = btih_match.group(1)[:8]
 
-        # 1. 根据 qB 默认路径生成分类的 savePath（用于 createCategory，不用于 add）
-        if save_path and not save_path.startswith("/"):
+        # 1. 确保分类在 qB 中存在（自动创建不存在的分类）
+        category_save_path = save_path
+        if category_save_path and not category_save_path.startswith("/"):
             base = await self.get_base_save_path()
             if base:
-                save_path = f"{base}/{save_path}"
-            else:
-                save_path = ""
+                category_save_path = f"{base}/{category_save_path}"
+        # 即使无法拼接完整路径，也传入分类名让 ensure_category 至少创建分类
+        if not category_save_path:
+            category_save_path = save_path  # 保留原始值（如 "SexArt"），qB 可据此创建
 
         # 2. 如果配置了 FS_BASE_PATH，先创建真实目录（qB 的 createCategory 不是 mkdir）
         fs_base = settings.FS_BASE_PATH.strip()
@@ -348,8 +454,8 @@ class QBittorrentClient:
 
         try:
             # 2. 确保分类存在且路径正确
-            if save_path:
-                category_ok = await self.ensure_category(category, save_path)
+            if category_save_path:
+                category_ok = await self.ensure_category(category, category_save_path)
                 if not category_ok:
                     log.warning(f"分类 [{category}] 创建失败")
 
@@ -357,7 +463,7 @@ class QBittorrentClient:
             r = await self._req("POST", "/torrents/add", data={
                 "urls":     magnet,
                 "category": category,
-                "autoTMM":  "true",
+                "use_auto_torrent_management":  "true",
             })
 
             ok = r.text.strip() == "Ok."
@@ -368,6 +474,14 @@ class QBittorrentClient:
                 self.stats.last_success_time = time.time()
                 log.debug(f"添加种子成功: {category}")
             else:
+                # qB 返回 Fails. — 检查是否种子已存在（重复添加）
+                existing = await self._find_torrent_by_prefix(btih_prefix)
+                if existing:
+                    log.info(f"种子已存在于 qB (btih:{btih_prefix}…)，跳过: {existing.get('name', '?')[:40]}")
+                    self.stats.total_success += 1
+                    self.stats.consecutive_failures = 0
+                    return True
+
                 self.last_error = f"qB 拒绝 (btih:{btih_prefix}…) — {r.text.strip()[:100]}"
                 self.stats.total_failed += 1
                 self.stats.consecutive_failures += 1

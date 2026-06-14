@@ -13,7 +13,8 @@ from typing import Callable
 from magnet_harvester.classifier.fallback import (
     make_fallback,
 )
-from magnet_harvester.keyword_recognizer import KeywordCategoryRecognizer
+from magnet_harvester.classifier.keyword_recognizer import KeywordCategoryRecognizer
+from magnet_harvester.classifier.studio_recognizer import recognize as studio_recognize
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +37,8 @@ class LocalClassifier:
         self._keyword_recognizer = KeywordCategoryRecognizer()
 
     def _classify_name(self, name: str) -> dict:
-        """分类单个名称：优先关键词识别，回退本地规则"""
+        """分类单个名称：关键词 → 工作室 → 本地规则"""
+        # 1. 关键词优先（已配置的精确匹配，如 ubuntu → 软件）
         keyword = self._keyword_recognizer.recognize(name)
         if keyword:
             return {
@@ -45,7 +47,11 @@ class LocalClassifier:
                 "reason": "keyword_rule",
                 "save_path": keyword["save_path"],
             }
-        # 回退 LOCAL_RULES
+        # 2. 工作室/厂牌识别（如 SexArt → 分类 "SexArt"）
+        studio = studio_recognize(name)
+        if studio:
+            return studio
+        # 3. 回退 LOCAL_RULES
         return make_fallback(name, "local_rule")
 
     # ── 协议方法 ──────────────────────────

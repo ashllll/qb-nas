@@ -4,10 +4,8 @@
 """
 from __future__ import annotations
 
-from magnet_harvester.qbit_client.client import QBittorrentClient
-from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
+from magnet_harvester.qbit_client.client import QBittorrentClient, QBittorrentStats, TorrentStatusMapper
 from magnet_harvester.qbit_client.paths import QBitPathResolver, _safe_fs_segment
-from magnet_harvester.qbit_client.stats import QBittorrentStats
 
 __all__ = [
     "QBittorrentClient",

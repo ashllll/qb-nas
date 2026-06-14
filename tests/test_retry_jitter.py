@@ -7,6 +7,7 @@ P3-20: 重试延迟无抖动测试
 """
 import pytest
 from unittest.mock import MagicMock, patch
+from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.utils.url_validator import CrawlTargetAdmission
 
@@ -21,6 +22,7 @@ async def test_retry_delay_has_jitter():
         return None
 
     crawler = MagnetCrawler(
+        config=CrawlerConfig(),
         target_admission=CrawlTargetAdmission(
             resolver=public_resolver,
             redirect_probe=no_redirect,

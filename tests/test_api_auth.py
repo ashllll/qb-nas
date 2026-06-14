@@ -7,28 +7,24 @@ import pytest
 from fastapi.testclient import TestClient
 
 from magnet_harvester.bus import EventType
-from magnet_harvester.main import app
 from magnet_harvester.config import settings
+from magnet_harvester.main import app
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     with TestClient(app) as c:
-        c.app.state.ctx.pipeline.admit_crawl_target = AsyncMock(
+        ctx = c.app.state.ctx
+        ctx.pipeline.admit_crawl_target = AsyncMock(
             return_value="https://example.com"
         )
+        ctx.api_key = "test-secret-key-123"
         yield c
 
 
 class TestAPIKeyAuth:
     """Verify sensitive endpoints require API key."""
-
-    @pytest.fixture(autouse=True)
-    def _set_api_key(self):
-        original = getattr(settings, "API_KEY", None)
-        settings.API_KEY = "test-secret-key-123"
-        yield
-        settings.API_KEY = original
 
     def test_crawl_without_key_returns_401(self, client):
         r = client.post("/api/crawl", json={"url": "https://example.com", "depth": 1})
@@ -98,6 +94,6 @@ class TestAPIKeyAuth:
 
     def test_no_key_config_allows_all(self, client):
         """When API_KEY is empty, auth is disabled (backward compat)."""
-        settings.API_KEY = ""
+        client.app.state.ctx.api_key = ""
         r = client.post("/api/crawl", json={"url": "https://example.com", "depth": 1})
         assert r.status_code == 200

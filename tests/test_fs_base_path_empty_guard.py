@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from magnet_harvester.config import QBitConfig, settings
+from magnet_harvester.config import QBitConfig
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.qbit_client.paths import _safe_fs_segment
 
@@ -31,8 +31,7 @@ def _ok_response() -> httpx.Response:
 @pytest.mark.asyncio
 async def test_fs_base_path_empty_does_not_create_dir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(settings, "FS_BASE_PATH", "")
-    client = QBittorrentClient(QBitConfig(host="http://qbit.test"))
+    client = QBittorrentClient(QBitConfig(host="http://qbit.test", fs_base_path=""))
     client.ensure_category = AsyncMock(return_value=True)
     client._req = AsyncMock(return_value=_ok_response())
 
@@ -46,8 +45,8 @@ async def test_fs_base_path_empty_does_not_create_dir(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_configured_fs_base_path_creates_category_directory(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "FS_BASE_PATH", str(tmp_path))
-    client = QBittorrentClient(QBitConfig(host="http://qbit.test"))
+    monkeypatch.chdir(tmp_path)
+    client = QBittorrentClient(QBitConfig(host="http://qbit.test", fs_base_path=str(tmp_path)))
     client.ensure_category = AsyncMock(return_value=True)
     client._req = AsyncMock(return_value=_ok_response())
 

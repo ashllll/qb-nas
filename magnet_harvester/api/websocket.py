@@ -6,7 +6,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Protocol
+from datetime import datetime
+from typing import Any, Protocol
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -15,6 +16,12 @@ from magnet_harvester.utils.serializers import _item_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _json_serializer(obj: Any) -> str:
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 class BroadcasterStore(Protocol):
@@ -41,7 +48,7 @@ class WSBroadcaster:
         return len(self._active_ws)
 
     async def send_init(self, ws: WebSocket, items: list):
-        data = json.dumps({"type": "init", "items": items}, ensure_ascii=False)
+        data = json.dumps({"type": "init", "items": items}, ensure_ascii=False, default=_json_serializer)
         await ws.send_text(data)
 
     async def send_init_from_store(self, ws: WebSocket):
@@ -67,7 +74,11 @@ class WSBroadcaster:
     async def _on_event(self, event: Event):
         if not self._active_ws:
             return
-        data = json.dumps(event.as_dict(), ensure_ascii=False)
+        try:
+            data = json.dumps(event.as_dict(), ensure_ascii=False, default=_json_serializer)
+        except Exception:
+            log.warning("WebSocket JSON 序列化失败: %s", event.type.value, exc_info=True)
+            return
         dead = set()
 
         async def _send(ws: WebSocket):
