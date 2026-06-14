@@ -28,7 +28,7 @@ def test_keyword_rule_in_batch():
     results = clf.classify_sync_batch(items)
     assert results[0]["category"] == "纪录片"
     assert results[0]["save_path"] == "纪录片"
-    assert results[1]["category"] == "其他"
+    assert results[1]["category"] == "电影"
 
 
 def test_stream_batch_calls_back_with_keyword_result():

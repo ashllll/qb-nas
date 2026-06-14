@@ -48,20 +48,17 @@ KNOWN_STUDIOS: dict[str, str] = {
     "metflix": "Metflix",
 }
 
-# 匹配模式（按优先级）:
-# 1. 去括号前缀后的 StudioName + 日期模式(空格/点/横线分隔) + 空格
-#    例如: SexArt 24 05 20  /  SexArt.24.05.20.  /  X-Art 24-05-20
+## 匹配模式：
+## 只有 "StudioName + 日期 (YY MM DD)" 格式才触发
+## 例如: SexArt 24 05 20  /  SexArt.24.05.20.  /  X-Art 24-05-20
 _STUDIO_WITH_DATE = re.compile(
-    r"(?:^\[[^\]]+\]\s*)?"                       # 可选: [Tag] 前缀
-    r"([A-Za-z0-9]+(?:[\s.\-][A-Za-z0-9]+)*?)"   # 工作室名 (含连字符/点)
-    r"[\s.]"                                      # 分隔符
-    r"\d{2}[\s.\-]\d{2}[\s.\-]\d{2}"             # 日期 YY MM DD
-    r"(?:[\s.]|$)",                               # 日期后边界
+    r"(?:^\[[^\]]+\]\s*)?"                       ## 可选: [Tag] 前缀
+    r"([A-Za-z0-9]+(?:[\s.\-][A-Za-z0-9]+)*?)"   ## 工作室名 (含连字符/点)
+    r"[\s.]"                                      ## 分隔符
+    r"\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"         ## 日期 YY MM DD（\b 防止匹配 2022.2160p 中的 20.22.21）
+    r"(?:[\s.]|$)",                               ## 日期后边界
     re.IGNORECASE,
 )
-
-# 2. 回退：首词（去括号前缀后），至少 3 字符
-_FIRST_WORD = re.compile(r"(?:^\[[^\]]+\]\s*)?([A-Za-z0-9][A-Za-z0-9.\-]{2,})", re.IGNORECASE)
 
 
 def extract_studio(name: str) -> Optional[str]:
@@ -74,20 +71,6 @@ def extract_studio(name: str) -> Optional[str]:
     if m:
         raw = m.group(1).strip().rstrip(".")
         if len(raw) >= 2:
-            return normalize_studio(raw)
-
-    # 回退：取首词
-    m = _FIRST_WORD.search(cleaned)
-    if m:
-        raw = m.group(1).rstrip(".")
-        if len(raw) >= 3:
-            return normalize_studio(raw)
-
-    # 最后尝试：空格分割取首词
-    parts = cleaned.split()
-    if parts:
-        raw = parts[0].strip("[]().")
-        if len(raw) >= 3:
             return normalize_studio(raw)
 
     return None

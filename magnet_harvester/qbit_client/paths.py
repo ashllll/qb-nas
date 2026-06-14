@@ -27,10 +27,9 @@ def _extract_base_from_path(save_path: str) -> Optional[str]:
     if not save_path or save_path.startswith("/var/"):
         return None
     stripped = save_path.strip("/")
-    if "/" in stripped:
-        return "/" + "/".join(stripped.split("/")[:-1])
-    # 单层路径如 /downloads — 直接返回
-    return "/" + stripped
+    if "/" not in stripped:
+        return None  # 单段路径（如 /downloads）— 无父目录可提取
+    return "/" + "/".join(stripped.split("/")[:-1])
 
 
 class QBitPathResolver:

@@ -59,10 +59,10 @@ def test_variety():
 
 
 def test_movie_default():
-    """纯电影名（无剧集/动漫/音乐特征）→ 其他（不再默认电影）"""
+    """纯电影名（无剧集/动漫/音乐特征）→ 电影（BluRay 模式匹配）"""
     clf = LocalClassifier()
     result = clf.classify_one("Avatar.The.Way.of.Water.2022.2160p.BluRay")
-    assert result["category"] == "其他"
+    assert result["category"] == "电影"
 
 
 def test_unknown_default():
