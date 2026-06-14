@@ -321,7 +321,9 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     from magnet_harvester.api.websocket import WSBroadcaster
     from magnet_harvester.errors import ErrorRecord
     from magnet_harvester.models import MetricSnapshot
-    from magnet_harvester.pipeline import ClassifyPhase, DownloadPhase, HarvestPipeline
+    from magnet_harvester.pipeline import HarvestPipeline
+    from magnet_harvester.classifier.rule import ClassifyPhase
+    from magnet_harvester.qbit_client.client import DownloadPhase
     from magnet_harvester.transitions import MagnetItemTransitions
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.services.agent_tools import ToolExecutor

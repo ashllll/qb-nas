@@ -17,7 +17,7 @@ import random
 import time
 from contextvars import ContextVar
 from urllib.parse import urljoin, urlparse
-from typing import AsyncGenerator, List, Optional, Set
+from typing import AsyncGenerator, Callable, List, Optional, Protocol, Set, runtime_checkable
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
@@ -54,6 +54,13 @@ class CrawlMetrics:
         }
 
 
+
+
+@runtime_checkable
+class CrawlPhase(Protocol):
+    """Protocol for crawl adapters — implemented by MagnetCrawler."""
+    async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
+    async def admit_url(self, url: str) -> str: ...
 
 
 def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:

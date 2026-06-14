@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.classifier.local_classifier import LocalClassifier
-from magnet_harvester.pipeline import ClassifyPhase
+from magnet_harvester.classifier.rule import ClassifyPhase
 
 
 def test_conforms_to_classify_phase_protocol():

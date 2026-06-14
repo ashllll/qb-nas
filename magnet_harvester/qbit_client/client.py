@@ -7,7 +7,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Protocol, runtime_checkable
 
 import httpx
 
@@ -81,6 +81,16 @@ class TorrentStatusMapper:
             "progress": round(progress * 100, 1),
             "torrent_state": state or None,
         }
+
+
+@runtime_checkable
+class DownloadPhase(Protocol):
+    """Protocol for download adapters — implemented by QBittorrentClient."""
+    last_error: str | None
+    async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool: ...
+    async def ping(self) -> bool: ...
+    def close(self): ...
+    def is_healthy(self) -> bool: ...
 
 
 class QBittorrentClient:

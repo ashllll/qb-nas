@@ -15,8 +15,8 @@ from magnet_harvester.bus import NullBus, Event, EventType, MessageBus
 
 # ── Phase Protocols（从 pipeline.py 导入） ──
 
+from magnet_harvester.crawler import CrawlPhase
 from magnet_harvester.pipeline import (
-    CrawlPhase,
     HarvestPipeline,
 )
 
