@@ -273,11 +273,12 @@ class QBittorrentClient:
         state = str(torrent.get("state", "") or "")
         progress = float(torrent.get("progress") or 0.0)
 
-        queued_states = {"queuedDL"}
+        queued_states: set[str] = set()
         downloading_states = {
             "downloading", "forcedDL", "metaDL", "stalledDL",
             "checkingDL", "checkingResumeData", "moving",
-            "pausedDL",  # qB 队列管理临时暂停，视为下载中避免状态震荡
+            "pausedDL",   # qB 队列管理临时暂停 → 视为下载中
+            "queuedDL",   # qB 排队等待 → 视为下载中，避免与 downloading 间震荡
         }
         success_states = {
             "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",

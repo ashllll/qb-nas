@@ -73,7 +73,13 @@ class QBitSyncLoop:
             Event(EventType.STORE_CHANGED, {"item": _item_payload(item)})
         )
 
-        if previous_status is not None and previous_status != item.status:
+        # 仅在到达终态（成功/失败）或进入新阶段时发 DOWNLOAD_RESULT
+        # queued/downloading 之间切换只通过 STORE_CHANGED 静默更新，避免日志刷屏
+        is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
+        is_new_phase = previous_status in {
+            TaskStatus.pending, TaskStatus.adding, TaskStatus.classifying, None,
+        }
+        if is_terminal or is_new_phase:
             await self._bus.emit(
                 Event(
                     EventType.DOWNLOAD_RESULT,
