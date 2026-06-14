@@ -147,6 +147,5 @@ class ErrorHandler:
             del self._errors[eid]
         log.info(f"已清理 {len(resolved)} 个已解决的错误记录")
 
-
-error_handler = ErrorHandler()
+
 

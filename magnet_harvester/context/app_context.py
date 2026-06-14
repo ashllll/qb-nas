@@ -44,6 +44,13 @@ class QBitSyncLike(Protocol):
     async def replace_qbit_client(self, new_qbit) -> None: ...
 
 
+class ErrorHandlerLike(Protocol):
+    def record(self, category, severity, message: str, details: dict | None = None, exc: Exception | None = None) -> str: ...
+    def get_recent_errors(self, category=None, severity=None, limit: int = 50): ...
+    def get_error_stats(self) -> dict: ...
+    def clear_resolved(self) -> None: ...
+
+
 @dataclass
 class AppContext:
     store: ItemStore
@@ -60,6 +67,7 @@ class AppContext:
     qbit_sync: QBitSyncLike | None = None
     qbit_lock: asyncio.Lock | None = None
     clipboard_monitor: "ClipboardMonitorLike | None" = None
+    error_handler: ErrorHandlerLike | None = None
 
 
 @dataclass

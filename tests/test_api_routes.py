@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
+from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
 from magnet_harvester.context.app_context import AppContext
 from magnet_harvester.models import MagnetItem, TaskStatus
@@ -104,6 +104,7 @@ def _make_app():
             status=TaskStatus.pending,
         )
     )
+    error_handler = ErrorHandler()
     ctx = AppContext(
         store=store,
         bus=NullBus(),
@@ -114,6 +115,7 @@ def _make_app():
         stats=FakeStats(),
         bg_manager=FakeBGManager(),
         tool_executor=FakeToolExecutor(),
+        error_handler=error_handler,
     )
 
     app = FastAPI()
@@ -209,22 +211,24 @@ def test_search_clear_health_categories_and_config_routes():
 
 
 def test_errors_routes_return_and_clear_resolved_records():
-    error_id = error_handler.record(
+    app, ctx = _make_app()
+    eh = ctx.error_handler
+    assert eh is not None
+
+    error_id = eh.record(
         ErrorCategory.QBIT,
         ErrorSeverity.ERROR,
         "route test error",
         {"source": "test"},
     )
-    error_handler._errors[error_id].resolved = True
-
-    app, _ctx = _make_app()
+    eh._errors[error_id].resolved = True
 
     try:
         with TestClient(app) as client:
             listed = client.get("/api/errors", params={"category": "qbit", "severity": "error"})
             cleared = client.post("/api/errors/clear")
     finally:
-        error_handler._errors.pop(error_id, None)
+        eh._errors.pop(error_id, None)
 
     assert listed.status_code == 200
     assert listed.json()["errors"][0]["message"] == "route test error"

@@ -1,20 +1,21 @@
 """
 LocalClassifier — 纯本地规则分类器，零外部依赖
 
-直接使用 LOCAL_RULES 正则进行分类，同步 API。
-符合 ClassifyPhase 协议。
-优先识别通用分类关键词，回退到 LOCAL_RULES。
+使用 ClassificationRule 链：KeywordRule → StudioRule → FallbackRule。
+规则链可配置，优先级显式，每个规则返回统一的 ClassificationResult。
 """
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from typing import Callable, List
 
-from magnet_harvester.classifier.fallback import (
-    make_fallback,
+from magnet_harvester.classifier.rule import (
+    ClassificationResult,
+    ClassificationRule,
+    FallbackRule,
+    KeywordRule,
+    StudioRule,
 )
-from magnet_harvester.classifier.keyword_recognizer import KeywordCategoryRecognizer
-from magnet_harvester.classifier.studio_recognizer import recognize as studio_recognize
 
 log = logging.getLogger(__name__)
 
@@ -31,28 +32,37 @@ class LocalClassifier:
         clear_cache()                           — 空操作
     """
 
-    def __init__(self):
+    def __init__(self, rule_chain: List[ClassificationRule] | None = None):
         self.usage = _NullUsageStats()
         self._ok = True
-        self._keyword_recognizer = KeywordCategoryRecognizer()
+        if rule_chain is not None:
+            self._rule_chain = rule_chain
+        else:
+            # Default: keyword → studio → fallback
+            self._rule_chain = [
+                KeywordRule(),
+                StudioRule(),
+                FallbackRule(),
+            ]
 
     def _classify_name(self, name: str) -> dict:
-        """分类单个名称：关键词 → 工作室 → 本地规则"""
-        # 1. 关键词优先（已配置的精确匹配，如 ubuntu → 软件）
-        keyword = self._keyword_recognizer.recognize(name)
-        if keyword:
-            return {
-                "category": keyword["category"],
-                "confidence": "high",
-                "reason": "keyword_rule",
-                "save_path": keyword["save_path"],
-            }
-        # 2. 工作室/厂牌识别（如 SexArt → 分类 "SexArt"）
-        studio = studio_recognize(name)
-        if studio:
-            return studio
-        # 3. 回退 LOCAL_RULES
-        return make_fallback(name, "local_rule")
+        """分类单个名称：按规则链优先级匹配，返回统一结果格式。"""
+        for rule in self._rule_chain:
+            result = rule.apply(name)
+            if result is not None:
+                return {
+                    "category": result.category,
+                    "confidence": result.confidence,
+                    "reason": result.reason,
+                    "save_path": result.save_path,
+                }
+        # FallbackRule always returns, so we should never reach here
+        return {
+            "category": "其他",
+            "confidence": "low",
+            "reason": "no_match",
+            "save_path": "其他",
+        }
 
     # ── 协议方法 ──────────────────────────
 

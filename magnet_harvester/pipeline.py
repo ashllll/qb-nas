@@ -11,6 +11,7 @@ from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
+from magnet_harvester.transitions import MagnetItemTransitions
 
 log = logging.getLogger(__name__)
 
@@ -46,87 +47,6 @@ class DownloadPhase(Protocol):
 
 
 # ── HarvestPipeline ──────────────────────────
-
-class MagnetItemTransitions:
-    """Applies Magnet item state changes and publishes matching events."""
-
-    def __init__(self, store: ItemStore, bus: MessageBus):
-        self._store = store
-        self._bus = bus
-
-    async def _emit_item_changed(self, hash_key: str):
-        item = self._store.get(hash_key)
-        if item is not None:
-            await self._bus.emit(Event(EventType.STORE_CHANGED, {"item": item.model_dump()}))
-
-    async def found(self, item: MagnetItem) -> bool:
-        if not self._store.add(item):
-            return False
-        await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
-        return True
-
-    async def classification_started(self, hash_key: str):
-        self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None)
-        await self._emit_item_changed(hash_key)
-
-    async def classified(self, hash_key: str, result: dict):
-        self._store.update(
-            hash_key,
-            category=result["category"],
-            save_path=result["save_path"],
-            status=TaskStatus.pending,
-            progress=0.0,
-            torrent_state=None,
-            error_msg=None,
-        )
-        await self._bus.emit(Event(EventType.CLASSIFY_DONE, {
-            "hash": hash_key,
-            "category": result["category"],
-            "confidence": result.get("confidence", ""),
-            "reason": result.get("reason", ""),
-        }))
-        await self._emit_item_changed(hash_key)
-
-    async def download_submitting(self, hash_key: str):
-        item = self._store.get(hash_key)
-        if item is None:
-            return
-        self._store.update(
-            hash_key,
-            status=TaskStatus.adding,
-            progress=0.0,
-            torrent_state="submitting",
-            error_msg=None,
-        )
-        await self._emit_item_changed(hash_key)
-        await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
-
-    async def download_submitted(self, hash_key: str):
-        self._store.update(
-            hash_key,
-            status=TaskStatus.queued,
-            torrent_state="submitted",
-            progress=0.0,
-            error_msg=None,
-        )
-        await self._emit_item_changed(hash_key)
-        await self._emit_download_result(hash_key, TaskStatus.queued)
-
-    async def download_failed(self, hash_key: str, error_msg: str):
-        self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg)
-        await self._emit_item_changed(hash_key)
-        await self._emit_download_result(hash_key, TaskStatus.error)
-
-    async def _emit_download_result(self, hash_key: str, status: TaskStatus):
-        item = self._store.get(hash_key)
-        await self._bus.emit(Event(EventType.DOWNLOAD_RESULT, {
-            "hash": hash_key,
-            "status": status.value,
-            "error_msg": item.error_msg if item else None,
-            "progress": item.progress if item else 0.0,
-            "torrent_state": item.torrent_state if item else None,
-        }))
-
 
 class HarvestPipeline:
     def __init__(

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from magnet_harvester.bus import Event, EventType
 from magnet_harvester.config import settings
 from magnet_harvester.context.app_context import AppContext, RuntimeContext, get_context
-from magnet_harvester.errors import ErrorCategory, ErrorSeverity, error_handler
+from magnet_harvester.errors import ErrorCategory, ErrorSeverity
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.utils.auth import require_api_key
@@ -46,7 +46,8 @@ async def get_stats(ctx: AppContext = Depends(get_context)):
         result = {"api_calls": 0}
     result["active_items"] = ctx.store.count
     result["websocket_clients"] = ctx.broadcaster.active_count if ctx.broadcaster else 0
-    result["error_stats"] = error_handler.get_error_stats()
+    if ctx.error_handler is not None:
+        result["error_stats"] = ctx.error_handler.get_error_stats()
     return result
 
 
@@ -122,13 +123,17 @@ async def get_errors(
         ctx.stats.record_api_call()
     cat = ErrorCategory(category) if category else None
     sev = ErrorSeverity(severity) if severity else None
-    errors = error_handler.get_recent_errors(cat, sev, limit)
-    return {"errors": [e.to_dict() for e in errors], "stats": error_handler.get_error_stats()}
+    eh = ctx.error_handler
+    if eh is None:
+        return {"errors": [], "stats": {}}
+    errors = eh.get_recent_errors(cat, sev, limit)
+    return {"errors": [e.to_dict() for e in errors], "stats": eh.get_error_stats()}
 
 
 @router.post("/api/errors/clear")
-async def clear_resolved_errors(_=Depends(require_api_key)):
-    error_handler.clear_resolved()
+async def clear_resolved_errors(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+    if ctx.error_handler is not None:
+        ctx.error_handler.clear_resolved()
     return {"status": "cleared"}
 
 
