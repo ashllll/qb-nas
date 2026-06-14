@@ -7,6 +7,7 @@
 - 基于 `crawl4ai` (Playwright) 抓取页面和子链接中的 magnet
 - **三层分类引擎**：工作室识别 → 关键词匹配 → 通用规则（47 条）
 - 支持站点 Cookie 注入，爬取需要登录的网站
+- **系统剪贴板监控**：自动检测复制到的 magnet 链接，分类后加入表格
 - 通过 qBittorrent Web API v2 自动建分类并添加下载
 - 单页 Web UI，实时进度、筛选、重分类和批量下载
 - qB 连接状态面板（在线/离线/检测中 + 状态指示灯）
@@ -25,6 +26,11 @@
    │ Classifier│    │ SiteAuth     │    │MagnetParser│  │ qBittorrent
    │ 3-layer   │    │ Cookie注入    │    │ regex      │  │ Client  │
    └───────────┘    └──────────────┘    └────────────┘  └──────────┘
+                           ▲
+                    ┌──────────────┐
+                    │ClipboardMon  │
+                    │ pyperclip轮询 │
+                    └──────────────┘
 ```
 
 ### 分类引擎
@@ -88,6 +94,16 @@ SITE_COOKIES={"example.com": "uid=123; sid=abc; token=xyz"}
 
 获取方式：浏览器登录目标网站 → F12 → Application → Cookies → 拼接为 `name=value; name2=value2` 格式。重启服务后自动注入到爬虫浏览器。
 
+#### 剪贴板监控
+
+点击顶部状态栏的 **"剪贴板监控"** pill 开关，开启后自动检测系统剪贴板中复制的 magnet 链接：
+
+```
+复制磁力链接 → 自动提取 btih + dn= 名称 → 三层分类 → 加入表格 → 可一键下载
+```
+
+无需额外配置，监控仅检测 `magnet:?xt=urn:btih:` 开头的链接。
+
 ### 启动
 
 ```bash
@@ -120,6 +136,9 @@ python run.py
 | `GET` | `/api/config` | qB 连接配置 |
 | `PUT` | `/api/config` | 更新 qB 连接 |
 | `GET` | `/api/errors` | 错误列表 |
+| `GET` | `/api/clipboard` | 剪贴板监控状态 |
+| `POST` | `/api/clipboard/start` | 开启剪贴板监控 |
+| `POST` | `/api/clipboard/stop` | 关闭剪贴板监控 |
 | `WebSocket` | `/ws` | 实时事件推送 |
 
 ## 项目结构
@@ -154,6 +173,7 @@ qb-nas/
 │   ├── services/
 │   │   ├── qbit_sync.py            # qB 状态同步循环
 │   │   ├── site_auth.py            # 站点 Cookie 注入
+│   │   ├── clipboard_monitor.py    # 剪贴板监控 (pyperclip)
 │   │   ├── stats.py                # 运行时统计
 │   │   └── __init__.py
 │   ├── context/
@@ -179,6 +199,7 @@ qb-nas/
 - **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由
 - **状态同步**：QBitSyncLoop 每 2 秒轮询 `/sync/maindata`，仅终态变化时触发前端通知，避免日志刷屏
 - **URL 安全**：RFC 1918 精确检查（10/172.16/192.168 + fc00::/7），DNS 解析后验证，防 SSRF
+- **剪贴板监控**：`pyperclip` 轮询系统剪贴板 (1s)，提取 `btih` + `dn=` 名称，经过三层分类引擎后发布 `MAGNET_FOUND` 事件，实时显示在 Web UI 表格中
 
 ## License
 
