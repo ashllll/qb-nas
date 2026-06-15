@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
+import re
 import time
 from contextvars import ContextVar
-from urllib.parse import urljoin, urlparse
 from typing import AsyncGenerator, List, Optional, Set
 
 from crawl4ai import (
@@ -24,9 +23,9 @@ from crawl4ai import (
     BrowserConfig,
     CacheMode,
     CrawlerRunConfig,
-    MemoryAdaptiveDispatcher,
-    RateLimiter,
 )
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+from crawl4ai.deep_crawling.filters import FilterChain, URLFilter, URLPatternFilter
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_parser import extract_from_text
@@ -37,6 +36,11 @@ from magnet_harvester.utils.url_validator import (
 )
 
 log = logging.getLogger(__name__)
+
+DETAIL_URL_RE = re.compile(
+    r".*(/(details?|torrent|view|resource|movie|subject)/|[?&](id|tid|movie_id|detail)=).*",
+    re.IGNORECASE,
+)
 
 
 class CrawlMetrics:
@@ -67,6 +71,24 @@ def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k"))
     """Filter crawler results to the configured resolution keywords."""
     allowed_lower = {a.lower() for a in allowed if a}
     return [it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)]
+
+
+class CrawlAdmissionFilter(URLFilter):
+    """Apply project URL safety checks inside crawl4ai's deep crawl filter chain."""
+
+    def __init__(self, target_admission: CrawlTargetAdmission):
+        super().__init__()
+        self._target_admission = target_admission
+
+    async def apply(self, url: str) -> bool:
+        try:
+            await self._target_admission.admit(url)
+        except URLValidationError:
+            self._update_stats(False)
+            log.warning("跳过不安全的详情页链接: %s", url)
+            return False
+        self._update_stats(True)
+        return True
 
 
 class MagnetCrawler:
@@ -109,7 +131,6 @@ class MagnetCrawler:
             "crawl_session_metrics",
             default=None,
         )
-        self._visited_lock = asyncio.Lock()
         self._seen_lock = asyncio.Lock()
         self._target_admission = target_admission or CrawlTargetAdmission()
 
@@ -192,18 +213,17 @@ class MagnetCrawler:
             {"type": "done", "total": N, ...}     — 爬取完成
         """
         url = await self.admit_url(url)
+        await self._target_admission.admit_redirect_chain(url)
         if not self._crawler:
             await self.start()
 
         self._session_metrics.set(CrawlMetrics())
         seen: Set[str] = set()
-        visited: Set[str] = {url}
         events: asyncio.Queue[dict | None] = asyncio.Queue()
 
         session_task = asyncio.create_task(
             self._run_crawl_session(
                 root_url=url,
-                visited=visited,
                 events=events,
                 seen=seen,
                 depth=depth,
@@ -227,27 +247,19 @@ class MagnetCrawler:
     async def _run_crawl_session(
         self,
         root_url: str,
-        visited: Set[str],
         events: asyncio.Queue[dict | None],
         seen: Set[str],
         depth: int,
     ) -> None:
         try:
-            batch: list[tuple[str, int]] = [(root_url, depth)]
-            while batch:
-                next_batch: list[tuple[str, int]] = []
-                grouped = self._group_urls_by_depth(batch)
-
-                for remaining_depth, urls in grouped:
-                    await self._crawl_url_batch(
-                        urls=urls,
-                        remaining_depth=remaining_depth,
-                        visited=visited,
-                        next_batch=next_batch,
-                        events=events,
-                        seen=seen,
-                    )
-                batch = next_batch
+            await events.put({"type": "progress", "msg": "正在爬取...", "url": root_url, "depth": depth})
+            async for result in self._fetch_deep_stream(root_url, depth):
+                await self._handle_crawl_result(
+                    result=result,
+                    source_url=getattr(result, "url", root_url) or root_url,
+                    events=events,
+                    seen=seen,
+                )
 
         finally:
             metrics = self._current_metrics()
@@ -259,52 +271,6 @@ class MagnetCrawler:
             })
             await events.put(None)
 
-    @staticmethod
-    def _group_urls_by_depth(batch: list[tuple[str, int]]) -> list[tuple[int, list[str]]]:
-        grouped: dict[int, list[str]] = {}
-        for url, depth in batch:
-            grouped.setdefault(depth, []).append(url)
-        return sorted(grouped.items(), key=lambda item: item[0], reverse=True)
-
-    async def _crawl_url_batch(
-        self,
-        urls: list[str],
-        remaining_depth: int,
-        visited: Set[str],
-        next_batch: list[tuple[str, int]],
-        events: asyncio.Queue[dict | None],
-        seen: Set[str],
-    ) -> None:
-        if not urls:
-            return
-
-        metrics = self._current_metrics()
-        for url in urls:
-            metrics.pages_crawled += 1
-            await events.put({
-                "type": "progress",
-                "msg": "正在爬取...",
-                "url": url,
-                "depth": remaining_depth,
-            })
-
-        async for source_url, result, error in self._fetch_many_stream(urls):
-            if error is not None:
-                metrics.errors += 1
-                log.warning("页面加载失败: %s - %s", source_url, error)
-                await events.put({"type": "error", "msg": str(error), "url": source_url})
-                continue
-
-            await self._handle_crawl_result(
-                result=result,
-                source_url=source_url,
-                remaining_depth=remaining_depth,
-                visited=visited,
-                next_batch=next_batch,
-                events=events,
-                seen=seen,
-            )
-
     @property
     def _worker_count(self) -> int:
         return max(1, min(self._config.concurrency, 8))
@@ -313,13 +279,11 @@ class MagnetCrawler:
         self,
         result,
         source_url: str,
-        remaining_depth: int,
-        visited: Set[str],
-        next_batch: list[tuple[str, int]],
         events: asyncio.Queue[dict | None],
         seen: Set[str],
     ) -> None:
         metrics = self._current_metrics()
+        metrics.pages_crawled += 1
         result_url = getattr(result, "url", source_url) or source_url
         if not getattr(result, "success", False):
             metrics.errors += 1
@@ -346,91 +310,34 @@ class MagnetCrawler:
             "metrics": metrics.as_dict(),
         })
 
-        if remaining_depth <= 1:
-            return
-
-        detail_links = self._extract_detail_links(result_url, result.links)
-        claimed = await self._claim_unvisited_links(detail_links, visited)
-        if claimed:
-            await events.put({
-                "type": "progress",
-                "msg": f"并发排队 {len(claimed)} 个详情页",
-                "url": result_url,
-                "depth": remaining_depth,
-            })
-
-        for link in claimed:
-            next_batch.append((link, remaining_depth - 1))
-
-    async def _fetch_many_stream(self, urls: list[str]):
-        admitted: list[str] = []
-        for url in urls:
-            try:
-                await self._target_admission.admit_redirect_chain(url)
-            except URLValidationError as exc:
-                yield url, None, exc
-                continue
-            admitted.append(url)
-
-        if not admitted:
-            return
-
-        try:
-            result_stream = await self._crawler.arun_many(
-                admitted,
-                config=self._build_run_config(stream=True),
-                dispatcher=self._build_dispatcher(),
-            )
-            if hasattr(result_stream, "__aiter__"):
-                async for result in result_stream:
-                    yield getattr(result, "url", "") or "", result, None
-            else:
-                for result in result_stream:
-                    yield getattr(result, "url", "") or "", result, None
-        except Exception as exc:
-            log.warning("arun_many 批量抓取失败，回退到单页抓取: %s", exc)
-            for url in admitted:
-                result = await self._fetch_with_retry(url)
-                if result is None:
-                    yield url, None, RuntimeError("页面加载失败")
-                else:
-                    yield getattr(result, "url", url) or url, result, None
-
-    def _build_dispatcher(self) -> MemoryAdaptiveDispatcher:
-        return MemoryAdaptiveDispatcher(
-            memory_threshold_percent=85.0,
-            critical_threshold_percent=92.0,
-            recovery_threshold_percent=80.0,
-            max_session_permit=self._worker_count,
-            rate_limiter=RateLimiter(
-                base_delay=(0.1, 0.4),
-                max_delay=8.0,
-                max_retries=2,
+    async def _fetch_deep_stream(self, root_url: str, depth: int):
+        result_stream = await self._crawler.arun(
+            root_url,
+            config=self._build_run_config(
+                stream=True,
+                deep_crawl_strategy=self._build_deep_crawl_strategy(depth),
             ),
-            monitor=None,
+        )
+        async for result in result_stream:
+            yield result
+
+    def _build_deep_crawl_strategy(self, depth: int) -> BFSDeepCrawlStrategy:
+        return BFSDeepCrawlStrategy(
+            max_depth=max(0, depth - 1),
+            filter_chain=FilterChain([
+                URLPatternFilter(DETAIL_URL_RE, use_glob=False),
+                CrawlAdmissionFilter(self._target_admission),
+            ]),
+            include_external=False,
+            max_pages=max(1, self._config.max_detail_links + 1),
+            logger=log,
         )
 
-    async def _fetch_with_retry(self, url: str):
-        for retry_count in range(3):
-            try:
-                await self._target_admission.admit_redirect_chain(url)
-                run_cfg = self._build_run_config()
-                result = await self._crawler.arun(url=url, config=run_cfg)
-                if result.success:
-                    return result
-                raise RuntimeError(getattr(result, "error_message", "") or "页面加载失败")
-            except URLValidationError:
-                raise
-            except Exception as e:
-                if retry_count >= 2:
-                    log.warning(f"页面加载最终失败: {url} - {e}")
-                    return None
-                self._current_metrics().retries += 1
-                delay = 2 ** retry_count + random.uniform(0, 1)
-                log.info(f"页面加载失败，重试 {retry_count + 1}: {url} - {e}")
-                await asyncio.sleep(delay)
-
-    def _build_run_config(self, stream: bool = False) -> CrawlerRunConfig:
+    def _build_run_config(
+        self,
+        stream: bool = False,
+        deep_crawl_strategy: BFSDeepCrawlStrategy | None = None,
+    ) -> CrawlerRunConfig:
         return CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
             word_count_threshold=1,
@@ -446,6 +353,8 @@ class MagnetCrawler:
             flatten_shadow_dom=self._config.flatten_shadow_dom,
             remove_overlay_elements=self._config.remove_overlay_elements,
             remove_consent_popups=self._config.remove_consent_popups,
+            deep_crawl_strategy=deep_crawl_strategy,
+            semaphore_count=self._worker_count,
         )
 
     def _extract_page_items(self, result, source_url: str) -> List[dict]:
@@ -464,53 +373,3 @@ class MagnetCrawler:
         for item in items:
             item.setdefault("source_url", source_url)
         return items
-
-    def _extract_detail_links(self, parent_url: str, links: dict | None) -> List[str]:
-        if not links:
-            return []
-
-        parsed_parent = urlparse(parent_url)
-        internal_links = links.get("internal", []) or []
-        detail_links: List[str] = []
-        seen_links: Set[str] = set()
-
-        for link in internal_links:
-            href = link.get("href", "") if isinstance(link, dict) else str(link)
-            if not href or href in seen_links:
-                continue
-
-            href = urljoin(parent_url, href)
-            parsed = urlparse(href)
-            if parsed_parent.netloc and parsed.netloc and parsed_parent.netloc != parsed.netloc:
-                continue
-
-            path = parsed.path.lower()
-            query = parsed.query.lower()
-            is_detail = any(token in path for token in (
-                "/details/", "/detail/", "/torrent/", "/view/", "/resource/", "/movie/", "/subject/",
-            )) or any(token in query for token in ("id=", "tid=", "movie_id=", "detail="))
-
-            if not is_detail:
-                continue
-
-            seen_links.add(href)
-            detail_links.append(href)
-            if len(detail_links) >= self._config.max_detail_links:
-                break
-
-        return detail_links
-
-    async def _claim_unvisited_links(self, links: List[str], visited: Set[str]) -> List[str]:
-        claimed: List[str] = []
-        for link in links:
-            try:
-                await self.admit_url(link)
-            except URLValidationError:
-                log.warning("跳过不安全的详情页链接: %s", link)
-                continue
-            async with self._visited_lock:
-                if link in visited:
-                    continue
-                visited.add(link)
-                claimed.append(link)
-        return claimed

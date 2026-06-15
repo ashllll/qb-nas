@@ -102,7 +102,7 @@ cp .env.example .env
 | `CRAWLER_TIMEOUT`             | 抓取超时秒                 | `30`                        |
 | `CRAWLER_MAX_DEPTH`           | 最大深度                   | `2`                         |
 | `CRAWLER_CONCURRENCY`         | 并发数                     | `6`                         |
-| `CRAWLER_MAX_DETAIL_LINKS`    | 每页最多排队详情链接数     | `200`                       |
+| `CRAWLER_MAX_DETAIL_LINKS`    | 单次深爬最多详情页数       | `200`                       |
 | `CRAWLER_ALLOWED_RESOLUTIONS` | 爬虫必须保留的清晰度关键词 | `2160p,4k`                  |
 | `CRAWLER_WAIT_UNTIL`          | 页面等待阶段               | `load`                      |
 | `CRAWLER_DELAY_BEFORE_HTML`   | 取 HTML 前额外等待秒       | `1.0`                       |
@@ -346,7 +346,7 @@ qb-nas/
 
 - **分类引擎**：关键词精确匹配 + 通用正则，覆盖电影、电视剧、动漫、音乐、游戏、软件、综艺、纪录片和其他资源类型
 - **前端界面**：`static/index.html` 单文件工作台，无构建步骤；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
-- **爬虫调度**：`AsyncWebCrawler.arun_many(stream=True)` + `MemoryAdaptiveDispatcher` 批量抓取详情页，按深度分批流式回传结果
+- **爬虫调度**：`BFSDeepCrawlStrategy` + `FilterChain` 负责详情页发现、去重和深度遍历，结果流式回传到 WebSocket
 - **动态页面抓取**：默认等待 `load`、滚动完整页面、合并 iframe、展开 Shadow DOM，并移除遮挡层/同意弹窗后再解析磁力
 - **Cookie 注入**：`SITE_COOKIES` JSON 配置 → `BrowserConfig.cookies` → crawl4ai 浏览器自动携带，支持多域名
 - **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由

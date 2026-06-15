@@ -1,14 +1,15 @@
 """
-测试详情页链接发现策略
+测试 crawl4ai 深爬策略配置。
 """
-import sys
-import os
 import asyncio
+import os
+import sys
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from crawl4ai import CacheMode
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 
 from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
@@ -17,6 +18,10 @@ from magnet_harvester.utils.url_validator import CrawlTargetAdmission
 
 async def public_resolver(_hostname, _port):
     return ["93.184.216.34"]
+
+
+async def private_resolver(_hostname, _port):
+    return ["127.0.0.1"]
 
 
 async def no_redirect(_url):
@@ -33,40 +38,16 @@ def make_crawler(**config):
     )
 
 
-def test_extract_detail_links_filters_and_limits():
-    crawler = make_crawler()
-    visited = {"https://example.com/details/old"}
-    links = {
-        "internal": [
-            {"href": "https://example.com/details/123"},
-            {"href": "https://example.com/list?page=2"},
-            {"href": "https://example.com/view/abc"},
-            {"href": "https://other.com/details/999"},
-            {"href": "https://example.com/details/old"},
-            {"href": "https://example.com/item?tid=42"},
-        ]
-    }
-
-    result = asyncio.run(crawler._claim_unvisited_links(
-        crawler._extract_detail_links("https://example.com/list", links),
-        visited,
-    ))
-
-    assert "https://example.com/details/123" in result
-    assert "https://example.com/view/abc" in result
-    assert "https://example.com/item?tid=42" in result
-    assert "https://example.com/list?page=2" not in result
-    assert "https://other.com/details/999" not in result
-    assert "https://example.com/details/old" not in result
-
-
 def test_build_run_config_uses_crawl4ai_dynamic_page_features():
     crawler = make_crawler()
+    strategy = crawler._build_deep_crawl_strategy(depth=2)
 
-    cfg = crawler._build_run_config(stream=True)
+    cfg = crawler._build_run_config(stream=True, deep_crawl_strategy=strategy)
 
     assert cfg.cache_mode == CacheMode.BYPASS
     assert cfg.stream is True
+    assert cfg.deep_crawl_strategy is strategy
+    assert cfg.semaphore_count == 6
     assert cfg.wait_until == "load"
     assert cfg.delay_before_return_html == 1.0
     assert cfg.scan_full_page is True
@@ -77,34 +58,63 @@ def test_build_run_config_uses_crawl4ai_dynamic_page_features():
     assert cfg.remove_consent_popups is True
 
 
-def test_build_dispatcher_uses_crawl4ai_resource_adaptive_batching():
-    crawler = make_crawler(concurrency=6)
+def test_build_deep_crawl_strategy_delegates_depth_and_limits_to_crawl4ai():
+    crawler = make_crawler(max_detail_links=120)
 
-    dispatcher = crawler._build_dispatcher()
+    strategy = crawler._build_deep_crawl_strategy(depth=3)
 
-    assert dispatcher.max_session_permit == 6
-    assert dispatcher.memory_threshold_percent == 85.0
-    assert dispatcher.rate_limiter is not None
+    assert isinstance(strategy, BFSDeepCrawlStrategy)
+    assert strategy.max_depth == 2
+    assert strategy.max_pages == 121
+    assert strategy.include_external is False
 
 
-def test_fetch_many_stream_uses_arun_many_streaming():
+def test_deep_crawl_filter_keeps_detail_urls_and_rejects_listing_urls():
+    crawler = make_crawler()
+    strategy = crawler._build_deep_crawl_strategy(depth=2)
+
+    async def check():
+        assert await strategy.filter_chain.apply("https://example.com/torrents/details/123")
+        assert await strategy.filter_chain.apply("https://example.com/item?tid=42")
+        assert not await strategy.filter_chain.apply("https://example.com/torrents/search/all")
+
+    asyncio.run(check())
+
+
+def test_deep_crawl_filter_applies_project_url_admission():
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(),
+        target_admission=CrawlTargetAdmission(
+            resolver=private_resolver,
+            redirect_probe=no_redirect,
+        ),
+    )
+    strategy = crawler._build_deep_crawl_strategy(depth=2)
+
+    async def check():
+        assert not await strategy.filter_chain.apply("https://example.com/torrents/details/123")
+
+    asyncio.run(check())
+
+
+def test_fetch_deep_stream_uses_arun_with_streaming_deep_crawl_strategy():
     class FakeCrawl4AI:
         def __init__(self):
             self.calls = []
 
-        async def arun_many(self, urls, config=None, dispatcher=None):
-            self.calls.append((urls, config, dispatcher))
+        async def arun(self, url, config=None):
+            self.calls.append((url, config))
 
             async def stream():
-                for url in urls:
-                    yield SimpleNamespace(
-                        url=url,
-                        success=True,
-                        markdown="",
-                        cleaned_html="",
-                        html="",
-                        links={},
-                    )
+                yield SimpleNamespace(
+                    url=url,
+                    success=True,
+                    markdown="",
+                    cleaned_html="",
+                    html="",
+                    links={},
+                    metadata={"depth": 0},
+                )
 
             return stream()
 
@@ -112,66 +122,16 @@ def test_fetch_many_stream_uses_arun_many_streaming():
         crawler = make_crawler()
         fake = FakeCrawl4AI()
         crawler._crawler = fake
-        results = [
-            result async for result in crawler._fetch_many_stream([
-                "https://example.com/details/1",
-                "https://example.com/details/2",
-            ])
-        ]
+        results = [result async for result in crawler._fetch_deep_stream("https://example.com", 2)]
         return fake, results
 
     fake, results = asyncio.run(collect())
 
-    assert [result[0] for result in results] == [
-        "https://example.com/details/1",
-        "https://example.com/details/2",
-    ]
-    urls, config, dispatcher = fake.calls[0]
-    assert urls == ["https://example.com/details/1", "https://example.com/details/2"]
+    assert len(results) == 1
+    url, config = fake.calls[0]
+    assert url == "https://example.com"
     assert config.stream is True
-    assert dispatcher.max_session_permit == 6
-
-
-def test_extract_detail_links_default_limit_keeps_more_than_legacy_50():
-    crawler = make_crawler()
-    links = {
-        "internal": [
-            {"href": f"https://example.com/details/{i}"}
-            for i in range(120)
-        ]
-    }
-
-    result = crawler._extract_detail_links("https://example.com/list", links)
-
-    assert len(result) == 120
-    assert result[-1] == "https://example.com/details/119"
-
-
-def test_extract_detail_links_respects_configured_limit():
-    crawler = make_crawler(max_detail_links=12)
-    links = {
-        "internal": [
-            {"href": f"https://example.com/details/{i}"}
-            for i in range(30)
-        ]
-    }
-
-    result = crawler._extract_detail_links("https://example.com/list", links)
-
-    assert len(result) == 12
-    assert result[-1] == "https://example.com/details/11"
-
-
-def test_claim_unvisited_links_reserves_before_await_points():
-    crawler = make_crawler()
-    visited = set()
-    links = ["https://example.com/details/123"]
-
-    first_claim = asyncio.run(crawler._claim_unvisited_links(links, visited))
-    second_claim = asyncio.run(crawler._claim_unvisited_links(links, visited))
-
-    assert first_claim == ["https://example.com/details/123"]
-    assert second_claim == []
+    assert isinstance(config.deep_crawl_strategy, BFSDeepCrawlStrategy)
 
 
 def test_crawl_batch_reports_page_errors_and_finishes():
@@ -179,9 +139,17 @@ def test_crawl_batch_reports_page_errors_and_finishes():
         async def start(self):
             self._crawler = object()
 
-        async def _fetch_many_stream(self, urls):
-            for url in urls:
-                yield url, None, RuntimeError("boom")
+        async def _fetch_deep_stream(self, root_url, depth):
+            yield SimpleNamespace(
+                url=root_url,
+                success=False,
+                error_message="boom",
+                markdown="",
+                cleaned_html="",
+                html="",
+                links={},
+                metadata={"depth": 0},
+            )
 
     async def collect():
         crawler = ExplodingCrawler(
@@ -204,22 +172,22 @@ def test_crawl_batch_reports_page_errors_and_finishes():
     assert messages[-1]["metrics"]["errors"] == 1
 
 
-def test_crawl_consumer_close_cleans_up_batch_session():
+def test_crawl_consumer_close_cleans_up_deep_crawl_session():
     class SlowCrawler(MagnetCrawler):
         async def start(self):
             self._crawler = object()
 
-        async def _fetch_many_stream(self, urls):
+        async def _fetch_deep_stream(self, root_url, depth):
             await asyncio.sleep(0.02)
-            for url in urls:
-                yield url, SimpleNamespace(
-                    url=url,
-                    success=True,
-                    markdown="",
-                    cleaned_html="",
-                    html="",
-                    links={},
-                ), None
+            yield SimpleNamespace(
+                url=root_url,
+                success=True,
+                markdown="",
+                cleaned_html="",
+                html="",
+                links={},
+                metadata={"depth": 0},
+            )
 
     async def consume_and_close():
         crawler = SlowCrawler(
@@ -239,10 +207,11 @@ def test_crawl_consumer_close_cleans_up_batch_session():
 
 
 if __name__ == "__main__":
-    test_extract_detail_links_filters_and_limits()
-    test_extract_detail_links_default_limit_keeps_more_than_legacy_50()
-    test_extract_detail_links_respects_configured_limit()
-    test_claim_unvisited_links_reserves_before_await_points()
+    test_build_run_config_uses_crawl4ai_dynamic_page_features()
+    test_build_deep_crawl_strategy_delegates_depth_and_limits_to_crawl4ai()
+    test_deep_crawl_filter_keeps_detail_urls_and_rejects_listing_urls()
+    test_deep_crawl_filter_applies_project_url_admission()
+    test_fetch_deep_stream_uses_arun_with_streaming_deep_crawl_strategy()
     test_crawl_batch_reports_page_errors_and_finishes()
-    test_crawl_consumer_close_cleans_up_batch_session()
-    print("=== crawler detail link tests passed! ===")
+    test_crawl_consumer_close_cleans_up_deep_crawl_session()
+    print("=== crawler deep crawl tests passed! ===")

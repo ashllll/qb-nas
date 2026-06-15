@@ -21,22 +21,22 @@ class OverlappingCrawler(MagnetCrawler):
     async def start(self):
         self._crawler = object()
 
-    async def _fetch_many_stream(self, urls):
-        await asyncio.sleep(0.02 if "first" in urls[0] else 0.01)
-        for url in urls:
-            count = 1 if "first" in url else 2
-            magnets = "\n".join(
-                f"magnet:?xt=urn:btih:{str(i + 1) * 40}&dn=Example.{i}.2160p"
-                for i in range(count)
-            )
-            yield url, SimpleNamespace(
-                url=url,
-                success=True,
-                markdown=magnets,
-                cleaned_html="",
-                html="",
-                links={},
-            ), None
+    async def _fetch_deep_stream(self, root_url, depth):
+        await asyncio.sleep(0.02 if "first" in root_url else 0.01)
+        count = 1 if "first" in root_url else 2
+        magnets = "\n".join(
+            f"magnet:?xt=urn:btih:{str(i + 1) * 40}&dn=Example.{i}.2160p"
+            for i in range(count)
+        )
+        yield SimpleNamespace(
+            url=root_url,
+            success=True,
+            markdown=magnets,
+            cleaned_html="",
+            html="",
+            links={},
+            metadata={"depth": 0},
+        )
 
 
 @pytest.mark.asyncio

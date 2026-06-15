@@ -45,14 +45,16 @@ def test_crawler_has_no_instance_level_seen_set():
 # 增量测试 2: crawl() 使用 crawl4ai 原生批量流
 # ═══════════════════════════════════════════════════
 
-def test_crawler_uses_arun_many_not_manual_worker_pool():
-    """_fetch_many_stream 应使用 crawl4ai arun_many，而不是手写 worker 池。"""
+def test_crawler_uses_deep_crawl_not_manual_worker_pool():
+    """_fetch_deep_stream 应使用 crawl4ai deep crawl，而不是手写 worker 池。"""
     source = _get_crawler_source()
     session_source = _find_method_source(source, "_run_crawl_session")
-    fetch_many_source = _find_method_source(source, "_fetch_many_stream")
+    fetch_deep_source = _find_method_source(source, "_fetch_deep_stream")
+    strategy_source = _find_method_source(source, "_build_deep_crawl_strategy")
     assert "TaskGroup" not in session_source, "不应使用 TaskGroup"
     assert "create_task" not in session_source, "不应在会话层手写 worker task"
-    assert "arun_many" in fetch_many_source, "_fetch_many_stream 应使用 crawl4ai arun_many"
+    assert "deep_crawl_strategy" in fetch_deep_source, "_fetch_deep_stream 应使用 deep crawl"
+    assert "BFSDeepCrawlStrategy" in strategy_source, "应使用 crawl4ai BFSDeepCrawlStrategy"
 
 
 # ═══════════════════════════════════════════════════
@@ -81,8 +83,8 @@ if __name__ == "__main__":
     test_crawler_has_no_instance_level_seen_set()
     print("[PASS] test_crawler_has_no_instance_level_seen_set")
 
-    test_crawler_uses_arun_many_not_manual_worker_pool()
-    print("[PASS] test_crawler_uses_arun_many_not_manual_worker_pool")
+    test_crawler_uses_deep_crawl_not_manual_worker_pool()
+    print("[PASS] test_crawler_uses_deep_crawl_not_manual_worker_pool")
 
     test_seen_set_passed_as_parameter()
     print("[PASS] test_seen_set_passed_as_parameter")

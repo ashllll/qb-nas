@@ -1,95 +1,52 @@
 """
-P0-2: 爬虫 Set 竞态条件测试
-
-缺陷: _claim_unvisited_links 同步修改共享 visited Set，多 worker 并发时可能重复爬取或丢失链接。
-修复: 将 _claim_unvisited_links 改为 async def，使用 self._visited_lock 保护 visited Set。
+爬虫链接去重/遍历由 crawl4ai 深爬策略负责。
 """
-import asyncio
-import pytest
+import ast
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 from magnet_harvester.config import CrawlerConfig
-from magnet_harvester.crawler import MagnetCrawler
-from magnet_harvester.utils.url_validator import CrawlTargetAdmission
+from magnet_harvester.crawler import CrawlAdmissionFilter, MagnetCrawler
 
 
-async def public_resolver(_hostname, _port):
-    return ["93.184.216.34"]
+def _crawler_source() -> str:
+    repo_root = os.path.join(os.path.dirname(__file__), "..")
+    with open(os.path.join(repo_root, "magnet_harvester", "crawler.py"), encoding="utf-8") as f:
+        return f.read()
 
 
-async def no_redirect(_url):
-    return None
+def test_manual_visited_claim_wheel_removed():
+    source = _crawler_source()
+
+    assert "_claim_unvisited_links" not in source
+    assert "_visited_lock" not in source
+    assert "BFSDeepCrawlStrategy" in source
 
 
-def make_crawler():
-    return MagnetCrawler(
-        config=CrawlerConfig(),
-        target_admission=CrawlTargetAdmission(
-            resolver=public_resolver,
-            redirect_probe=no_redirect,
-        )
-    )
-
-
-@pytest.mark.asyncio
-async def test_claim_unvisited_links_is_async_and_thread_safe():
-    """验证 _claim_unvisited_links 是 async 的，且使用锁保护 visited Set"""
-    crawler = make_crawler()
-    visited = {"https://example.com/already-visited"}
-    links = [
-        "https://example.com/new-1",
-        "https://example.com/already-visited",
-        "https://example.com/new-2",
-    ]
-
-    # 必须是 awaitable
-    result = await crawler._claim_unvisited_links(links, visited)
-    assert result == ["https://example.com/new-1", "https://example.com/new-2"]
-    assert "https://example.com/new-1" in visited
-    assert "https://example.com/new-2" in visited
-
-
-@pytest.mark.asyncio
-async def test_concurrent_claim_no_duplicates():
-    """模拟 4 个 worker 并发调用 _claim_unvisited_links，验证无重复"""
-    crawler = make_crawler()
-    visited = set()
-    all_links = [f"https://example.com/page-{i}" for i in range(100)]
-
-    async def worker(links):
-        return await crawler._claim_unvisited_links(links, visited)
-
-    # 将链接分成 4 组，模拟不同 worker 提取到重叠的链接
-    chunks = [
-        all_links[0:30],
-        all_links[20:50],
-        all_links[40:70],
-        all_links[60:100],
-    ]
-
-    results = await asyncio.gather(*[worker(chunk) for chunk in chunks])
-    all_claimed = []
-    for r in results:
-        all_claimed.extend(r)
-
-    # 验证无重复
-    assert len(all_claimed) == len(set(all_claimed)), "存在重复链接"
-    # 验证所有链接都被认领了（因为无重复，且总共 100 个不同链接）
-    assert len(all_claimed) == 100, f"期望 100 个，实际 {len(all_claimed)}"
-
-
-@pytest.mark.asyncio
-async def test_seen_set_uses_lock():
-    """验证 seen Set 也使用锁保护（已在 _crawl_page 中实现）"""
+def test_crawl_admission_filter_is_in_deep_crawl_filter_chain():
     crawler = MagnetCrawler(config=CrawlerConfig())
-    seen = set()
+    strategy = crawler._build_deep_crawl_strategy(depth=2)
 
-    async def add_hash(h):
-        async with crawler._seen_lock:
-            if h in seen:
-                return False
-            seen.add(h)
-            return True
+    assert any(isinstance(filter_, CrawlAdmissionFilter) for filter_ in strategy.filter_chain.filters)
 
-    results = await asyncio.gather(*[add_hash("abc123") for _ in range(10)])
-    # 只有一个成功
-    assert sum(results) == 1
-    assert len(seen) == 1
+
+def test_no_manual_worker_loop_methods_remain():
+    tree = ast.parse(_crawler_source())
+    method_names = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert "_crawl_worker" not in method_names
+    assert "_crawl_url_batch" not in method_names
+    assert "_fetch_many_stream" not in method_names
+
+
+if __name__ == "__main__":
+    test_manual_visited_claim_wheel_removed()
+    test_crawl_admission_filter_is_in_deep_crawl_filter_chain()
+    test_no_manual_worker_loop_methods_remain()
+    print("=== crawler wheel removal tests passed! ===")
