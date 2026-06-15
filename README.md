@@ -5,7 +5,7 @@
 ## 当前能力
 
 - 基于 `crawl4ai` (Playwright) 抓取页面和子链接中的 magnet
-- **三层分类引擎**：关键词匹配 → 已知工作室识别 → 通用规则
+- **本地规则分类**：关键词匹配 + 通用规则，覆盖常见资源类型
 - 支持站点 Cookie 注入，爬取需要登录的网站
 - **系统剪贴板监控**：自动检测复制到的 magnet 链接，分类后加入表格
 - 通过 qBittorrent Web API v2 自动建分类并添加下载
@@ -24,7 +24,7 @@
         ▼                  ▼                    ▼              ▼
    ┌───────────┐    ┌──────────────┐    ┌────────────┐  ┌──────────┐
    │ Classifier│    │ SiteAuth     │    │MagnetParser│  │ qBittorrent
-   │ 3-layer   │    │ Cookie注入    │    │ regex      │  │ Client  │
+   │ rules     │    │ Cookie注入    │    │ regex      │  │ Client  │
    └───────────┘    └──────────────┘    └────────────┘  └──────────┘
                            ▲
                     ┌──────────────┐
@@ -33,16 +33,22 @@
                     └──────────────┘
 ```
 
-### 分类引擎
+### 适用磁力站
 
-```
-输入标题
-  ├─ 1. 关键词  (keyword_recognizer) → "ubuntu" → 软件
-  ├─ 2. 工作室  (studio_recognizer)  → "SexArt 26 05 20..." → SexArt
-  └─ 3. 通用规则 (fallback.py) → "S01E01" → 电视剧 / "FLAC" → 音乐
-```
+适合抓取公开页面中直接暴露 magnet 链接，或详情页可以解析出 magnet 的站点，例如：
 
-仅对已知工作室做厂牌分类，避免把普通标题首词误判为分类；普通电影名不会只因 `BluRay`、`2160p` 等画质词默认归类为电影。
+- BT4G
+- BTDig
+- Nyaa
+- Sukebei
+- Tokyo Toshokan
+- The Pirate Bay 镜像站
+- 1337x 镜像站
+- RARBG 镜像/索引站
+- 磁力猫/磁力链索引类站点
+- 其他 BT/Magnet 搜索页或论坛详情页
+
+需要登录的站点可通过 `SITE_COOKIES` 注入 Cookie。请仅抓取你有权访问和下载的内容；实际可抓取范围取决于页面是否包含 `magnet:?xt=urn:btih:` 链接，以及目标站点的访问策略。
 
 ## 前端展示
 
@@ -113,7 +119,7 @@ SITE_COOKIES={"example.com": "uid=123; sid=abc; token=xyz"}
 点击顶部状态栏的 **"剪贴板监控"** pill 开关，开启后自动检测系统剪贴板中复制的 magnet 链接：
 
 ```
-复制磁力链接 → 自动提取 btih + dn= 名称 → 三层分类 → 加入表格 → 可一键下载
+复制磁力链接 → 自动提取 btih + dn= 名称 → 本地规则分类 → 加入表格 → 可一键下载
 ```
 
 无需额外配置，监控仅检测 `magnet:?xt=urn:btih:` 开头的链接。
@@ -297,8 +303,7 @@ qb-nas/
 │   │   ├── websocket.py            # WebSocket 广播
 │   │   └── pages.py                # 静态页面路由
 │   ├── classifier/
-│   │   ├── local_classifier.py     # 主分类器 (3层)
-│   │   ├── studio_recognizer.py    # 工作室/厂牌识别 (36个)
+│   │   ├── local_classifier.py     # 主分类器
 │   │   ├── keyword_recognizer.py   # 关键词匹配
 │   │   └── fallback.py             # 通用规则 (47条)
 │   ├── qbit_client/
@@ -329,13 +334,13 @@ qb-nas/
 
 ## 核心实现
 
-- **分类引擎**：三层次：关键词精确匹配 > 已知工作室识别 > 通用正则。工作室识别只接受已知厂牌，兼容空格/点/横线分隔的日期格式，避免把普通标题首词误判成分类
+- **分类引擎**：关键词精确匹配 + 通用正则，覆盖电影、电视剧、动漫、音乐、游戏、软件、综艺、纪录片和其他资源类型
 - **前端界面**：`static/index.html` 单文件工作台，无构建步骤；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
 - **Cookie 注入**：`SITE_COOKIES` JSON 配置 → `BrowserConfig.cookies` → crawl4ai 浏览器自动携带，支持多域名
 - **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由
 - **状态同步**：QBitSyncLoop 每 2 秒轮询 `/sync/maindata`，仅终态变化时触发前端通知，避免日志刷屏
 - **URL 安全**：RFC 1918 精确检查（10/172.16/192.168 + fc00::/7），DNS 解析后验证，防 SSRF
-- **剪贴板监控**：`pyperclip` 轮询系统剪贴板 (1s)，提取 `btih` + `dn=` 名称，经过三层分类引擎后发布 `MAGNET_FOUND` 事件，实时显示在 Web UI 表格中
+- **剪贴板监控**：`pyperclip` 轮询系统剪贴板 (1s)，提取 `btih` + `dn=` 名称，经过本地规则分类后发布 `MAGNET_FOUND` 事件，实时显示在 Web UI 表格中
 
 ## License
 
