@@ -89,23 +89,23 @@ cp .env.example .env
 
 `.env` 常用配置项：
 
-| 变量                          | 说明                                | 默认值                      |
-| ----------------------------- | ----------------------------------- | --------------------------- |
-| `QBIT_HOST`                   | qBittorrent Web UI 地址             | `http://192.168.1.100:8080` |
-| `QBIT_USERNAME`               | qB 用户名                           | `admin`                     |
-| `QBIT_PASSWORD`               | qB 密码                             | —                           |
-| `SERVICE_HOST`                | 服务监听地址                        | `127.0.0.1`                 |
-| `SERVICE_PORT`                | 服务端口                            | `8899`                      |
-| `API_KEY`                     | 写操作 `X-API-Key`                  | 空（仅 loopback）           |
-| `ALLOW_INSECURE_WRITE_API`    | 允许非 loopback 无认证              | `false`                     |
-| `SITE_COOKIES`                | 站点 Cookie 注入                    | `{}`                        |
-| `CRAWLER_TIMEOUT`             | 抓取超时秒                          | `30`                        |
-| `CRAWLER_MAX_DEPTH`           | 最大深度                            | `2`                         |
-| `CRAWLER_CONCURRENCY`         | 并发数                              | `6`                         |
-| `CRAWLER_MAX_DETAIL_LINKS`    | 每页最多排队详情链接数              | `200`                       |
-| `CRAWLER_ALLOWED_RESOLUTIONS` | 优先保留的清晰度；设为 `all` 不过滤 | `2160p,4k`                  |
-| `FS_BASE_PATH`                | 本地可写目录（可选）                | 空                          |
-| `MIN_DISK_SPACE_GB`           | 磁盘告警阈值                        | `10.0`                      |
+| 变量                          | 说明                       | 默认值                      |
+| ----------------------------- | -------------------------- | --------------------------- |
+| `QBIT_HOST`                   | qBittorrent Web UI 地址    | `http://192.168.1.100:8080` |
+| `QBIT_USERNAME`               | qB 用户名                  | `admin`                     |
+| `QBIT_PASSWORD`               | qB 密码                    | —                           |
+| `SERVICE_HOST`                | 服务监听地址               | `127.0.0.1`                 |
+| `SERVICE_PORT`                | 服务端口                   | `8899`                      |
+| `API_KEY`                     | 写操作 `X-API-Key`         | 空（仅 loopback）           |
+| `ALLOW_INSECURE_WRITE_API`    | 允许非 loopback 无认证     | `false`                     |
+| `SITE_COOKIES`                | 站点 Cookie 注入           | `{}`                        |
+| `CRAWLER_TIMEOUT`             | 抓取超时秒                 | `30`                        |
+| `CRAWLER_MAX_DEPTH`           | 最大深度                   | `2`                         |
+| `CRAWLER_CONCURRENCY`         | 并发数                     | `6`                         |
+| `CRAWLER_MAX_DETAIL_LINKS`    | 每页最多排队详情链接数     | `200`                       |
+| `CRAWLER_ALLOWED_RESOLUTIONS` | 爬虫必须保留的清晰度关键词 | `2160p,4k`                  |
+| `FS_BASE_PATH`                | 本地可写目录（可选）       | 空                          |
+| `MIN_DISK_SPACE_GB`           | 磁盘告警阈值               | `10.0`                      |
 
 #### 爬取需要登录的网站
 

@@ -15,12 +15,6 @@ def test_crawler_allowed_resolutions_parse_csv():
     assert cfg.crawler.allowed_resolutions == ("1080p", "2160p", "4k")
 
 
-def test_crawler_allowed_resolutions_accepts_all_marker():
-    cfg = Settings(CRAWLER_ALLOWED_RESOLUTIONS="all")
-
-    assert cfg.crawler.allowed_resolutions == ("all",)
-
-
 def test_crawler_allowed_resolutions_falls_back_when_empty():
     cfg = Settings(CRAWLER_ALLOWED_RESOLUTIONS="")
 
@@ -43,7 +37,6 @@ def test_default_crawler_detail_link_limit_keeps_large_result_sets():
 
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
-    test_crawler_allowed_resolutions_accepts_all_marker()
     test_crawler_allowed_resolutions_falls_back_when_empty()
     test_default_crawler_concurrency_is_tuned_for_detail_pages()
     test_default_crawler_detail_link_limit_keeps_large_result_sets()

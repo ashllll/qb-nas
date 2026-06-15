@@ -1,5 +1,5 @@
 """
-测试分辨率过滤 — 优先 2160p / 4k，但不把只有低清资源的详情页清零
+测试爬虫分辨率过滤 — 爬取结果必须只保留 2160p / 4k
 """
 import sys
 import os
@@ -30,13 +30,13 @@ def test_keep_4k():
     assert len(filtered) == 1
 
 
-def test_fallback_to_available_items_when_no_preferred_resolution():
+def test_drop_non_preferred_resolutions():
     items = [
         parse_magnet("magnet:?xt=urn:btih:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD&dn=Test+Movie+1080p+BluRay"),
         parse_magnet("magnet:?xt=urn:btih:EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE&dn=Test+Movie+720p+WEB"),
     ]
     filtered = filter_resolution_items(items)
-    assert len(filtered) == 2
+    assert len(filtered) == 0
 
 
 def test_mixed():
@@ -57,21 +57,10 @@ def test_empty():
     assert filter_resolution_items([]) == []
 
 
-def test_all_keeps_everything():
-    items = [
-        parse_magnet("magnet:?xt=urn:btih:1111111111111111111111111111111111111111&dn=Example.Movie.2160p"),
-        parse_magnet("magnet:?xt=urn:btih:2222222222222222222222222222222222222222&dn=Example.Movie.1080p"),
-    ]
-
-    assert filter_resolution_items(items, allowed=("all",)) == items
-    assert filter_resolution_items(items, allowed=("*",)) == items
-
-
 if __name__ == "__main__":
     test_keep_2160p()
     test_keep_4k()
-    test_fallback_to_available_items_when_no_preferred_resolution()
+    test_drop_non_preferred_resolutions()
     test_mixed()
     test_empty()
-    test_all_keeps_everything()
     print("=== Resolution filter tests passed! ===")

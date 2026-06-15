@@ -57,15 +57,9 @@ class CrawlMetrics:
 
 
 def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
-    """Prefer configured resolutions, but keep available items when no preferred match exists."""
+    """Filter crawler results to the configured resolution keywords."""
     allowed_lower = {a.lower() for a in allowed if a}
-    if not allowed_lower or allowed_lower.intersection({"*", "all"}):
-        return items
-
-    preferred = [
-        it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)
-    ]
-    return preferred or items
+    return [it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)]
 
 
 class MagnetCrawler:
