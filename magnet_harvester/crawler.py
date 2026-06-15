@@ -57,9 +57,15 @@ class CrawlMetrics:
 
 
 def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
-    """按分辨率过滤磁力列表，只保留含指定分辨率关键词的条目"""
-    allowed_lower = {a.lower() for a in allowed}
-    return [it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)]
+    """Prefer configured resolutions, but keep available items when no preferred match exists."""
+    allowed_lower = {a.lower() for a in allowed if a}
+    if not allowed_lower or allowed_lower.intersection({"*", "all"}):
+        return items
+
+    preferred = [
+        it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)
+    ]
+    return preferred or items
 
 
 class MagnetCrawler:
