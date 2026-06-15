@@ -102,6 +102,7 @@ cp .env.example .env
 | `CRAWLER_TIMEOUT`          | 抓取超时秒              | `30`                        |
 | `CRAWLER_MAX_DEPTH`        | 最大深度                | `2`                         |
 | `CRAWLER_CONCURRENCY`      | 并发数                  | `6`                         |
+| `CRAWLER_MAX_DETAIL_LINKS` | 每页最多排队详情链接数  | `200`                       |
 | `FS_BASE_PATH`             | 本地可写目录（可选）    | 空                          |
 | `MIN_DISK_SPACE_GB`        | 磁盘告警阈值            | `10.0`                      |
 

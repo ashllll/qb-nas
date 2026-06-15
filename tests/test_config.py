@@ -28,8 +28,16 @@ def test_default_crawler_concurrency_is_tuned_for_detail_pages():
     assert cfg.crawler.concurrency == 6
 
 
+def test_default_crawler_detail_link_limit_keeps_large_result_sets():
+    cfg = Settings()
+
+    assert cfg.CRAWLER_MAX_DETAIL_LINKS == 200
+    assert cfg.crawler.max_detail_links == 200
+
+
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
     test_crawler_allowed_resolutions_falls_back_when_empty()
     test_default_crawler_concurrency_is_tuned_for_detail_pages()
+    test_default_crawler_detail_link_limit_keeps_large_result_sets()
     print("=== config tests passed! ===")

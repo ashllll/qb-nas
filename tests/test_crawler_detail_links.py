@@ -57,6 +57,36 @@ def test_extract_detail_links_filters_and_limits():
     assert "https://example.com/details/old" not in result
 
 
+def test_extract_detail_links_default_limit_keeps_more_than_legacy_50():
+    crawler = make_crawler()
+    links = {
+        "internal": [
+            {"href": f"https://example.com/details/{i}"}
+            for i in range(120)
+        ]
+    }
+
+    result = crawler._extract_detail_links("https://example.com/list", links)
+
+    assert len(result) == 120
+    assert result[-1] == "https://example.com/details/119"
+
+
+def test_extract_detail_links_respects_configured_limit():
+    crawler = make_crawler(max_detail_links=12)
+    links = {
+        "internal": [
+            {"href": f"https://example.com/details/{i}"}
+            for i in range(30)
+        ]
+    }
+
+    result = crawler._extract_detail_links("https://example.com/list", links)
+
+    assert len(result) == 12
+    assert result[-1] == "https://example.com/details/11"
+
+
 def test_claim_unvisited_links_reserves_before_await_points():
     crawler = make_crawler()
     visited = set()
@@ -126,6 +156,8 @@ def test_crawl_consumer_close_cleans_up_worker_session():
 
 if __name__ == "__main__":
     test_extract_detail_links_filters_and_limits()
+    test_extract_detail_links_default_limit_keeps_more_than_legacy_50()
+    test_extract_detail_links_respects_configured_limit()
     test_claim_unvisited_links_reserves_before_await_points()
     test_crawl_worker_reports_page_errors_and_finishes()
     test_crawl_consumer_close_cleans_up_worker_session()

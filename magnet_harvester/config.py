@@ -17,6 +17,7 @@ class CrawlerConfig:
     timeout: int = 30
     max_depth: int = 2
     concurrency: int = 6
+    max_detail_links: int = 200
     headless: bool = True
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
 
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
     CRAWLER_TIMEOUT: int = 30
     CRAWLER_MAX_DEPTH: int = 2
     CRAWLER_CONCURRENCY: int = 6
+    CRAWLER_MAX_DETAIL_LINKS: int = 200
     CRAWLER_HEADLESS: bool = True
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
 
@@ -88,6 +90,7 @@ class Settings(BaseSettings):
                 timeout=self.CRAWLER_TIMEOUT,
                 max_depth=self.CRAWLER_MAX_DEPTH,
                 concurrency=self.CRAWLER_CONCURRENCY,
+                max_detail_links=self.CRAWLER_MAX_DETAIL_LINKS,
                 headless=self.CRAWLER_HEADLESS,
                 allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
             )

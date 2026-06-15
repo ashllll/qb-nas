@@ -81,6 +81,7 @@ class MagnetCrawler:
                 timeout=settings.CRAWLER_TIMEOUT,
                 max_depth=settings.CRAWLER_MAX_DEPTH,
                 concurrency=settings.CRAWLER_CONCURRENCY,
+                max_detail_links=settings.CRAWLER_MAX_DETAIL_LINKS,
                 headless=settings.CRAWLER_HEADLESS,
                 allowed_resolutions=settings.crawler.allowed_resolutions,
             )
@@ -402,7 +403,7 @@ class MagnetCrawler:
 
             seen_links.add(href)
             detail_links.append(href)
-            if len(detail_links) >= 50:
+            if len(detail_links) >= self._config.max_detail_links:
                 break
 
         return detail_links
