@@ -104,6 +104,12 @@ cp .env.example .env
 | `CRAWLER_CONCURRENCY`         | 并发数                     | `6`                         |
 | `CRAWLER_MAX_DETAIL_LINKS`    | 每页最多排队详情链接数     | `200`                       |
 | `CRAWLER_ALLOWED_RESOLUTIONS` | 爬虫必须保留的清晰度关键词 | `2160p,4k`                  |
+| `CRAWLER_WAIT_UNTIL`          | 页面等待阶段               | `load`                      |
+| `CRAWLER_DELAY_BEFORE_HTML`   | 取 HTML 前额外等待秒       | `1.0`                       |
+| `CRAWLER_SCAN_FULL_PAGE`      | 抓取前滚动完整页面         | `true`                      |
+| `CRAWLER_MAX_SCROLL_STEPS`    | 最大滚动步数               | `8`                         |
+| `CRAWLER_PROCESS_IFRAMES`     | 合并 iframe 内容           | `true`                      |
+| `CRAWLER_FLATTEN_SHADOW_DOM`  | 展开 Shadow DOM            | `true`                      |
 | `FS_BASE_PATH`                | 本地可写目录（可选）       | 空                          |
 | `MIN_DISK_SPACE_GB`           | 磁盘告警阈值               | `10.0`                      |
 

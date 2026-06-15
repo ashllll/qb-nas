@@ -84,6 +84,15 @@ class MagnetCrawler:
                 max_detail_links=settings.CRAWLER_MAX_DETAIL_LINKS,
                 headless=settings.CRAWLER_HEADLESS,
                 allowed_resolutions=settings.crawler.allowed_resolutions,
+                wait_until=settings.CRAWLER_WAIT_UNTIL,
+                delay_before_return_html=settings.CRAWLER_DELAY_BEFORE_HTML,
+                scan_full_page=settings.CRAWLER_SCAN_FULL_PAGE,
+                scroll_delay=settings.CRAWLER_SCROLL_DELAY,
+                max_scroll_steps=settings.CRAWLER_MAX_SCROLL_STEPS,
+                process_iframes=settings.CRAWLER_PROCESS_IFRAMES,
+                flatten_shadow_dom=settings.CRAWLER_FLATTEN_SHADOW_DOM,
+                remove_overlay_elements=settings.CRAWLER_REMOVE_OVERLAYS,
+                remove_consent_popups=settings.CRAWLER_REMOVE_CONSENT_POPUPS,
             )
         else:
             self._config = config
@@ -335,12 +344,7 @@ class MagnetCrawler:
         for retry_count in range(3):
             try:
                 await self._target_admission.admit_redirect_chain(url)
-                run_cfg = CrawlerRunConfig(
-                    cache_mode=CacheMode.ENABLED,
-                    word_count_threshold=1,
-                    verbose=False,
-                    page_timeout=self._config.timeout * 1000,
-                )
+                run_cfg = self._build_run_config()
                 result = await self._crawler.arun(url=url, config=run_cfg)
                 if result.success:
                     return result
@@ -355,6 +359,23 @@ class MagnetCrawler:
                 delay = 2 ** retry_count + random.uniform(0, 1)
                 log.info(f"页面加载失败，重试 {retry_count + 1}: {url} - {e}")
                 await asyncio.sleep(delay)
+
+    def _build_run_config(self) -> CrawlerRunConfig:
+        return CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            word_count_threshold=1,
+            verbose=False,
+            page_timeout=self._config.timeout * 1000,
+            wait_until=self._config.wait_until,
+            delay_before_return_html=self._config.delay_before_return_html,
+            scan_full_page=self._config.scan_full_page,
+            scroll_delay=self._config.scroll_delay,
+            max_scroll_steps=self._config.max_scroll_steps,
+            process_iframes=self._config.process_iframes,
+            flatten_shadow_dom=self._config.flatten_shadow_dom,
+            remove_overlay_elements=self._config.remove_overlay_elements,
+            remove_consent_popups=self._config.remove_consent_popups,
+        )
 
     def _extract_page_items(self, result, source_url: str) -> List[dict]:
         content_sources: List[str] = []

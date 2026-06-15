@@ -47,6 +47,48 @@ def test_extract_magnet_with_html():
     assert items[0]["hash"] == "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
 
 
+def test_extract_html_escaped_magnet_keeps_dn_for_resolution_filter():
+    """HTML 属性中的 &amp;dn= 应还原，否则 2160p 名称会丢失并被爬虫过滤。"""
+    text = (
+        '<a href="magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        '&amp;dn=Example.Movie.2160p.WEB-DL">下载</a>'
+    )
+
+    items = extract_from_text(text)
+
+    assert len(items) == 1
+    assert items[0]["hash"] == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    assert items[0]["name"] == "Example.Movie.2160p.WEB-DL"
+
+
+def test_extract_url_encoded_magnet():
+    """有些站点把整条 magnet URL 编码后放在跳转参数里。"""
+    text = (
+        "href=/download?url=magnet%3A%3Fxt%3Durn%3Abtih%3A"
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB%26dn%3DEncoded.Movie.2160p"
+    )
+
+    items = extract_from_text(text)
+
+    assert len(items) == 1
+    assert items[0]["hash"] == "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    assert items[0]["name"] == "Encoded.Movie.2160p"
+
+
+def test_extract_base32_btih_magnet():
+    """BTIH 也可能是 32 位 Base32，不只 40 位 hex。"""
+    text = (
+        "magnet:?xt=urn:btih:ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+        "&dn=Base32.Movie.2160p"
+    )
+
+    items = extract_from_text(text)
+
+    assert len(items) == 1
+    assert items[0]["hash"] == "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    assert items[0]["name"] == "Base32.Movie.2160p"
+
+
 def test_deduplicate_by_hash():
     """相同 hash 只返回一次"""
     text = """
@@ -155,6 +197,9 @@ if __name__ == "__main__":
     test_extract_standard_magnet()
     test_extract_multiple_magnets()
     test_extract_magnet_with_html()
+    test_extract_html_escaped_magnet_keeps_dn_for_resolution_filter()
+    test_extract_url_encoded_magnet()
+    test_extract_base32_btih_magnet()
     test_deduplicate_by_hash()
     test_invalid_hash_too_short()
     test_base64_encoded_magnet()

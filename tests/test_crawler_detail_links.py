@@ -7,6 +7,8 @@ import asyncio
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from crawl4ai import CacheMode
+
 from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.utils.url_validator import CrawlTargetAdmission
@@ -55,6 +57,22 @@ def test_extract_detail_links_filters_and_limits():
     assert "https://example.com/list?page=2" not in result
     assert "https://other.com/details/999" not in result
     assert "https://example.com/details/old" not in result
+
+
+def test_build_run_config_uses_crawl4ai_dynamic_page_features():
+    crawler = make_crawler()
+
+    cfg = crawler._build_run_config()
+
+    assert cfg.cache_mode == CacheMode.BYPASS
+    assert cfg.wait_until == "load"
+    assert cfg.delay_before_return_html == 1.0
+    assert cfg.scan_full_page is True
+    assert cfg.max_scroll_steps == 8
+    assert cfg.process_iframes is True
+    assert cfg.flatten_shadow_dom is True
+    assert cfg.remove_overlay_elements is True
+    assert cfg.remove_consent_popups is True
 
 
 def test_extract_detail_links_default_limit_keeps_more_than_legacy_50():

@@ -21,6 +21,15 @@ class CrawlerConfig:
     max_detail_links: int = 200
     headless: bool = True
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
+    wait_until: str = "load"
+    delay_before_return_html: float = 1.0
+    scan_full_page: bool = True
+    scroll_delay: float = 0.2
+    max_scroll_steps: int = 8
+    process_iframes: bool = True
+    flatten_shadow_dom: bool = True
+    remove_overlay_elements: bool = True
+    remove_consent_popups: bool = True
 
 
 @dataclass
@@ -53,6 +62,15 @@ class Settings(BaseSettings):
     CRAWLER_MAX_DETAIL_LINKS: int = 200
     CRAWLER_HEADLESS: bool = True
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
+    CRAWLER_WAIT_UNTIL: str = "load"
+    CRAWLER_DELAY_BEFORE_HTML: float = 1.0
+    CRAWLER_SCAN_FULL_PAGE: bool = True
+    CRAWLER_SCROLL_DELAY: float = 0.2
+    CRAWLER_MAX_SCROLL_STEPS: int = 8
+    CRAWLER_PROCESS_IFRAMES: bool = True
+    CRAWLER_FLATTEN_SHADOW_DOM: bool = True
+    CRAWLER_REMOVE_OVERLAYS: bool = True
+    CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
 
@@ -94,6 +112,15 @@ class Settings(BaseSettings):
                 max_detail_links=self.CRAWLER_MAX_DETAIL_LINKS,
                 headless=self.CRAWLER_HEADLESS,
                 allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
+                wait_until=self.CRAWLER_WAIT_UNTIL,
+                delay_before_return_html=self.CRAWLER_DELAY_BEFORE_HTML,
+                scan_full_page=self.CRAWLER_SCAN_FULL_PAGE,
+                scroll_delay=self.CRAWLER_SCROLL_DELAY,
+                max_scroll_steps=self.CRAWLER_MAX_SCROLL_STEPS,
+                process_iframes=self.CRAWLER_PROCESS_IFRAMES,
+                flatten_shadow_dom=self.CRAWLER_FLATTEN_SHADOW_DOM,
+                remove_overlay_elements=self.CRAWLER_REMOVE_OVERLAYS,
+                remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
             )
         return self._crawler_config
 
