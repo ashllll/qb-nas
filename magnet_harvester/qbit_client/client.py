@@ -100,6 +100,9 @@ class QBittorrentClient:
             "max_delay": 10.0,
             "retry_on": [408, 429, 500, 502, 503, 504],
         }
+        self._ping_cache_ttl = 5.0
+        self._last_ping_at = 0.0
+        self._last_ping_result: bool | None = None
         self._cached_default_path: str | None = None
         self._category_locks: dict[str, asyncio.Lock] = {}
         self.last_error: str | None = None
@@ -116,7 +119,7 @@ class QBittorrentClient:
             limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
             self._client = httpx.AsyncClient(
                 limits=limits,
-                timeout=httpx.Timeout(connect=10, read=30, write=30, pool=30),
+                timeout=httpx.Timeout(connect=3, read=30, write=30, pool=30),
             )
         return self._client
 
@@ -226,12 +229,18 @@ class QBittorrentClient:
         return await self._req_with_retry(method, path, **kw)
 
     async def ping(self) -> bool:
+        now = time.time()
+        if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
+            return self._last_ping_result
         try:
             r = await self._req("GET", "/app/version")
-            return r.status_code == 200
+            ok = r.status_code == 200
         except Exception as e:
             log.warning(f"qBittorrent ping 失败: {e}")
-            return False
+            ok = False
+        self._last_ping_at = time.time()
+        self._last_ping_result = ok
+        return ok
 
     async def get_maindata(self, rid: int = 0) -> QBitApiObject:
         try:

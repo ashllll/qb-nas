@@ -115,6 +115,34 @@ def test_stats_zero_division():
     assert stats.success_rate == 0.0
 
 
+def test_qbit_ping_uses_short_cache():
+    """连续状态轮询应复用短缓存，避免 qB 离线时反复慢连接"""
+    import asyncio
+
+    from magnet_harvester.config import QBitConfig
+    from magnet_harvester.qbit_client import QBittorrentClient
+
+    class FakeResponse:
+        status_code = 200
+
+    client = QBittorrentClient(config=QBitConfig(host="http://qbit.example:8080"))
+    calls = 0
+
+    async def fake_req(_method, _path):
+        nonlocal calls
+        calls += 1
+        return FakeResponse()
+
+    client._req = fake_req
+
+    async def run():
+        assert await client.ping() is True
+        assert await client.ping() is True
+
+    asyncio.run(run())
+    assert calls == 1
+
+
 # ═══════════════════════════════════════════════════
 # 增量测试 4: 路径解析逻辑可独立测试（提取后）
 # ═══════════════════════════════════════════════════
