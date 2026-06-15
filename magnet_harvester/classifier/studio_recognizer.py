@@ -73,24 +73,16 @@ def extract_studio(name: str) -> Optional[str]:
     m = _STUDIO_WITH_DATE.search(cleaned)
     if m:
         raw = m.group(1).strip().rstrip(".")
-        if len(raw) >= 2:
-            return normalize_studio(raw)
-
-    # 回退：取首词
-    m = _FIRST_WORD.search(cleaned)
-    if m:
-        raw = m.group(1).rstrip(".")
-        if len(raw) >= 3:
-            return normalize_studio(raw)
-
-    # 最后尝试：空格分割取首词
-    parts = cleaned.split()
-    if parts:
-        raw = parts[0].strip("[]().")
-        if len(raw) >= 3:
-            return normalize_studio(raw)
+        normalized = normalize_known_studio(raw)
+        if normalized:
+            return normalized
 
     return None
+
+
+def normalize_known_studio(raw: str) -> Optional[str]:
+    key = raw.lower().replace(" ", "").replace(".", "").replace("-", "")
+    return KNOWN_STUDIOS.get(key)
 
 
 def normalize_studio(raw: str) -> str:

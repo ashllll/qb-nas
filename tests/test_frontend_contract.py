@@ -35,10 +35,11 @@ def test_bulk_selection_is_scoped_to_visible_items():
 
 
 def test_frontend_assets_are_local_and_mobile_navigation_exists():
-    assert 'src="/static/lucide.min.js"' in HTML
     assert 'class="mobile-nav"' in HTML
     assert "fonts.googleapis.com" not in HTML
     assert "macos-coast-wallpaper" not in HTML
+    assert "lucide.min.js" not in HTML
+    assert "ICON_SYMBOLS" in HTML
 
 
 def test_app_mounts_static_assets():

@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 import httpx
 
-from magnet_harvester.config import QBitConfig, settings
+from magnet_harvester.config import QBitConfig
 from magnet_harvester.models import TaskStatus
 from magnet_harvester.qbit_client.paths import QBitPathResolver, _safe_fs_segment
 
@@ -449,7 +449,7 @@ class QBittorrentClient:
             category_save_path = save_path  # 保留原始值（如 "SexArt"），qB 可据此创建
 
         # 2. 如果配置了 FS_BASE_PATH，先创建真实目录（qB 的 createCategory 不是 mkdir）
-        fs_base = settings.FS_BASE_PATH.strip()
+        fs_base = self._config.fs_base_path.strip()
         if fs_base:
             (Path(fs_base) / _safe_fs_segment(category)).mkdir(parents=True, exist_ok=True)
 

@@ -22,15 +22,14 @@ def _extract_base_from_path(save_path: str) -> Optional[str]:
     """从分类/种子的 savePath 提取基础下载路径（排除 Docker 内部路径）。
 
     路径格式如 /vol2/1000/downloads/电影，取父目录。
-    单层路径如 /downloads 直接返回自身。
+    单层路径如 /downloads 没有可推断的父级，返回 None。
     """
     if not save_path or save_path.startswith("/var/"):
         return None
     stripped = save_path.strip("/")
     if "/" in stripped:
         return "/" + "/".join(stripped.split("/")[:-1])
-    # 单层路径如 /downloads — 直接返回
-    return "/" + stripped
+    return None
 
 
 class QBitPathResolver:

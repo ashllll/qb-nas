@@ -827,9 +827,17 @@
         padding: 12px 18px;
         border-top: 1px solid var(--line);
       }
+      .icon-glyph,
       svg {
         width: 15px;
         height: 15px;
+        display: inline-grid;
+        place-items: center;
+        flex: 0 0 auto;
+        font-size: 15px;
+        line-height: 1;
+        font-style: normal;
+        font-weight: 700;
         stroke-width: 2;
       }
       ::-webkit-scrollbar {
@@ -1414,8 +1422,27 @@
       </div>
     </dialog>
 
-    <script src="/static/lucide.min.js"></script>
     <script>
+      const ICON_SYMBOLS = {
+        magnet: "⌁",
+        play: "▶",
+        "trash-2": "⌫",
+        search: "⌕",
+        "list-checks": "☑",
+        square: "□",
+        tags: "◇",
+        download: "⇣",
+        inbox: "▱",
+        "settings-2": "⚙",
+        "plug-zap": "↯",
+        radar: "◎",
+        library: "▥",
+        "loader-circle": "◌",
+        "circle-alert": "!",
+        "circle-check": "✓",
+        info: "i",
+      };
+
       const items = new Map();
       const selected = new Set();
       let filter = "all";
@@ -1426,8 +1453,11 @@
       let clipCount = 0;
 
       function initIcons() {
-        if (window.lucide)
-          window.lucide.createIcons({ attrs: { "aria-hidden": "true" } });
+        document.querySelectorAll("i[data-lucide]").forEach((icon) => {
+          icon.className = "icon-glyph";
+          icon.setAttribute("aria-hidden", "true");
+          icon.textContent = ICON_SYMBOLS[icon.dataset.lucide] || "•";
+        });
       }
 
       function apiHeaders(extra = {}) {

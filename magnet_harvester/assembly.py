@@ -10,6 +10,7 @@ from magnet_harvester.classifier import LocalClassifier
 from magnet_harvester.config import settings
 from magnet_harvester.context.app_context import AppContext
 from magnet_harvester.crawler import MagnetCrawler
+from magnet_harvester.errors import error_handler
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.services.agent_tools import ToolExecutor
@@ -79,5 +80,6 @@ def build_runtime() -> AppRuntime:
         qbit_sync=sync_loop,
         qbit_lock=qbit_lock,
         clipboard_monitor=clipboard_monitor,
+        error_handler=error_handler,
     )
     return AppRuntime(ctx=ctx, sync_loop=sync_loop)

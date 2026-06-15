@@ -53,6 +53,11 @@ class ClipboardMonitorLike(Protocol):
     async def stop(self) -> None: ...
 
 
+class ErrorHandlerLike(Protocol):
+    def get_error_stats(self) -> dict: ...
+    def clear_resolved(self): ...
+
+
 @dataclass
 class AppContext:
     store: ItemStore
@@ -69,6 +74,7 @@ class AppContext:
     qbit_sync: QBitSyncLike | None = None
     qbit_lock: asyncio.Lock | None = None
     clipboard_monitor: ClipboardMonitorLike | None = None
+    error_handler: ErrorHandlerLike | None = None
 
 
 @dataclass
