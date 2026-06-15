@@ -49,7 +49,6 @@ class CrawlMetrics:
         self.pages_crawled = 0
         self.magnets_found = 0
         self.errors = 0
-        self.retries = 0
 
     @property
     def elapsed(self) -> float:
@@ -61,7 +60,6 @@ class CrawlMetrics:
             "pages_crawled": self.pages_crawled,
             "magnets_found": self.magnets_found,
             "errors": self.errors,
-            "retries": self.retries,
         }
 
 
