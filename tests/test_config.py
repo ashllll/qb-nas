@@ -21,7 +21,15 @@ def test_crawler_allowed_resolutions_falls_back_when_empty():
     assert cfg.crawler.allowed_resolutions == ("2160p", "4k")
 
 
+def test_default_crawler_concurrency_is_tuned_for_detail_pages():
+    cfg = Settings()
+
+    assert cfg.CRAWLER_CONCURRENCY == 6
+    assert cfg.crawler.concurrency == 6
+
+
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
     test_crawler_allowed_resolutions_falls_back_when_empty()
+    test_default_crawler_concurrency_is_tuned_for_detail_pages()
     print("=== config tests passed! ===")

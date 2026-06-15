@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 class CrawlerConfig:
     timeout: int = 30
     max_depth: int = 2
-    concurrency: int = 3
+    concurrency: int = 6
     headless: bool = True
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
 
@@ -47,7 +47,7 @@ class Settings(BaseSettings):
 
     CRAWLER_TIMEOUT: int = 30
     CRAWLER_MAX_DEPTH: int = 2
-    CRAWLER_CONCURRENCY: int = 3
+    CRAWLER_CONCURRENCY: int = 6
     CRAWLER_HEADLESS: bool = True
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
 

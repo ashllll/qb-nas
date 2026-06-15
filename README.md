@@ -101,7 +101,7 @@ cp .env.example .env
 | `SITE_COOKIES`             | 站点 Cookie 注入        | `{}`                        |
 | `CRAWLER_TIMEOUT`          | 抓取超时秒              | `30`                        |
 | `CRAWLER_MAX_DEPTH`        | 最大深度                | `2`                         |
-| `CRAWLER_CONCURRENCY`      | 并发数                  | `3`                         |
+| `CRAWLER_CONCURRENCY`      | 并发数                  | `6`                         |
 | `FS_BASE_PATH`             | 本地可写目录（可选）    | 空                          |
 | `MIN_DISK_SPACE_GB`        | 磁盘告警阈值            | `10.0`                      |
 
