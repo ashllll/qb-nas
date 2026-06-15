@@ -346,6 +346,8 @@ qb-nas/
 
 - **分类引擎**：关键词精确匹配 + 通用正则，覆盖电影、电视剧、动漫、音乐、游戏、软件、综艺、纪录片和其他资源类型
 - **前端界面**：`static/index.html` 单文件工作台，无构建步骤；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
+- **爬虫调度**：`AsyncWebCrawler.arun_many(stream=True)` + `MemoryAdaptiveDispatcher` 批量抓取详情页，按深度分批流式回传结果
+- **动态页面抓取**：默认等待 `load`、滚动完整页面、合并 iframe、展开 Shadow DOM，并移除遮挡层/同意弹窗后再解析磁力
 - **Cookie 注入**：`SITE_COOKIES` JSON 配置 → `BrowserConfig.cookies` → crawl4ai 浏览器自动携带，支持多域名
 - **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由
 - **状态同步**：QBitSyncLoop 每 2 秒轮询 `/sync/maindata`，仅终态变化时触发前端通知，避免日志刷屏

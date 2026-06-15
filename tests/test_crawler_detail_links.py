@@ -4,6 +4,7 @@
 import sys
 import os
 import asyncio
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -62,9 +63,10 @@ def test_extract_detail_links_filters_and_limits():
 def test_build_run_config_uses_crawl4ai_dynamic_page_features():
     crawler = make_crawler()
 
-    cfg = crawler._build_run_config()
+    cfg = crawler._build_run_config(stream=True)
 
     assert cfg.cache_mode == CacheMode.BYPASS
+    assert cfg.stream is True
     assert cfg.wait_until == "load"
     assert cfg.delay_before_return_html == 1.0
     assert cfg.scan_full_page is True
@@ -73,6 +75,61 @@ def test_build_run_config_uses_crawl4ai_dynamic_page_features():
     assert cfg.flatten_shadow_dom is True
     assert cfg.remove_overlay_elements is True
     assert cfg.remove_consent_popups is True
+
+
+def test_build_dispatcher_uses_crawl4ai_resource_adaptive_batching():
+    crawler = make_crawler(concurrency=6)
+
+    dispatcher = crawler._build_dispatcher()
+
+    assert dispatcher.max_session_permit == 6
+    assert dispatcher.memory_threshold_percent == 85.0
+    assert dispatcher.rate_limiter is not None
+
+
+def test_fetch_many_stream_uses_arun_many_streaming():
+    class FakeCrawl4AI:
+        def __init__(self):
+            self.calls = []
+
+        async def arun_many(self, urls, config=None, dispatcher=None):
+            self.calls.append((urls, config, dispatcher))
+
+            async def stream():
+                for url in urls:
+                    yield SimpleNamespace(
+                        url=url,
+                        success=True,
+                        markdown="",
+                        cleaned_html="",
+                        html="",
+                        links={},
+                    )
+
+            return stream()
+
+    async def collect():
+        crawler = make_crawler()
+        fake = FakeCrawl4AI()
+        crawler._crawler = fake
+        results = [
+            result async for result in crawler._fetch_many_stream([
+                "https://example.com/details/1",
+                "https://example.com/details/2",
+            ])
+        ]
+        return fake, results
+
+    fake, results = asyncio.run(collect())
+
+    assert [result[0] for result in results] == [
+        "https://example.com/details/1",
+        "https://example.com/details/2",
+    ]
+    urls, config, dispatcher = fake.calls[0]
+    assert urls == ["https://example.com/details/1", "https://example.com/details/2"]
+    assert config.stream is True
+    assert dispatcher.max_session_permit == 6
 
 
 def test_extract_detail_links_default_limit_keeps_more_than_legacy_50():
@@ -117,13 +174,14 @@ def test_claim_unvisited_links_reserves_before_await_points():
     assert second_claim == []
 
 
-def test_crawl_worker_reports_page_errors_and_finishes():
+def test_crawl_batch_reports_page_errors_and_finishes():
     class ExplodingCrawler(MagnetCrawler):
         async def start(self):
             self._crawler = object()
 
-        async def _crawl_page(self, url, depth, visited, frontier, events, seen):
-            raise RuntimeError("boom")
+        async def _fetch_many_stream(self, urls):
+            for url in urls:
+                yield url, None, RuntimeError("boom")
 
     async def collect():
         crawler = ExplodingCrawler(
@@ -146,14 +204,22 @@ def test_crawl_worker_reports_page_errors_and_finishes():
     assert messages[-1]["metrics"]["errors"] == 1
 
 
-def test_crawl_consumer_close_cleans_up_worker_session():
+def test_crawl_consumer_close_cleans_up_batch_session():
     class SlowCrawler(MagnetCrawler):
         async def start(self):
             self._crawler = object()
 
-        async def _crawl_page(self, url, depth, visited, frontier, events, seen):
-            await events.put({"type": "progress", "msg": "tick", "url": url})
+        async def _fetch_many_stream(self, urls):
             await asyncio.sleep(0.02)
+            for url in urls:
+                yield url, SimpleNamespace(
+                    url=url,
+                    success=True,
+                    markdown="",
+                    cleaned_html="",
+                    html="",
+                    links={},
+                ), None
 
     async def consume_and_close():
         crawler = SlowCrawler(
@@ -177,6 +243,6 @@ if __name__ == "__main__":
     test_extract_detail_links_default_limit_keeps_more_than_legacy_50()
     test_extract_detail_links_respects_configured_limit()
     test_claim_unvisited_links_reserves_before_await_points()
-    test_crawl_worker_reports_page_errors_and_finishes()
-    test_crawl_consumer_close_cleans_up_worker_session()
+    test_crawl_batch_reports_page_errors_and_finishes()
+    test_crawl_consumer_close_cleans_up_batch_session()
     print("=== crawler detail link tests passed! ===")
