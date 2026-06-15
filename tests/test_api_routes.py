@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
 from magnet_harvester.api.routes import router
 from magnet_harvester.context.app_context import AppContext
+from magnet_harvester.config import Settings
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
@@ -236,6 +237,11 @@ def test_update_config_replaces_qbit_client(monkeypatch):
     from magnet_harvester.api import routes as routes_module
 
     created = []
+    persisted = []
+
+    class CapturingSettings(Settings):
+        def persist_qbit_config(self, config, env_path=None):
+            persisted.append(config)
 
     class NewQbit(FakeQbit):
         def __init__(self, config):
@@ -244,6 +250,7 @@ def test_update_config_replaces_qbit_client(monkeypatch):
             created.append(self)
 
     monkeypatch.setattr(routes_module, "QBittorrentClient", NewQbit)
+    monkeypatch.setattr(routes_module, "settings", CapturingSettings())
 
     app, ctx = _make_app()
     old_qbit = ctx.qbit
@@ -263,10 +270,17 @@ def test_update_config_replaces_qbit_client(monkeypatch):
     assert ctx.qbit is created[0]
     assert ctx.pipeline.replaced_qbit is created[0]
     assert old_qbit.closed is True
+    assert persisted == [created[0].config]
 
 
 def test_update_config_keeps_current_client_when_candidate_cannot_connect(monkeypatch):
     from magnet_harvester.api import routes as routes_module
+
+    persisted = []
+
+    class CapturingSettings(Settings):
+        def persist_qbit_config(self, config, env_path=None):
+            persisted.append(config)
 
     class OfflineQbit(FakeQbit):
         def __init__(self, config):
@@ -275,6 +289,7 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect(monkey
             self.ping_ok = False
 
     monkeypatch.setattr(routes_module, "QBittorrentClient", OfflineQbit)
+    monkeypatch.setattr(routes_module, "settings", CapturingSettings())
     app, ctx = _make_app()
     old_qbit = ctx.qbit
 
@@ -292,6 +307,7 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect(monkey
     assert resp.json() == {"status": "failed", "connected": False}
     assert ctx.qbit is old_qbit
     assert old_qbit.closed is False
+    assert persisted == []
 
 
 def test_update_config_rejects_invalid_candidate_without_mutating_runtime():

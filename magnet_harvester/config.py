@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import ipaddress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings
@@ -154,6 +155,16 @@ class Settings(BaseSettings):
         self.QBIT_PASSWORD = config.password
         self._qbit_config = None
 
+    def persist_qbit_config(self, config: QBitConfig, env_path: str | Path | None = None) -> None:
+        """Persist qBittorrent connection settings to the .env file."""
+        path = Path(env_path or self.model_config.get("env_file", ".env"))
+        updates = {
+            "QBIT_HOST": config.host,
+            "QBIT_USERNAME": config.username,
+            "QBIT_PASSWORD": config.password,
+        }
+        self._write_env_values(path, updates)
+
     def validate_security_posture(self) -> None:
         """Reject network-exposed write endpoints without explicit protection."""
         host = self.SERVICE_HOST.strip().lower()
@@ -175,6 +186,45 @@ class Settings(BaseSettings):
     def _parse_csv_tuple(value: str) -> tuple[str, ...]:
         values = tuple(item.strip() for item in value.split(",") if item.strip())
         return values or ("2160p", "4k")
+
+    @classmethod
+    def _write_env_values(cls, path: Path, updates: dict[str, str]) -> None:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
+        remaining = dict(updates)
+        rendered: list[str] = []
+
+        for line in lines:
+            key = cls._env_line_key(line)
+            if key in remaining:
+                newline = "\n" if line.endswith("\n") else ""
+                rendered.append(f"{key}={cls._format_env_value(remaining.pop(key))}{newline}")
+            else:
+                rendered.append(line)
+
+        if remaining:
+            if rendered and not rendered[-1].endswith("\n"):
+                rendered[-1] += "\n"
+            for key, value in remaining.items():
+                rendered.append(f"{key}={cls._format_env_value(value)}\n")
+
+        path.write_text("".join(rendered), encoding="utf-8")
+
+    @staticmethod
+    def _env_line_key(line: str) -> str | None:
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            return None
+        left, _, _ = stripped.partition("=")
+        parts = left.strip().split()
+        key = parts[-1] if parts else ""
+        if not key or not key.replace("_", "").isalnum() or key[0].isdigit():
+            return None
+        return key
+
+    @staticmethod
+    def _format_env_value(value: str) -> str:
+        escaped = value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+        return f'"{escaped}"'
 
 
 settings = Settings()

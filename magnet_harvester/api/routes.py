@@ -172,6 +172,12 @@ async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=De
         await new_qbit.close()
         return {"status": "failed", "connected": False}
 
+    try:
+        settings.persist_qbit_config(candidate)
+    except OSError as exc:
+        await new_qbit.close()
+        raise HTTPException(status_code=500, detail="qBittorrent 配置持久化失败") from exc
+
     await _qbit_runtime(ctx).replace_qbit(new_qbit)
     settings.commit_qbit_config(candidate)
     return {"status": "ok", "connected": True}
