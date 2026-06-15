@@ -143,10 +143,11 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
         pass
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus, task_manager=None):
+        def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
+            self.transitions = transitions
 
         async def start(self):
             self.started = True
@@ -161,11 +162,21 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             self.active_count = 0
 
     class FakeToolExecutor:
-        def __init__(self, store, pipeline, bus, task_manager=None):
+        def __init__(
+            self,
+            store,
+            pipeline,
+            bus,
+            task_manager=None,
+            transitions=None,
+            action_executor=None,
+        ):
             self.store = store
             self.pipeline = pipeline
             self.bus = bus
             self.task_manager = task_manager
+            self.transitions = transitions
+            self.action_executor = action_executor
 
     monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
     monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
@@ -248,10 +259,11 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
             return {}
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus, task_manager=None):
+        def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
+            self.transitions = transitions
             created["sync_loop"] = self
 
         async def start(self):

@@ -55,10 +55,12 @@ class TorrentStatusMapper:
         state = str(torrent.get("state", "") or "")
         progress = float(torrent.get("progress") or 0.0)
 
-        queued_states = {"queuedDL", "pausedDL"}
+        queued_states: set[str] = set()
         downloading_states = {
             "downloading", "forcedDL", "metaDL", "stalledDL",
             "checkingDL", "checkingResumeData", "moving",
+            "pausedDL",   # qB queue management can temporarily pause active downloads.
+            "queuedDL",   # Treat queue wait as downloading to avoid UI status oscillation.
         }
         success_states = {
             "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
@@ -270,37 +272,7 @@ class QBittorrentClient:
 
     @staticmethod
     def map_torrent_status(torrent: dict) -> dict:
-        state = str(torrent.get("state", "") or "")
-        progress = float(torrent.get("progress") or 0.0)
-
-        queued_states: set[str] = set()
-        downloading_states = {
-            "downloading", "forcedDL", "metaDL", "stalledDL",
-            "checkingDL", "checkingResumeData", "moving",
-            "pausedDL",   # qB 队列管理临时暂停 → 视为下载中
-            "queuedDL",   # qB 排队等待 → 视为下载中，避免与 downloading 间震荡
-        }
-        success_states = {
-            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
-        }
-        error_states = {"error", "missingFiles", "unknown"}
-
-        if state in error_states:
-            status = TaskStatus.error
-        elif progress >= 1.0 or state in success_states:
-            status = TaskStatus.success
-        elif state in downloading_states or 0.0 < progress < 1.0:
-            status = TaskStatus.downloading
-        elif state in queued_states:
-            status = TaskStatus.queued
-        else:
-            status = TaskStatus.queued
-
-        return {
-            "status": status,
-            "progress": round(progress * 100, 1),
-            "torrent_state": state or None,
-        }
+        return TorrentStatusMapper.map(torrent)
 
     async def get_torrent_properties(self, hash: str) -> QBitApiObject:
         try:

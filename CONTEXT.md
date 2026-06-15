@@ -18,6 +18,10 @@ The module responsible for applying a Magnet item state change to `ItemStore` an
 
 The module responsible for keeping runtime dependencies aligned when adapters are replaced during application lifetime.
 
+### QBitRuntime
+
+The module responsible for atomically replacing the active qBittorrent adapter across `AppContext`, `QBitSyncLoop`, and the `HarvestPipeline` download phase.
+
 ### Local classification
 
 The local rule-based process that assigns a category and save path to a Magnet item without calling an external AI provider.
@@ -45,6 +49,10 @@ The background module that polls qBittorrent state at regular intervals and reco
 ### ToolExecutor
 
 The module that dispatches agent tool calls (get_stats, list_items, start_crawl, add_to_queue, reclassify_item, search_items, clear_all) to the appropriate `ItemStore` or `HarvestPipeline` operations.
+
+### UserActionExecutor
+
+The module that executes user-triggered actions shared by HTTP routes and agent tools, including crawl start, download submission, reclassification, manual category changes, and item clearing.
 
 ### BGTaskManager
 

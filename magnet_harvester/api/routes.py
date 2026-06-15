@@ -3,21 +3,35 @@ REST routes backed by AppContext dependency injection.
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from magnet_harvester.bus import Event, EventType
 from magnet_harvester.config import settings
-from magnet_harvester.context.app_context import AppContext, RuntimeContext, get_context
+from magnet_harvester.context.app_context import AppContext, QBitRuntime, get_context
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, error_handler
+from magnet_harvester.item_transitions import MagnetItemTransitions
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.qbit_client import QBittorrentClient
+from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.utils.auth import require_api_key
 from magnet_harvester.utils.serializers import _item_payload, _item_summary
 
 router = APIRouter()
+
+
+def _actions(ctx: AppContext) -> UserActionExecutor:
+    return ctx.action_executor or UserActionExecutor(
+        store=ctx.store,
+        pipeline=ctx.pipeline,
+        task_manager=ctx.bg_manager,
+        transitions=ctx.item_transitions or MagnetItemTransitions(store=ctx.store, bus=ctx.bus),
+        stats=ctx.stats,
+    )
+
+
+def _qbit_runtime(ctx: AppContext) -> QBitRuntime:
+    return ctx.qbit_runtime or QBitRuntime(ctx=ctx)
 
 
 @router.get("/api/status")
@@ -85,30 +99,22 @@ async def search_items(
 @router.post("/api/crawl")
 async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     try:
-        await ctx.pipeline.admit_crawl_target(req.url)
+        result = await _actions(ctx).start_crawl(req.url, depth=req.depth, auto_download=req.auto_download)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if ctx.stats is not None:
-        ctx.stats.record_crawl()
-    ctx.bg_manager.create(
-        ctx.pipeline.execute(req.url, depth=req.depth, auto_download=req.auto_download),
-        name=f"crawl:{req.url[:40]}",
-    )
-    return {"status": "started", "url": req.url}
+    if result.get("status") == "error":
+        raise HTTPException(status_code=503, detail=result.get("reason", "action failed"))
+    return result
 
 
 @router.post("/api/download")
 async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    if ctx.stats is not None:
-        ctx.stats.record_download()
-    ctx.bg_manager.create(ctx.pipeline.download(req.hashes), name="download_selected")
-    return {"status": "started", "count": len(req.hashes)}
+    return await _actions(ctx).download(req.hashes)
 
 
 @router.post("/api/reclassify")
 async def reclassify(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    ctx.bg_manager.create(ctx.pipeline.reclassify(req.hashes), name="reclassify")
-    return {"status": "started"}
+    return await _actions(ctx).reclassify(req.hashes)
 
 
 @router.get("/api/errors")
@@ -152,33 +158,28 @@ async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=De
     username = data.get("qbit_username")
     password = data.get("qbit_password")
 
-    lock = ctx.qbit_lock or asyncio.Lock()
-    async with lock:
-        try:
-            candidate = settings.build_qbit_config(
-                host=host,
-                username=username,
-                password=password,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        candidate = settings.build_qbit_config(
+            host=host,
+            username=username,
+            password=password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        new_qbit = QBittorrentClient(config=candidate)
-        if not await new_qbit.ping():
-            await new_qbit.close()
-            return {"status": "failed", "connected": False}
+    new_qbit = QBittorrentClient(config=candidate)
+    if not await new_qbit.ping():
+        await new_qbit.close()
+        return {"status": "failed", "connected": False}
 
-        await RuntimeContext(ctx).replace_qbit(new_qbit)
-        settings.commit_qbit_config(candidate)
-        return {"status": "ok", "connected": True}
+    await _qbit_runtime(ctx).replace_qbit(new_qbit)
+    settings.commit_qbit_config(candidate)
+    return {"status": "ok", "connected": True}
 
 
 @router.delete("/api/items")
 async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    count = ctx.store.count
-    ctx.store.clear()
-    await ctx.bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
-    return {"status": "cleared", "removed": count}
+    return await _actions(ctx).clear_items()
 
 
 @router.get("/api/categories")

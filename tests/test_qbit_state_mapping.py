@@ -10,10 +10,15 @@ from magnet_harvester.models import TaskStatus
 from magnet_harvester.qbit_client import QBittorrentClient, TorrentStatusMapper
 
 
-def test_map_torrent_status_for_queue():
+def test_map_torrent_status_for_queue_waiting_download():
     result = TorrentStatusMapper.map({"state": "queuedDL", "progress": 0.0})
-    assert result["status"] == TaskStatus.queued
+    assert result["status"] == TaskStatus.downloading
     assert result["progress"] == 0.0
+
+
+def test_map_torrent_status_for_paused_download():
+    result = TorrentStatusMapper.map({"state": "pausedDL", "progress": 0.0})
+    assert result["status"] == TaskStatus.downloading
 
 
 def test_map_torrent_status_for_downloading():
@@ -44,12 +49,21 @@ def test_map_torrent_status_for_error():
 
 
 def test_qbit_client_status_mapping_keeps_backward_compatibility():
-    result = QBittorrentClient.map_torrent_status({"state": "uploading", "progress": 1.0})
-    assert result == TorrentStatusMapper.map({"state": "uploading", "progress": 1.0})
+    states = [
+        ("queuedDL", 0.0),
+        ("pausedDL", 0.0),
+        ("downloading", 0.42),
+        ("uploading", 1.0),
+        ("error", 0.0),
+    ]
+    for state, progress in states:
+        torrent = {"state": state, "progress": progress}
+        assert QBittorrentClient.map_torrent_status(torrent) == TorrentStatusMapper.map(torrent)
 
 
 if __name__ == "__main__":
-    test_map_torrent_status_for_queue()
+    test_map_torrent_status_for_queue_waiting_download()
+    test_map_torrent_status_for_paused_download()
     test_map_torrent_status_for_downloading()
     test_map_torrent_status_for_completed()
     test_map_torrent_status_for_completed_paused_upload()

@@ -44,14 +44,14 @@ def test_status_mapper_maps_downloading_states():
         assert result["status"] == TaskStatus.downloading
 
 
-def test_status_mapper_maps_queued_states():
-    """排队状态应映射为 TaskStatus.queued"""
+def test_status_mapper_maps_download_queue_states():
+    """qB 下载队列状态应保持为下载中，避免 UI 状态震荡"""
     from magnet_harvester.qbit_client import TorrentStatusMapper
 
     mapper = TorrentStatusMapper()
     for state in ["queuedDL", "pausedDL"]:
         result = mapper.map({"state": state, "progress": 0.0})
-        assert result["status"] == TaskStatus.queued
+        assert result["status"] == TaskStatus.downloading
 
 
 def test_status_mapper_progress_rounding():
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     test_status_mapper_maps_downloading_states()
     print("[PASS] test_status_mapper_maps_downloading_states")
 
-    test_status_mapper_maps_queued_states()
+    test_status_mapper_maps_download_queue_states()
     print("[PASS] test_status_mapper_maps_queued_states")
 
     test_status_mapper_progress_rounding()

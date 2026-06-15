@@ -15,10 +15,10 @@ import pyperclip
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
+from magnet_harvester.item_transitions import MagnetItemTransitions
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.store import ItemStore
-from magnet_harvester.utils.serializers import _item_payload
 
 log = logging.getLogger(__name__)
 
@@ -54,11 +54,13 @@ class ClipboardMonitor:
         classifier: LocalClassifier,
         pipeline: "HarvestPipeline | None" = None,
         poll_interval: float = 1.0,
+        transitions: MagnetItemTransitions | None = None,
     ):
         self._bus = bus
         self._store = store
         self._classifier = classifier
         self._pipeline = pipeline
+        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
         self._poll_interval = poll_interval
         self._running = False
         self._stop_event = asyncio.Event()
@@ -155,20 +157,13 @@ class ClipboardMonitor:
             source_url="clipboard://",
         )
 
-        # 存储（去重：已存在则跳过）
-        if not self._store.add(item):
+        # 存储（去重：已存在则跳过）并发布事件
+        if not await self._transitions.clipboard_found(item):
             log.debug(f"剪贴板磁力已存在，跳过: {name[:40]}")
             return
 
         self._magnet_count += 1
 
-        # 发布事件
-        await self._bus.emit(Event(EventType.MAGNET_FOUND, {
-            "item": item.model_dump(),
-        }))
-        await self._bus.emit(Event(EventType.STORE_CHANGED, {
-            "item": _item_payload(item),
-        }))
         log.info(f"剪贴板捕获磁力: {name[:50]} → {category}")
 
         # 自动发送到 qBittorrent

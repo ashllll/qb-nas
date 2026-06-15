@@ -7,11 +7,11 @@ import asyncio
 import logging
 from typing import Protocol
 
-from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
+from magnet_harvester.item_transitions import MagnetItemTransitions
 from magnet_harvester.models import TaskStatus
 from magnet_harvester.store import ItemStore
-from magnet_harvester.utils.serializers import _item_payload
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class QBitSyncLoop:
         bus: MessageBus,
         poll_interval: float = 2.0,
         task_manager: BackgroundTaskSpawner | None = None,
+        transitions: MagnetItemTransitions | None = None,
     ):
         self._qbit = qbit_client
         self._store = store
@@ -41,6 +42,7 @@ class QBitSyncLoop:
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     async def start(self):
         if self._task_manager is not None:
@@ -61,37 +63,6 @@ class QBitSyncLoop:
         """Align future sync polls with a newly committed qB adapter."""
         async with self._lock:
             self._qbit = new_qbit
-
-    async def _emit_store_changed(
-        self, hash_key: str, previous_status: TaskStatus | None = None
-    ):
-        item = self._store.get(hash_key)
-        if item is None:
-            return
-
-        await self._bus.emit(
-            Event(EventType.STORE_CHANGED, {"item": _item_payload(item)})
-        )
-
-        # 仅在到达终态（成功/失败）或进入新阶段时发 DOWNLOAD_RESULT
-        # queued/downloading 之间切换只通过 STORE_CHANGED 静默更新，避免日志刷屏
-        is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
-        is_new_phase = previous_status in {
-            TaskStatus.pending, TaskStatus.adding, TaskStatus.classifying, None,
-        }
-        if is_terminal or is_new_phase:
-            await self._bus.emit(
-                Event(
-                    EventType.DOWNLOAD_RESULT,
-                    {
-                        "hash": hash_key,
-                        "status": item.status.value,
-                        "error_msg": item.error_msg,
-                        "progress": item.progress,
-                        "torrent_state": item.torrent_state,
-                    },
-                )
-            )
 
     async def _run(self):
         while not self._stop_event.is_set():
@@ -137,15 +108,7 @@ class QBitSyncLoop:
                         and item.status != TaskStatus.success
                     ):
                         previous_status = item.status
-                        store.update(
-                            hash_key,
-                            status=TaskStatus.error,
-                            error_msg="种子已从 qBittorrent 中消失",
-                            torrent_state="removed",
-                        )
-                        await self._emit_store_changed(
-                            hash_key, previous_status=previous_status
-                        )
+                        await self._transitions.download_removed(hash_key, previous_status)
                     continue
 
                 mapped = qbit.map_torrent_status(torrent)
@@ -162,7 +125,8 @@ class QBitSyncLoop:
                     fields["error_msg"] = None
 
                 if fields:
-                    store.update(hash_key, **fields)
-                    await self._emit_store_changed(
-                        hash_key, previous_status=previous_status
+                    await self._transitions.download_status_changed(
+                        hash_key,
+                        fields=fields,
+                        previous_status=previous_status,
                     )
