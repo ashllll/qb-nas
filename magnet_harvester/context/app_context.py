@@ -44,6 +44,15 @@ class QBitSyncLike(Protocol):
     async def replace_qbit_client(self, new_qbit) -> None: ...
 
 
+class ClipboardMonitorLike(Protocol):
+    @property
+    def is_running(self) -> bool: ...
+    @property
+    def magnet_count(self) -> int: ...
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+
+
 @dataclass
 class AppContext:
     store: ItemStore
@@ -59,7 +68,7 @@ class AppContext:
     tool_executor: ToolExecutorLike | None = None
     qbit_sync: QBitSyncLike | None = None
     qbit_lock: asyncio.Lock | None = None
-    clipboard_monitor: "ClipboardMonitorLike | None" = None
+    clipboard_monitor: ClipboardMonitorLike | None = None
 
 
 @dataclass

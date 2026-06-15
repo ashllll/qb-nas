@@ -23,7 +23,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_parser import extract_from_text
-from magnet_harvester.services.site_auth import parse_site_cookies, get_cookies_for_url
+from magnet_harvester.services.site_auth import parse_site_cookies
 from magnet_harvester.utils.url_validator import (
     CrawlTargetAdmission,
     URLValidationError,
