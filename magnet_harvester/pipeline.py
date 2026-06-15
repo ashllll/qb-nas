@@ -25,6 +25,8 @@ class UsageStats(Protocol):
 
 @runtime_checkable
 class CrawlPhase(Protocol):
+    @property
+    def max_depth(self) -> int: ...
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
     async def admit_url(self, url: str) -> str: ...
 
@@ -72,6 +74,9 @@ class HarvestPipeline:
 
     async def admit_crawl_target(self, url: str) -> str:
         return await self._crawler.admit_url(url)
+
+    def max_crawl_depth(self) -> int:
+        return self._crawler.max_depth
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))

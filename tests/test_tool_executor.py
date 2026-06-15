@@ -21,6 +21,9 @@ class FakePipeline:
         self.download_hashes = []
         self.reclassify_hashes = []
 
+    def max_crawl_depth(self):
+        return 2
+
     async def admit_crawl_target(self, url):
         return url
 

@@ -14,6 +14,7 @@ class UserActionPipeline(Protocol):
     async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
     async def reclassify(self, hashes: list[str]): ...
+    def max_crawl_depth(self) -> int: ...
 
 
 class UserActionExecutor:
@@ -46,7 +47,7 @@ class UserActionExecutor:
         if not url:
             return {"status": "error", "reason": "url 不能为空"}
         await self._pipeline.admit_crawl_target(url)
-        depth = max(1, min(int(depth), 3))
+        depth = max(1, min(int(depth), 3, self._pipeline.max_crawl_depth()))
         if self._stats is not None:
             self._stats.record_crawl()
         self._spawn(

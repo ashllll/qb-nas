@@ -80,7 +80,7 @@ class CrawlAdmissionFilter(URLFilter):
 
     async def apply(self, url: str) -> bool:
         try:
-            await self._target_admission.admit(url)
+            await self._target_admission.admit_redirect_chain(url)
         except URLValidationError:
             self._update_stats(False)
             log.warning("跳过不安全的详情页链接: %s", url)
@@ -134,6 +134,13 @@ class MagnetCrawler:
 
     async def admit_url(self, url: str) -> str:
         return await self._target_admission.admit(url)
+
+    @property
+    def max_depth(self) -> int:
+        return self._config.max_depth
+
+    def _clamp_depth(self, depth: int) -> int:
+        return max(1, min(int(depth), self._config.max_depth))
 
     @staticmethod
     def _build_site_cookies() -> list[dict]:
@@ -215,6 +222,7 @@ class MagnetCrawler:
         if not self._crawler:
             await self.start()
 
+        effective_depth = self._clamp_depth(depth)
         self._session_metrics.set(CrawlMetrics())
         seen: Set[str] = set()
         events: asyncio.Queue[dict | None] = asyncio.Queue()
@@ -224,7 +232,7 @@ class MagnetCrawler:
                 root_url=url,
                 events=events,
                 seen=seen,
-                depth=depth,
+                depth=effective_depth,
             ),
             name="crawl-session",
         )
@@ -258,7 +266,13 @@ class MagnetCrawler:
                     events=events,
                     seen=seen,
                 )
-
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.exception("深爬会话异常: %s", exc)
+            metrics = self._current_metrics()
+            metrics.errors += 1
+            await events.put({"type": "error", "msg": str(exc), "url": root_url})
         finally:
             metrics = self._current_metrics()
             await events.put({

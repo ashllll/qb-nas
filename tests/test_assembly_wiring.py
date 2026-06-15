@@ -11,6 +11,7 @@ async def test_build_runtime_wires_all_components(monkeypatch):
         def __init__(self, config, tavily=None):
             assert isinstance(config, CrawlerConfig)
             self._config = config
+            self.max_depth = 3
 
         async def start(self):
             pass

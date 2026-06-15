@@ -62,6 +62,9 @@ class FakePipeline:
     def __init__(self):
         self.replaced_qbit = None
 
+    def max_crawl_depth(self):
+        return 2
+
     async def admit_crawl_target(self, url):
         return url
 

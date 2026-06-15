@@ -27,6 +27,7 @@ class FakeCrawlPhase:
     def __init__(self, items: Optional[List[MagnetItem]] = None):
         self.items = items or []
         self.called_with: List[tuple] = []
+        self.max_depth = 3
 
     async def admit_url(self, url: str) -> str:
         return url

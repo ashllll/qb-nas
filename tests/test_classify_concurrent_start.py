@@ -39,6 +39,8 @@ class FakeClassifier:
 
 
 class FakeCrawler:
+    max_depth = 3
+
     async def crawl(self, url, depth=1):
         yield {"type": "done", "total": 0, "url": url}
 

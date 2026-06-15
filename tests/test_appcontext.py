@@ -122,6 +122,7 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
         def __init__(self, config):
             self.started = False
             self.stopped = False
+            self.max_depth = 3
 
         async def start(self):
             self.started = True
@@ -207,6 +208,7 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
         def __init__(self, config):
             self.started = False
             self.stopped = False
+            self.max_depth = 3
             created["crawler"] = self
 
         async def start(self):
