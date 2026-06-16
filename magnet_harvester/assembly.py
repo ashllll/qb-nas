@@ -109,5 +109,9 @@ def build_runtime() -> AppRuntime:
         error_handler=error_handler,
         item_transitions=item_transitions,
     )
-    ctx.qbit_runtime = QBitRuntime(ctx=ctx)
+    ctx.qbit_runtime = QBitRuntime(
+        ctx=ctx,
+        settings=settings,
+        client_factory=QBittorrentClient,
+    )
     return AppRuntime(ctx=ctx, sync_loop=sync_loop)

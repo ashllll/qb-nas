@@ -4,10 +4,13 @@ Application context — dependency container for Magnet Harvester.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from fastapi import Request
+
+from magnet_harvester.config import Settings, settings as default_settings
+from magnet_harvester.qbit_client import QBittorrentClient
 
 if TYPE_CHECKING:
     from magnet_harvester.store import ItemStore
@@ -15,7 +18,6 @@ if TYPE_CHECKING:
     from magnet_harvester.pipeline import HarvestPipeline
     from magnet_harvester.crawler import MagnetCrawler
     from magnet_harvester.classifier import LocalClassifier
-    from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.item_transitions import MagnetItemTransitions
 
 
@@ -97,6 +99,8 @@ class AppContext:
 @dataclass
 class QBitRuntime:
     ctx: AppContext
+    settings: Settings = field(default_factory=lambda: default_settings)
+    client_factory: type[QBittorrentClient] = field(default_factory=lambda: QBittorrentClient)
 
     async def replace_qbit(self, new_qbit):
         lock = self.ctx.qbit_lock or asyncio.Lock()
@@ -109,6 +113,42 @@ class QBitRuntime:
                 self.ctx.pipeline.replace_download_phase(new_qbit)
             if old_qbit is not None:
                 await old_qbit.close()
+
+    async def replace_qbit_config(
+        self,
+        host: str | None,
+        username: str | None,
+        password: str | None,
+    ) -> dict:
+        """Validate, persist, and hot-swap the qBittorrent configuration.
+
+        Returns:
+            {"status": "ok", "connected": True} on success.
+            {"status": "failed", "connected": False} when the new endpoint is unreachable.
+
+        Raises:
+            ValueError: if the candidate config is invalid (maps to HTTP 422).
+            OSError: if persisting the config fails (maps to HTTP 500).
+        """
+        candidate = self.settings.build_qbit_config(
+            host=host,
+            username=username,
+            password=password,
+        )
+        new_qbit = self.client_factory(config=candidate)
+        if not await new_qbit.ping():
+            await new_qbit.close()
+            return {"status": "failed", "connected": False}
+
+        try:
+            self.settings.persist_qbit_config(candidate)
+        except OSError:
+            await new_qbit.close()
+            raise
+
+        await self.replace_qbit(new_qbit)
+        self.settings.commit_qbit_config(candidate)
+        return {"status": "ok", "connected": True}
 
 
 RuntimeContext = QBitRuntime

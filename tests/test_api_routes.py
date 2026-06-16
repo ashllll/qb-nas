@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
 from magnet_harvester.api.routes import router
 from magnet_harvester.context.app_context import AppContext
-from magnet_harvester.config import Settings
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
@@ -236,15 +235,23 @@ def test_errors_routes_return_and_clear_resolved_records():
     assert cleared.json()["status"] == "cleared"
 
 
-def test_update_config_replaces_qbit_client(monkeypatch):
-    from magnet_harvester.api import routes as routes_module
+def test_update_config_replaces_qbit_client():
+    from magnet_harvester.context.app_context import QBitRuntime
+    from magnet_harvester.config import QBitConfig
 
     created = []
     persisted = []
+    committed = []
 
-    class CapturingSettings(Settings):
+    class CapturingSettings:
+        def build_qbit_config(self, host, username, password):
+            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+
         def persist_qbit_config(self, config, env_path=None):
             persisted.append(config)
+
+        def commit_qbit_config(self, config):
+            committed.append(config)
 
     class NewQbit(FakeQbit):
         def __init__(self, config):
@@ -252,10 +259,12 @@ def test_update_config_replaces_qbit_client(monkeypatch):
             self.config = config
             created.append(self)
 
-    monkeypatch.setattr(routes_module, "QBittorrentClient", NewQbit)
-    monkeypatch.setattr(routes_module, "settings", CapturingSettings())
-
     app, ctx = _make_app()
+    ctx.qbit_runtime = QBitRuntime(
+        ctx=ctx,
+        settings=CapturingSettings(),
+        client_factory=NewQbit,
+    )
     old_qbit = ctx.qbit
 
     with TestClient(app) as client:
@@ -269,19 +278,26 @@ def test_update_config_replaces_qbit_client(monkeypatch):
         )
 
     assert resp.status_code == 200
-    assert resp.json()["connected"] is True
+    assert resp.json() == {"status": "ok", "connected": True}
     assert ctx.qbit is created[0]
     assert ctx.pipeline.replaced_qbit is created[0]
     assert old_qbit.closed is True
+    assert created[0].closed is False
     assert persisted == [created[0].config]
+    assert committed == [created[0].config]
 
 
-def test_update_config_keeps_current_client_when_candidate_cannot_connect(monkeypatch):
-    from magnet_harvester.api import routes as routes_module
+def test_update_config_keeps_current_client_when_candidate_cannot_connect():
+    from magnet_harvester.context.app_context import QBitRuntime
+    from magnet_harvester.config import QBitConfig
 
+    created = []
     persisted = []
 
-    class CapturingSettings(Settings):
+    class CapturingSettings:
+        def build_qbit_config(self, host, username, password):
+            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+
         def persist_qbit_config(self, config, env_path=None):
             persisted.append(config)
 
@@ -290,10 +306,14 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect(monkey
             super().__init__()
             self.config = config
             self.ping_ok = False
+            created.append(self)
 
-    monkeypatch.setattr(routes_module, "QBittorrentClient", OfflineQbit)
-    monkeypatch.setattr(routes_module, "settings", CapturingSettings())
     app, ctx = _make_app()
+    ctx.qbit_runtime = QBitRuntime(
+        ctx=ctx,
+        settings=CapturingSettings(),
+        client_factory=OfflineQbit,
+    )
     old_qbit = ctx.qbit
 
     with TestClient(app) as client:
@@ -310,7 +330,51 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect(monkey
     assert resp.json() == {"status": "failed", "connected": False}
     assert ctx.qbit is old_qbit
     assert old_qbit.closed is False
+    assert created[0].closed is True
     assert persisted == []
+
+
+def test_update_config_returns_500_when_persist_fails():
+    from magnet_harvester.context.app_context import QBitRuntime
+    from magnet_harvester.config import QBitConfig
+
+    class FailingSettings:
+        def build_qbit_config(self, host, username, password):
+            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+
+        def persist_qbit_config(self, config, env_path=None):
+            raise OSError("disk full")
+
+        def commit_qbit_config(self, config):
+            raise AssertionError("should not commit after persist failure")
+
+    class NewQbit(FakeQbit):
+        def __init__(self, config):
+            super().__init__()
+            self.config = config
+
+    app, ctx = _make_app()
+    ctx.qbit_runtime = QBitRuntime(
+        ctx=ctx,
+        settings=FailingSettings(),
+        client_factory=NewQbit,
+    )
+    old_qbit = ctx.qbit
+
+    with TestClient(app) as client:
+        resp = client.put(
+            "/api/config",
+            json={
+                "qbit_host": "http://localhost:8080",
+                "qbit_username": "tester",
+                "qbit_password": "secret",
+            },
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "qBittorrent 配置持久化失败"
+    assert ctx.qbit is old_qbit
+    assert old_qbit.closed is False
 
 
 def test_update_config_rejects_invalid_candidate_without_mutating_runtime():

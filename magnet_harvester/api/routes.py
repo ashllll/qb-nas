@@ -12,7 +12,6 @@ from magnet_harvester.context.app_context import AppContext, QBitRuntime, get_co
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, error_handler
 from magnet_harvester.item_transitions import MagnetItemTransitions
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
-from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.utils.auth import require_api_key
 from magnet_harvester.utils.serializers import _item_payload, _item_summary
@@ -154,33 +153,16 @@ async def get_config():
 
 @router.put("/api/config")
 async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    host = data.get("qbit_host")
-    username = data.get("qbit_username")
-    password = data.get("qbit_password")
-
     try:
-        candidate = settings.build_qbit_config(
-            host=host,
-            username=username,
-            password=password,
+        return await _qbit_runtime(ctx).replace_qbit_config(
+            host=data.get("qbit_host"),
+            username=data.get("qbit_username"),
+            password=data.get("qbit_password"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    new_qbit = QBittorrentClient(config=candidate)
-    if not await new_qbit.ping():
-        await new_qbit.close()
-        return {"status": "failed", "connected": False}
-
-    try:
-        settings.persist_qbit_config(candidate)
     except OSError as exc:
-        await new_qbit.close()
         raise HTTPException(status_code=500, detail="qBittorrent 配置持久化失败") from exc
-
-    await _qbit_runtime(ctx).replace_qbit(new_qbit)
-    settings.commit_qbit_config(candidate)
-    return {"status": "ok", "connected": True}
 
 
 @router.delete("/api/items")
