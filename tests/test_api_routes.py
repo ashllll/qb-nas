@@ -1,13 +1,15 @@
 """
 Test api/routes.py — routes use AppContext dependency injection.
 """
+
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+
+from tests._client import asgi_client
 
 from magnet_harvester.errors import error_handler, ErrorCategory, ErrorSeverity
 from magnet_harvester.api.routes import router
@@ -128,7 +130,7 @@ def _make_app():
 def test_items_route_uses_context_store():
     app, _ctx = _make_app()
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.get("/api/items")
 
     assert resp.status_code == 200
@@ -140,7 +142,7 @@ def test_items_route_uses_context_store():
 def test_stats_route_uses_context_stats():
     app, ctx = _make_app()
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.get("/api/stats")
 
     assert resp.status_code == 200
@@ -154,7 +156,7 @@ def test_stats_route_uses_context_stats():
 def test_status_route_uses_context_qbit():
     app, _ctx = _make_app()
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.get("/api/status")
 
     assert resp.status_code == 200
@@ -166,7 +168,7 @@ def test_status_route_uses_context_qbit():
 def test_crawl_route_schedules_pipeline_work():
     app, ctx = _make_app()
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.post("/api/crawl", json={"url": "https://example.com", "depth": 2})
 
     assert resp.status_code == 200
@@ -178,7 +180,7 @@ def test_crawl_route_schedules_pipeline_work():
 def test_download_and_reclassify_routes_schedule_work():
     app, ctx = _make_app()
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         download = client.post("/api/download", json={"hashes": ["ABCDEF1234567890"]})
         reclassify = client.post("/api/reclassify", json={"hashes": ["ABCDEF1234567890"]})
 
@@ -192,7 +194,7 @@ def test_download_and_reclassify_routes_schedule_work():
 def test_search_clear_health_categories_and_config_routes():
     app, _ctx = _make_app()
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         search = client.get("/api/items/search", params={"q": "Example"})
         health = client.get("/api/health")
         categories = client.get("/api/categories")
@@ -223,7 +225,7 @@ def test_errors_routes_return_and_clear_resolved_records():
     app, _ctx = _make_app()
 
     try:
-        with TestClient(app) as client:
+        with asgi_client(app) as client:
             listed = client.get("/api/errors", params={"category": "qbit", "severity": "error"})
             cleared = client.post("/api/errors/clear")
     finally:
@@ -267,7 +269,7 @@ def test_update_config_replaces_qbit_client():
     )
     old_qbit = ctx.qbit
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.put(
             "/api/config",
             json={
@@ -316,7 +318,7 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
     )
     old_qbit = ctx.qbit
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.put(
             "/api/config",
             json={
@@ -361,7 +363,7 @@ def test_update_config_returns_500_when_persist_fails():
     )
     old_qbit = ctx.qbit
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.put(
             "/api/config",
             json={
@@ -381,7 +383,7 @@ def test_update_config_rejects_invalid_candidate_without_mutating_runtime():
     app, ctx = _make_app()
     old_qbit = ctx.qbit
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.put(
             "/api/config",
             json={

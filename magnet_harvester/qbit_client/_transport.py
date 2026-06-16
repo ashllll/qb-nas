@@ -48,6 +48,7 @@ class QBitTransport:
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
+            self._client.cookies.clear()
             await self._client.aclose()
             self._client = None
         self._cookie = None
@@ -58,13 +59,16 @@ class QBitTransport:
 
         try:
             client = await self._get_client()
+            if force:
+                client.cookies.clear()
             r = await client.post(
                 f"{self.host}/api/v2/auth/login",
                 data={"username": self.username, "password": self.password},
             )
 
             if r.text.strip() == "Ok.":
-                self._cookie = r.cookies
+                client.cookies = r.cookies
+                self._cookie = client.cookies
                 log.info("qBittorrent 登录成功")
                 return True
 
@@ -94,12 +98,9 @@ class QBitTransport:
 
                 client = await self._get_client()
 
-                cookies = self._cookie if self._cookie else None
-
                 r = await client.request(
                     method,
                     f"{self.host}/api/v2{path}",
-                    cookies=cookies,
                     **kw,
                 )
 
@@ -111,6 +112,7 @@ class QBitTransport:
 
                     log.warning("qBittorrent Session 过期，重新登录...")
                     self._cookie = None
+                    client.cookies.clear()
                     auth_retry_count += 1
                     ok = await self._login(force=True)
                     if not ok:
