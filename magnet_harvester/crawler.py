@@ -16,7 +16,7 @@ import logging
 import re
 import time
 from contextvars import ContextVar
-from typing import AsyncGenerator, List, Optional, Set
+from typing import AsyncGenerator, List, Optional, Protocol, Set, runtime_checkable
 
 from crawl4ai import (
     AsyncWebCrawler,

@@ -10,7 +10,6 @@ class TorrentStatusMapper:
         state = str(torrent.get("state", "") or "")
         progress = float(torrent.get("progress") or 0.0)
 
-        queued_states: set[str] = set()
         downloading_states = {
             "downloading",
             "forcedDL",
@@ -38,10 +37,9 @@ class TorrentStatusMapper:
             status = TaskStatus.success
         elif state in downloading_states or 0.0 < progress < 1.0:
             status = TaskStatus.downloading
-        elif state in queued_states:
-            status = TaskStatus.queued
         else:
-            status = TaskStatus.queued
+            # Unknown qB state — map to error to surface anomalies
+            status = TaskStatus.error
 
         return {
             "status": status,

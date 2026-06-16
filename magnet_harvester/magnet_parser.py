@@ -35,7 +35,7 @@ MAGNET_FULL_RE = re.compile(
 
 HASH_RE = re.compile(rf'btih:({BTIH_VALUE_PATTERN})(?![a-zA-Z0-9])', re.IGNORECASE)
 
-SIZE_RE = re.compile(r'xl=(?:(\d+)|size=(\d+))', re.IGNORECASE)
+SIZE_RE = re.compile(r'(?:xl|size)=(\d+)', re.IGNORECASE)
 
 BASE64_MAGNET_RE = re.compile(
     r'bWFnbmV0[a-zA-Z0-9+/]{10,250}={0,2}',
@@ -84,7 +84,7 @@ def parse_magnet(raw: str) -> Optional[dict]:
     name = urllib.parse.unquote_plus(dn_match.group(1)) if dn_match else f"Unknown_{btih[:8]}"
 
     xl_match = SIZE_RE.search(raw)
-    size = xl_match.group(1) or xl_match.group(2) if xl_match else None
+    size = xl_match.group(1) if xl_match else None
 
     return {
         "hash": btih,

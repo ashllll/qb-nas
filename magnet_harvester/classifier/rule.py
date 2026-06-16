@@ -7,7 +7,7 @@ a consistent shape: category, confidence, reason, save_path.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from magnet_harvester.classifier.fallback import make_fallback
 from magnet_harvester.classifier.keyword_recognizer import KeywordCategoryRecognizer
@@ -85,19 +85,3 @@ class FallbackRule:
         )
 
 
-# ── Phase Protocols ──────────────────────────
-
-
-@runtime_checkable
-class UsageStats(Protocol):
-    """Protocol for usage stats — implemented by _NullUsageStats and AI classifiers."""
-    def as_dict(self) -> dict: ...
-
-
-@runtime_checkable
-class ClassifyPhase(Protocol):
-    """Protocol for classify adapters — implemented by LocalClassifier."""
-    async def classify_stream_batch(self, items: List[dict], on_result: Callable[[int, dict], None] | None = None) -> None: ...
-    @property
-    def usage(self) -> UsageStats: ...
-    def get_cache_stats(self) -> dict: ...

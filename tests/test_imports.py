@@ -22,8 +22,7 @@ def test_core_modules_import_and_instantiate():
     from magnet_harvester.models import CrawlRequest, MagnetItem, TaskStatus
     from magnet_harvester.pipeline import HarvestPipeline
     from magnet_harvester.crawler import CrawlPhase
-    from magnet_harvester.classifier.rule import ClassifyPhase
-    from magnet_harvester.qbit_client.client import DownloadPhase
+    from magnet_harvester.pipeline import ClassifyPhase, DownloadPhase
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.store import FakeStore, InMemoryItemStore, ItemStore, StoreStats
     from magnet_harvester.classifier.keyword_recognizer import KeywordCategoryRecognizer

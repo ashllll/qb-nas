@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from magnet_harvester.pipeline import HarvestPipeline
     from magnet_harvester.crawler import MagnetCrawler
     from magnet_harvester.classifier import LocalClassifier
-    from magnet_harvester.item_transitions import MagnetItemTransitions
+    from magnet_harvester.transitions import MagnetItemTransitions
 
 
 class StatsTracker(Protocol):

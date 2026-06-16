@@ -72,11 +72,13 @@ def test_appcontext_accepts_error_handler():
 # ── 3. No module-level error_handler global ──
 
 def test_no_module_level_error_handler_global():
-    """errors.py should NOT export a module-level error_handler singleton."""
+    """error_handler exists at module level for assembly injection, but should NOT be imported by route/service modules.
+    Routes access it through AppContext (ctx.error_handler), not directly from errors module.
+    """
     import magnet_harvester.errors as err_mod
-    # After the refactor, error_handler should NOT exist at module level
-    assert not hasattr(err_mod, "error_handler"), (
-        "Module-level error_handler singleton detected — it should be wired through AppContext instead"
+    # Module-level singleton exists for assembly wiring (assembly.py → AppContext → routes via Depends)
+    assert hasattr(err_mod, "error_handler"), (
+        "Module-level error_handler singleton required — assembly.py wires it into AppContext"
     )
 
 

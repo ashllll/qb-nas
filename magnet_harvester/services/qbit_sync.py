@@ -9,7 +9,7 @@ from typing import Protocol
 
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import TaskStatus
 from magnet_harvester.store import ItemStore
 
@@ -81,7 +81,7 @@ class QBitSyncLoop:
 
             tracked_items = [
                 item
-                for item in store.list(limit=10000)
+                for item in store.list(limit=store.count)
                 if item.status
                 in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
             ]

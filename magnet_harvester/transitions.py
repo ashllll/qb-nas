@@ -83,3 +83,65 @@ class MagnetItemTransitions:
         self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg)
         await self._events.emit_item_changed(hash_key)
         await self._events.emit_download_result(hash_key, previous_status=TaskStatus.adding)
+
+    # ── 以下方法来自 item_transitions.py（移植版，使用 ItemEventEmitter 委托）──
+
+    async def clipboard_found(self, item: MagnetItem) -> bool:
+        """found + emit_item_changed（剪贴板入口专用）"""
+        if not await self.found(item):
+            return False
+        await self._events.emit_item_changed(item.hash)
+        return True
+
+    async def manually_classified(self, hash_key: str, category: str) -> bool:
+        """手动分类：更新 + CLASSIFY_DONE + emit_item_changed"""
+        if not self._store.update(hash_key, category=category, save_path=""):
+            return False
+        await self._bus.emit(Event(EventType.CLASSIFY_DONE, {
+            "hash": hash_key,
+            "category": category,
+            "confidence": "manual",
+            "reason": "手动修改",
+        }))
+        await self._events.emit_item_changed(hash_key)
+        return True
+
+    async def download_removed(self, hash_key: str, previous_status: TaskStatus | None):
+        """种子已从 qBittorrent 中消失"""
+        self._store.update(
+            hash_key,
+            status=TaskStatus.error,
+            error_msg="种子已从 qBittorrent 中消失",
+            torrent_state="removed",
+        )
+        await self.download_state_changed(hash_key, previous_status)
+
+    async def download_status_changed(
+        self,
+        hash_key: str,
+        *,
+        fields: dict,
+        previous_status: TaskStatus | None,
+    ):
+        """同步 qB 状态：更新字段 + download_state_changed"""
+        if not fields:
+            return
+        if not self._store.update(hash_key, **fields):
+            return
+        await self.download_state_changed(hash_key, previous_status)
+
+    async def download_state_changed(
+        self,
+        hash_key: str,
+        previous_status: TaskStatus | None = None,
+    ):
+        """emit_item_changed + 有条件 emit_download_result"""
+        await self._events.emit_item_changed(hash_key)
+        await self._events.emit_download_result(hash_key, previous_status)
+
+    async def cleared(self) -> int:
+        """清空全部 + ITEMS_CLEARED"""
+        count = self._store.count
+        self._store.clear()
+        await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
+        return count

@@ -5,7 +5,7 @@ import asyncio
 from typing import Protocol
 
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
-from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.store import ItemStore
 
 

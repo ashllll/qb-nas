@@ -11,7 +11,7 @@ from magnet_harvester.config import settings
 from magnet_harvester.context.app_context import AppContext, QBitRuntime
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.errors import error_handler
-from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.services.agent_tools import ToolExecutor

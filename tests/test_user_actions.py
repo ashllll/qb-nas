@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.bus import MessageBus
-from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import InMemoryItemStore
 

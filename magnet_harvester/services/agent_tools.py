@@ -7,7 +7,7 @@ from typing import Protocol
 
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import item_summary

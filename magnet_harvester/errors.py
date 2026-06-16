@@ -95,7 +95,12 @@ class ErrorHandler:
             if len(self._errors) > self._max_errors:
                 self._cleanup_old_errors()
 
-        if severity in (ErrorSeverity.ERROR, ErrorSeverity.CRITICAL):
+        if severity == ErrorSeverity.ERROR:
+            log.error(
+                f"Error [{record.error_id}]: {record.message}",
+                extra={"details": record.details}
+            )
+        elif severity == ErrorSeverity.CRITICAL:
             log.critical(
                 f"Critical error [{record.error_id}]: {record.message}",
                 extra={"details": record.details}
@@ -147,5 +152,7 @@ class ErrorHandler:
             del self._errors[eid]
         log.info(f"已清理 {len(resolved)} 个已解决的错误记录")
 
-
+
+# Module-level singleton
+error_handler = ErrorHandler()
 

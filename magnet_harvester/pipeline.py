@@ -5,14 +5,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List
+from typing import AsyncGenerator, Callable, List, Protocol, runtime_checkable
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import ItemStore
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.crawler import CrawlPhase
 
 log = logging.getLogger(__name__)
 
@@ -22,14 +22,6 @@ log = logging.getLogger(__name__)
 @runtime_checkable
 class UsageStats(Protocol):
     def as_dict(self) -> dict: ...
-
-
-@runtime_checkable
-class CrawlPhase(Protocol):
-    @property
-    def max_depth(self) -> int: ...
-    async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
-    async def admit_url(self, url: str) -> str: ...
 
 
 @runtime_checkable

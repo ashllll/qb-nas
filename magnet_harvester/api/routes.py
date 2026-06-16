@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from magnet_harvester.config import settings
 from magnet_harvester.context.app_context import AppContext, QBitRuntime, get_context
-from magnet_harvester.errors import ErrorCategory, ErrorSeverity, error_handler
-from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.errors import ErrorCategory, ErrorSeverity
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.utils.auth import require_api_key
@@ -36,10 +36,12 @@ def _qbit_runtime(ctx: AppContext) -> QBitRuntime:
 @router.get("/api/status")
 async def system_status(ctx: AppContext = Depends(get_context)):
     qbit_ok = await ctx.qbit.ping()
-    tracked = len([
-        item for item in ctx.store.list(limit=10000)
-        if item.status in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
-    ])
+    # 用 stats.by_status 聚合计数，避免全量列表扫描
+    by_status = ctx.store.stats().by_status
+    tracked = sum(
+        by_status.get(s.value, 0)
+        for s in (TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading)
+    )
     return {
         "qbittorrent": "online" if qbit_ok else "offline",
         "classifier": "local_rules",
