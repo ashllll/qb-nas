@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import ipaddress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings
@@ -16,9 +17,19 @@ log = logging.getLogger(__name__)
 class CrawlerConfig:
     timeout: int = 30
     max_depth: int = 2
-    concurrency: int = 3
+    concurrency: int = 6
+    max_detail_links: int = 200
     headless: bool = True
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
+    wait_until: str = "load"
+    delay_before_return_html: float = 1.0
+    scan_full_page: bool = True
+    scroll_delay: float = 0.2
+    max_scroll_steps: int = 8
+    process_iframes: bool = True
+    flatten_shadow_dom: bool = True
+    remove_overlay_elements: bool = True
+    remove_consent_popups: bool = True
 
 
 @dataclass
@@ -26,7 +37,7 @@ class QBitConfig:
     host: str = "http://192.168.1.100:8080"
     username: str = "admin"
     password: str = "adminadmin"
-    fs_base_path: str = ""  # 真实文件系统路径，用于 mkdir（如 Z:\downloads）
+    fs_base_path: str = ""
 
 
 @dataclass
@@ -47,9 +58,19 @@ class Settings(BaseSettings):
 
     CRAWLER_TIMEOUT: int = 30
     CRAWLER_MAX_DEPTH: int = 2
-    CRAWLER_CONCURRENCY: int = 3
+    CRAWLER_CONCURRENCY: int = 6
+    CRAWLER_MAX_DETAIL_LINKS: int = 200
     CRAWLER_HEADLESS: bool = True
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
+    CRAWLER_WAIT_UNTIL: str = "load"
+    CRAWLER_DELAY_BEFORE_HTML: float = 1.0
+    CRAWLER_SCAN_FULL_PAGE: bool = True
+    CRAWLER_SCROLL_DELAY: float = 0.2
+    CRAWLER_MAX_SCROLL_STEPS: int = 8
+    CRAWLER_PROCESS_IFRAMES: bool = True
+    CRAWLER_FLATTEN_SHADOW_DOM: bool = True
+    CRAWLER_REMOVE_OVERLAYS: bool = True
+    CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
 
@@ -88,8 +109,18 @@ class Settings(BaseSettings):
                 timeout=self.CRAWLER_TIMEOUT,
                 max_depth=self.CRAWLER_MAX_DEPTH,
                 concurrency=self.CRAWLER_CONCURRENCY,
+                max_detail_links=self.CRAWLER_MAX_DETAIL_LINKS,
                 headless=self.CRAWLER_HEADLESS,
                 allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
+                wait_until=self.CRAWLER_WAIT_UNTIL,
+                delay_before_return_html=self.CRAWLER_DELAY_BEFORE_HTML,
+                scan_full_page=self.CRAWLER_SCAN_FULL_PAGE,
+                scroll_delay=self.CRAWLER_SCROLL_DELAY,
+                max_scroll_steps=self.CRAWLER_MAX_SCROLL_STEPS,
+                process_iframes=self.CRAWLER_PROCESS_IFRAMES,
+                flatten_shadow_dom=self.CRAWLER_FLATTEN_SHADOW_DOM,
+                remove_overlay_elements=self.CRAWLER_REMOVE_OVERLAYS,
+                remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
             )
         return self._crawler_config
 
@@ -151,6 +182,16 @@ class Settings(BaseSettings):
         self.QBIT_PASSWORD = config.password
         self._qbit_config = None
 
+    def persist_qbit_config(self, config: QBitConfig, env_path: str | Path | None = None) -> None:
+        """Persist qBittorrent connection settings to the .env file."""
+        path = Path(env_path or self.model_config.get("env_file", ".env"))
+        updates = {
+            "QBIT_HOST": config.host,
+            "QBIT_USERNAME": config.username,
+            "QBIT_PASSWORD": config.password,
+        }
+        self._write_env_values(path, updates)
+
     def validate_security_posture(self) -> None:
         """Reject network-exposed write endpoints without explicit protection."""
         host = self.SERVICE_HOST.strip().lower()
@@ -172,6 +213,45 @@ class Settings(BaseSettings):
     def _parse_csv_tuple(value: str) -> tuple[str, ...]:
         values = tuple(item.strip() for item in value.split(",") if item.strip())
         return values or ("2160p", "4k")
+
+    @classmethod
+    def _write_env_values(cls, path: Path, updates: dict[str, str]) -> None:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
+        remaining = dict(updates)
+        rendered: list[str] = []
+
+        for line in lines:
+            key = cls._env_line_key(line)
+            if key in remaining:
+                newline = "\n" if line.endswith("\n") else ""
+                rendered.append(f"{key}={cls._format_env_value(remaining.pop(key))}{newline}")
+            else:
+                rendered.append(line)
+
+        if remaining:
+            if rendered and not rendered[-1].endswith("\n"):
+                rendered[-1] += "\n"
+            for key, value in remaining.items():
+                rendered.append(f"{key}={cls._format_env_value(value)}\n")
+
+        path.write_text("".join(rendered), encoding="utf-8")
+
+    @staticmethod
+    def _env_line_key(line: str) -> str | None:
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            return None
+        left, _, _ = stripped.partition("=")
+        parts = left.strip().split()
+        key = parts[-1] if parts else ""
+        if not key or not key.replace("_", "").isalnum() or key[0].isdigit():
+            return None
+        return key
+
+    @staticmethod
+    def _format_env_value(value: str) -> str:
+        escaped = value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+        return f'"{escaped}"'
 
 
 settings = Settings()

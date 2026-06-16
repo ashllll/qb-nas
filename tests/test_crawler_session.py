@@ -42,15 +42,19 @@ def test_crawler_has_no_instance_level_seen_set():
 
 
 # ═══════════════════════════════════════════════════
-# 增量测试 2: crawl() 使用 gather 替代 TaskGroup
+# 增量测试 2: crawl() 使用 crawl4ai 原生批量流
 # ═══════════════════════════════════════════════════
 
-def test_crawler_uses_gather_not_taskgroup():
-    """_run_crawl_session 应使用 asyncio.gather 替代 TaskGroup"""
+def test_crawler_uses_deep_crawl_not_manual_worker_pool():
+    """_fetch_deep_stream 应使用 crawl4ai deep crawl，而不是手写 worker 池。"""
     source = _get_crawler_source()
     session_source = _find_method_source(source, "_run_crawl_session")
+    fetch_deep_source = _find_method_source(source, "_fetch_deep_stream")
+    strategy_source = _find_method_source(source, "_build_deep_crawl_strategy")
     assert "TaskGroup" not in session_source, "不应使用 TaskGroup"
-    assert "gather" in session_source, "应使用 asyncio.gather"
+    assert "create_task" not in session_source, "不应在会话层手写 worker task"
+    assert "deep_crawl_strategy" in fetch_deep_source, "_fetch_deep_stream 应使用 deep crawl"
+    assert "BFSDeepCrawlStrategy" in strategy_source, "应使用 crawl4ai BFSDeepCrawlStrategy"
 
 
 # ═══════════════════════════════════════════════════
@@ -69,18 +73,18 @@ def test_seen_set_passed_as_parameter():
     session_source = _find_method_source(source, "_run_crawl_session")
     assert "seen: Set[str]" in session_source, "_run_crawl_session 应接收 seen"
 
-    # _crawl_page 应使用 seen 参数（而非 self._global_seen）
-    page_source = _find_method_source(source, "_crawl_page")
-    assert "self._global_seen" not in page_source, "_crawl_page 不应使用 self._global_seen"
-    assert "hash_key in seen" in page_source, "_crawl_page 应使用 seen 参数"
+    # _handle_crawl_result 应使用 seen 参数（而非 self._global_seen）
+    result_source = _find_method_source(source, "_handle_crawl_result")
+    assert "self._global_seen" not in result_source, "_handle_crawl_result 不应使用 self._global_seen"
+    assert "hash_key in seen" in result_source, "_handle_crawl_result 应使用 seen 参数"
 
 
 if __name__ == "__main__":
     test_crawler_has_no_instance_level_seen_set()
     print("[PASS] test_crawler_has_no_instance_level_seen_set")
 
-    test_crawler_uses_gather_not_taskgroup()
-    print("[PASS] test_crawler_uses_gather_not_taskgroup")
+    test_crawler_uses_deep_crawl_not_manual_worker_pool()
+    print("[PASS] test_crawler_uses_deep_crawl_not_manual_worker_pool")
 
     test_seen_set_passed_as_parameter()
     print("[PASS] test_seen_set_passed_as_parameter")

@@ -9,17 +9,45 @@ from typing import List
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.crawler import CrawlPhase
-from magnet_harvester.classifier.rule import ClassifyPhase, UsageStats
-from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.qbit_client.client import DownloadPhase
+from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import ItemStore
 from magnet_harvester.transitions import MagnetItemTransitions
 
 log = logging.getLogger(__name__)
 
 
-# ── HarvestPipeline ──────────────────────────
+# ── Phase Protocols ──────────────────────────
+
+@runtime_checkable
+class UsageStats(Protocol):
+    def as_dict(self) -> dict: ...
+
+
+@runtime_checkable
+class CrawlPhase(Protocol):
+    @property
+    def max_depth(self) -> int: ...
+    async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
+    async def admit_url(self, url: str) -> str: ...
+
+
+@runtime_checkable
+class ClassifyPhase(Protocol):
+    async def classify_stream_batch(self, items: List[dict], on_result: Callable[[int, dict], None] | None = None) -> None: ...
+    @property
+    def usage(self) -> UsageStats: ...
+    def get_cache_stats(self) -> dict: ...
+
+
+@runtime_checkable
+class DownloadPhase(Protocol):
+    last_error: str | None
+    async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool: ...
+    async def ping(self) -> bool: ...
+    def close(self): ...
+    def is_healthy(self) -> bool: ...
+
 
 class HarvestPipeline:
     def __init__(
@@ -30,6 +58,7 @@ class HarvestPipeline:
         store: ItemStore,
         bus: MessageBus,
         task_manager: BackgroundTaskSpawner | None = None,
+        transitions: MagnetItemTransitions | None = None,
     ):
         self._crawler = crawler
         self._classifier = classifier
@@ -37,7 +66,7 @@ class HarvestPipeline:
         self._store = store
         self._bus = bus
         self._task_manager = task_manager
-        self._transitions = MagnetItemTransitions(store=store, bus=bus)
+        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     def _spawn(self, coro, *, name: str | None = None) -> asyncio.Task:
         if self._task_manager is not None:
@@ -46,6 +75,9 @@ class HarvestPipeline:
 
     async def admit_crawl_target(self, url: str) -> str:
         return await self._crawler.admit_url(url)
+
+    def max_crawl_depth(self) -> int:
+        return self._crawler.max_depth
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))

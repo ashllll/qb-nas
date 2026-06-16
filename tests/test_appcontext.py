@@ -1,6 +1,7 @@
 """
 测试 AppContext — 验证依赖可容器化注入
 """
+
 import sys
 import os
 import asyncio
@@ -9,7 +10,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from fastapi import FastAPI, Depends
-from fastapi.testclient import TestClient
+
+from tests._client import asgi_client
 
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
@@ -31,9 +33,12 @@ def _make_test_context() -> AppContext:
     crawler = MagnetCrawler(config=cfg)
     classifier = LocalClassifier()
     qbit = QBittorrentClient(config=QBitConfig(host="http://localhost:9999"))
-    pipeline = HarvestPipeline(crawler=crawler, classifier=classifier, qbit=qbit, store=store, bus=bus)
-    return AppContext(store=store, bus=bus, pipeline=pipeline,
-                      crawler=crawler, classifier=classifier, qbit=qbit)
+    pipeline = HarvestPipeline(
+        crawler=crawler, classifier=classifier, qbit=qbit, store=store, bus=bus
+    )
+    return AppContext(
+        store=store, bus=bus, pipeline=pipeline, crawler=crawler, classifier=classifier, qbit=qbit
+    )
 
 
 def test_appcontext_holds_deps():
@@ -53,7 +58,7 @@ def test_appcontext_in_endpoint():
 
     app.state.ctx = ctx
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.get("/test/count")
         assert resp.status_code == 200
         assert resp.json()["count"] == 0
@@ -77,7 +82,7 @@ def test_appcontext_in_lifespan():
     async def ping(ctx: AppContext = Depends(get_context)):
         return {"ok": ctx.store.count == 0}
 
-    with TestClient(app) as client:
+    with asgi_client(app) as client:
         resp = client.get("/ping")
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
@@ -122,6 +127,7 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
         def __init__(self, config):
             self.started = False
             self.stopped = False
+            self.max_depth = 3
 
         async def start(self):
             self.started = True
@@ -143,10 +149,11 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
         pass
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus, task_manager=None):
+        def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
+            self.transitions = transitions
 
         async def start(self):
             self.started = True
@@ -161,11 +168,21 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             self.active_count = 0
 
     class FakeToolExecutor:
-        def __init__(self, store, pipeline, bus, task_manager=None):
+        def __init__(
+            self,
+            store,
+            pipeline,
+            bus,
+            task_manager=None,
+            transitions=None,
+            action_executor=None,
+        ):
             self.store = store
             self.pipeline = pipeline
             self.bus = bus
             self.task_manager = task_manager
+            self.transitions = transitions
+            self.action_executor = action_executor
 
     monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
     monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
@@ -196,6 +213,7 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
         def __init__(self, config):
             self.started = False
             self.stopped = False
+            self.max_depth = 3
             created["crawler"] = self
 
         async def start(self):
@@ -248,10 +266,11 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
             return {}
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus, task_manager=None):
+        def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
+            self.transitions = transitions
             created["sync_loop"] = self
 
         async def start(self):
@@ -276,9 +295,7 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
         assert item is not None
         assert item.category == "电影"
         assert item.status.value == "queued"
-        assert created["qbit"].added == [
-            ("magnet:?xt=urn:btih:ABCDEF1234567890", "电影", "电影")
-        ]
+        assert created["qbit"].added == [("magnet:?xt=urn:btih:ABCDEF1234567890", "电影", "电影")]
 
     assert created["crawler"].started is True
     assert created["crawler"].stopped is True
@@ -321,10 +338,12 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     from magnet_harvester.api.websocket import WSBroadcaster
     from magnet_harvester.errors import ErrorRecord
     from magnet_harvester.models import MetricSnapshot
-    from magnet_harvester.pipeline import HarvestPipeline
-    from magnet_harvester.classifier.rule import ClassifyPhase
-    from magnet_harvester.qbit_client.client import DownloadPhase
-    from magnet_harvester.transitions import MagnetItemTransitions
+    from magnet_harvester.pipeline import (
+        ClassifyPhase,
+        DownloadPhase,
+        HarvestPipeline,
+        MagnetItemTransitions,
+    )
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.services.agent_tools import ToolExecutor
     from magnet_harvester.services.qbit_sync import QBitSyncLoop

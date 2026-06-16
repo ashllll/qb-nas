@@ -10,7 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Coroutine, Dict, List
+from typing import Callable, Coroutine, Dict, Iterable, List
 
 log = logging.getLogger(__name__)
 
@@ -45,10 +45,52 @@ class Event:
 Subscriber = Callable[[Event], Coroutine[object, object, None]]
 
 
+class _EventDelivery:
+    """内部事件投递策略：并发 fan-out、超时取消、订阅者异常隔离。"""
+
+    def __init__(self, timeout: float = 1.0):
+        self._timeout = timeout
+
+    async def deliver(
+        self,
+        callbacks: Iterable[Subscriber],
+        event: Event,
+        label: str = "event",
+    ) -> None:
+        """并发调用所有回调，阻塞发送方的时间不超过策略超时。"""
+        tasks: list[asyncio.Task] = [
+            asyncio.create_task(self._safe_call(cb, event), name=f"bus:{label}")
+            for cb in callbacks
+        ]
+        if not tasks:
+            return
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=self._timeout,
+            )
+        except asyncio.TimeoutError:
+            log.debug("MessageBus: 订阅者处理超时，取消剩余任务")
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # 等待取消完成，忽略 CancelledError
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    @staticmethod
+    async def _safe_call(cb: Subscriber, event: Event) -> None:
+        try:
+            await cb(event)
+        except Exception:
+            log.debug(f"MessageBus 订阅者异常: {event.type.value}", exc_info=True)
+
+
 class MessageBus:
     def __init__(self):
         self._subscribers: Dict[EventType, List[Subscriber]] = {}
         self._global_subscribers: List[Subscriber] = []
+        self._delivery = _EventDelivery()
 
     def subscribe(self, event_type: EventType | None, callback: Subscriber):
         if event_type is None:
@@ -67,44 +109,9 @@ class MessageBus:
 
         慢订阅者不会阻塞发送方。超时的订阅者会被取消。
         """
-        tasks: list[asyncio.Task] = []
-
-        for cb in self._global_subscribers:
-            tasks.append(
-                asyncio.create_task(
-                    self._safe_call(cb, event),
-                    name="bus:global",
-                )
-            )
-        for cb in self._subscribers.get(event.type, []):
-            tasks.append(
-                asyncio.create_task(
-                    self._safe_call(cb, event),
-                    name=f"bus:{event.type.value}",
-                )
-            )
-
-        if tasks:
-            # 等待最多 1 秒，避免慢订阅者阻塞发送方
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=1.0,
-                )
-            except asyncio.TimeoutError:
-                log.debug("MessageBus: 订阅者处理超时，取消剩余任务")
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-                # 等待取消完成，忽略 CancelledError
-                await asyncio.gather(*tasks, return_exceptions=True)
-
-    @staticmethod
-    async def _safe_call(cb: Subscriber, event: Event):
-        try:
-            await cb(event)
-        except Exception:
-            log.debug(f"MessageBus 订阅者异常: {event.type.value}", exc_info=True)
+        subscribers = list(self._global_subscribers)
+        subscribers.extend(self._subscribers.get(event.type, []))
+        await self._delivery.deliver(subscribers, event, label=event.type.value)
 
 
 class NullBus(MessageBus):

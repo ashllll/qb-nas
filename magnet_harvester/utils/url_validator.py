@@ -26,6 +26,7 @@ _RFC1918_NETS = (
     ipaddress.IPv4Network("192.168.0.0/16"),
     ipaddress.IPv6Network("fc00::/7"),
 )
+REDIRECT_PROBE_TIMEOUT_SEC = 2.0
 
 
 def _is_unsafe_address(value: str) -> bool:
@@ -77,7 +78,10 @@ async def _resolve_host(hostname: str, port: int) -> list[str]:
 
 
 async def _probe_redirect(url: str) -> str | None:
-    async with httpx.AsyncClient(follow_redirects=False, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        follow_redirects=False,
+        timeout=REDIRECT_PROBE_TIMEOUT_SEC,
+    ) as client:
         response = await client.head(url)
     if response.is_redirect:
         location = response.headers.get("location")

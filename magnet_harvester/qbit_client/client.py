@@ -5,109 +5,38 @@ import asyncio
 import logging
 import re
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Protocol, runtime_checkable
 
 import httpx
 
 from magnet_harvester.config import QBitConfig
-from magnet_harvester.models import TaskStatus
+from magnet_harvester.qbit_client._transport import QBitTransport
+from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
 from magnet_harvester.qbit_client.paths import QBitPathResolver, _safe_fs_segment
+from magnet_harvester.qbit_client.stats import QBittorrentStats
 
 log = logging.getLogger(__name__)
 
 QBitApiObject = dict[str, object]
 
 
-@dataclass
-class QBittorrentStats:
-    total_added: int = 0
-    total_success: int = 0
-    total_failed: int = 0
-    consecutive_failures: int = 0
-    last_success_time: Optional[float] = None
-    last_failure_time: Optional[float] = None
-    start_time: float = field(default_factory=time.time)
-
-    @property
-    def success_rate(self) -> float:
-        if self.total_added == 0:
-            return 0.0
-        return self.total_success / self.total_added * 100
-
-    def as_dict(self) -> dict:
-        return {
-            "total_added": self.total_added,
-            "total_success": self.total_success,
-            "total_failed": self.total_failed,
-            "success_rate": round(self.success_rate, 1),
-            "consecutive_failures": self.consecutive_failures,
-            "last_success": time.strftime("%H:%M:%S", time.localtime(self.last_success_time)) if self.last_success_time else None,
-            "last_failure": time.strftime("%H:%M:%S", time.localtime(self.last_failure_time)) if self.last_failure_time else None,
-            "uptime_sec": round(time.time() - self.start_time, 1),
-        }
-
-
-class TorrentStatusMapper:
-    @staticmethod
-    def map(torrent: dict) -> dict:
-        state = str(torrent.get("state", "") or "")
-        progress = float(torrent.get("progress") or 0.0)
-
-        queued_states = {"queuedDL", "pausedDL"}
-        downloading_states = {
-            "downloading", "forcedDL", "metaDL", "stalledDL",
-            "checkingDL", "checkingResumeData", "moving",
-        }
-        success_states = {
-            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
-        }
-        error_states = {"error", "missingFiles", "unknown"}
-
-        if state in error_states:
-            status = TaskStatus.error
-        elif progress >= 1.0 or state in success_states:
-            status = TaskStatus.success
-        elif state in downloading_states or 0.0 < progress < 1.0:
-            status = TaskStatus.downloading
-        elif state in queued_states:
-            status = TaskStatus.queued
-        else:
-            status = TaskStatus.queued
-
-        return {
-            "status": status,
-            "progress": round(progress * 100, 1),
-            "torrent_state": state or None,
-        }
-
-
-@runtime_checkable
-class DownloadPhase(Protocol):
-    """Protocol for download adapters — implemented by QBittorrentClient."""
-    last_error: str | None
-    async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool: ...
-    async def ping(self) -> bool: ...
-    def close(self): ...
-    def is_healthy(self) -> bool: ...
-
-
 class QBittorrentClient:
     def __init__(self, config: QBitConfig):
         self._config = config
-        self.host     = self._config.host.rstrip("/")
+        self.host = self._config.host.rstrip("/")
         self.username = self._config.username
         self.password = self._config.password
-        self._cookie  = None
-        self._client: Optional[httpx.AsyncClient] = None
         self.stats = QBittorrentStats()
-        self._retry_config = {
-            "max_retries": 3,
-            "base_delay": 1.0,
-            "max_delay": 10.0,
-            "retry_on": [408, 429, 500, 502, 503, 504],
-        }
+        self._transport = QBitTransport(
+            host=self.host,
+            username=self.username,
+            password=self.password,
+            stats=self.stats,
+        )
+        self._ping_cache_ttl = 5.0
+        self._last_ping_at = 0.0
+        self._last_ping_result: bool | None = None
         self._cached_default_path: str | None = None
         self._category_locks: dict[str, asyncio.Lock] = {}
         self.last_error: str | None = None
@@ -119,127 +48,33 @@ class QBittorrentClient:
             get_torrents=self._get_torrents_list,
         )
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-            self._client = httpx.AsyncClient(
-                limits=limits,
-                timeout=httpx.Timeout(connect=10, read=30, write=30, pool=30),
-            )
-        return self._client
+    @property
+    def _client(self):
+        return self._transport._client
+
+    @_client.setter
+    def _client(self, value):
+        self._transport._client = value
 
     async def close(self):
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-            self._client = None
-        self._cookie = None
-
-    async def _login(self, force: bool = False) -> bool:
-        if not force and self._cookie:
-            return True
-        
-        try:
-            client = await self._get_client()
-            r = await client.post(
-                f"{self.host}/api/v2/auth/login",
-                data={"username": self.username, "password": self.password},
-            )
-            
-            if r.text.strip() == "Ok.":
-                self._cookie = r.cookies
-                log.info("qBittorrent 登录成功")
-                return True
-            
-            log.error(f"qBittorrent 登录失败: {r.text[:100]}")
-            self.stats.consecutive_failures += 1
-            self.stats.last_failure_time = time.time()
-            return False
-            
-        except Exception as e:
-            log.error(f"qBittorrent 登录异常: {e}")
-            self.stats.consecutive_failures += 1
-            self.stats.last_failure_time = time.time()
-            return False
-
-    async def _req_with_retry(self, method: str, path: str, **kw) -> httpx.Response:
-        config = self._retry_config
-        last_exception = None
-        auth_retry_count = 0
-        max_auth_retries = 2
-        
-        for attempt in range(config["max_retries"]):
-            try:
-                if not self._cookie:
-                    ok = await self._login()
-                    if not ok:
-                        raise RuntimeError("qBittorrent 登录失败")
-
-                client = await self._get_client()
-                
-                cookies = self._cookie if self._cookie else None
-                
-                r = await client.request(
-                    method,
-                    f"{self.host}/api/v2{path}",
-                    cookies=cookies,
-                    **kw
-                )
-
-                if r.status_code == 403:
-                    if auth_retry_count >= max_auth_retries:
-                        raise RuntimeError(f"qBittorrent Session 过期（已重试{max_auth_retries}次）")
-                    
-                    log.warning("qBittorrent Session 过期，重新登录...")
-                    self._cookie = None
-                    auth_retry_count += 1
-                    ok = await self._login(force=True)
-                    if not ok:
-                        raise RuntimeError("qBittorrent 重新登录失败")
-                    continue
-
-                if r.status_code in config["retry_on"] and attempt < config["max_retries"] - 1:
-                    delay = min(config["base_delay"] * (2 ** attempt), config["max_delay"])
-                    log.warning(f"qBittorrent 请求失败 ({r.status_code})，{delay:.1f}秒后重试...")
-                    await asyncio.sleep(delay)
-                    continue
-
-                return r
-
-            except httpx.TimeoutException as e:
-                last_exception = e
-                if attempt < config["max_retries"] - 1:
-                    delay = min(config["base_delay"] * (2 ** attempt), config["max_delay"])
-                    log.warning(f"qBittorrent 请求超时，{delay:.1f}秒后重试...")
-                    await asyncio.sleep(delay)
-                else:
-                    log.error(f"qBittorrent 请求超时（已重试{config['max_retries']}次）")
-                    
-            except httpx.ConnectError as e:
-                last_exception = e
-                if attempt < config["max_retries"] - 1:
-                    delay = min(config["base_delay"] * (2 ** attempt), config["max_delay"])
-                    log.warning(f"qBittorrent 连接失败，{delay:.1f}秒后重试...")
-                    await asyncio.sleep(delay)
-                else:
-                    log.error(f"qBittorrent 连接失败（已重试{config['max_retries']}次）")
-
-            except Exception as e:
-                last_exception = e
-                log.error(f"qBittorrent 请求异常: {e}")
-                break
-
-        raise last_exception or RuntimeError("qBittorrent 请求失败")
+        await self._transport.close()
 
     async def _req(self, method: str, path: str, **kw) -> httpx.Response:
-        return await self._req_with_retry(method, path, **kw)
+        return await self._transport.request(method, path, **kw)
 
     async def ping(self) -> bool:
+        now = time.time()
+        if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
+            return self._last_ping_result
         try:
             r = await self._req("GET", "/app/version")
-            return r.status_code == 200
+            ok = r.status_code == 200
         except Exception as e:
             log.warning(f"qBittorrent ping 失败: {e}")
-            return False
+            ok = False
+        self._last_ping_at = time.time()
+        self._last_ping_result = ok
+        return ok
 
     async def get_maindata(self, rid: int = 0) -> QBitApiObject:
         try:
@@ -280,37 +115,7 @@ class QBittorrentClient:
 
     @staticmethod
     def map_torrent_status(torrent: dict) -> dict:
-        state = str(torrent.get("state", "") or "")
-        progress = float(torrent.get("progress") or 0.0)
-
-        queued_states: set[str] = set()
-        downloading_states = {
-            "downloading", "forcedDL", "metaDL", "stalledDL",
-            "checkingDL", "checkingResumeData", "moving",
-            "pausedDL",   # qB 队列管理临时暂停 → 视为下载中
-            "queuedDL",   # qB 排队等待 → 视为下载中，避免与 downloading 间震荡
-        }
-        success_states = {
-            "uploading", "stalledUP", "forcedUP", "pausedUP", "checkingUP", "queuedUP",
-        }
-        error_states = {"error", "missingFiles", "unknown"}
-
-        if state in error_states:
-            status = TaskStatus.error
-        elif progress >= 1.0 or state in success_states:
-            status = TaskStatus.success
-        elif state in downloading_states or 0.0 < progress < 1.0:
-            status = TaskStatus.downloading
-        elif state in queued_states:
-            status = TaskStatus.queued
-        else:
-            status = TaskStatus.queued
-
-        return {
-            "status": status,
-            "progress": round(progress * 100, 1),
-            "torrent_state": state or None,
-        }
+        return TorrentStatusMapper.map(torrent)
 
     async def get_torrent_properties(self, hash: str) -> QBitApiObject:
         try:

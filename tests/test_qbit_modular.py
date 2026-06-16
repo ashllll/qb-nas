@@ -44,14 +44,14 @@ def test_status_mapper_maps_downloading_states():
         assert result["status"] == TaskStatus.downloading
 
 
-def test_status_mapper_maps_queued_states():
-    """排队状态应映射为 TaskStatus.queued"""
+def test_status_mapper_maps_download_queue_states():
+    """qB 下载队列状态应保持为下载中，避免 UI 状态震荡"""
     from magnet_harvester.qbit_client import TorrentStatusMapper
 
     mapper = TorrentStatusMapper()
     for state in ["queuedDL", "pausedDL"]:
         result = mapper.map({"state": state, "progress": 0.0})
-        assert result["status"] == TaskStatus.queued
+        assert result["status"] == TaskStatus.downloading
 
 
 def test_status_mapper_progress_rounding():
@@ -115,6 +115,34 @@ def test_stats_zero_division():
     assert stats.success_rate == 0.0
 
 
+def test_qbit_ping_uses_short_cache():
+    """连续状态轮询应复用短缓存，避免 qB 离线时反复慢连接"""
+    import asyncio
+
+    from magnet_harvester.config import QBitConfig
+    from magnet_harvester.qbit_client import QBittorrentClient
+
+    class FakeResponse:
+        status_code = 200
+
+    client = QBittorrentClient(config=QBitConfig(host="http://qbit.example:8080"))
+    calls = 0
+
+    async def fake_req(_method, _path):
+        nonlocal calls
+        calls += 1
+        return FakeResponse()
+
+    client._req = fake_req
+
+    async def run():
+        assert await client.ping() is True
+        assert await client.ping() is True
+
+    asyncio.run(run())
+    assert calls == 1
+
+
 # ═══════════════════════════════════════════════════
 # 增量测试 4: 路径解析逻辑可独立测试（提取后）
 # ═══════════════════════════════════════════════════
@@ -136,7 +164,7 @@ if __name__ == "__main__":
     test_status_mapper_maps_downloading_states()
     print("[PASS] test_status_mapper_maps_downloading_states")
 
-    test_status_mapper_maps_queued_states()
+    test_status_mapper_maps_download_queue_states()
     print("[PASS] test_status_mapper_maps_queued_states")
 
     test_status_mapper_progress_rounding()

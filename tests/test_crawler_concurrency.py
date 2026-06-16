@@ -1,4 +1,4 @@
-"""Tests for crawler concurrent Set safety."""
+"""Tests for crawler concurrency configuration."""
 from __future__ import annotations
 
 import asyncio
@@ -10,40 +10,32 @@ from magnet_harvester.crawler import MagnetCrawler
 
 
 class TestCrawlerConcurrency:
-    """Verify shared Sets are safe under concurrent workers."""
+    """Verify crawl4ai receives bounded concurrency settings."""
 
     @pytest.fixture
     def crawler(self):
         return MagnetCrawler(config=CrawlerConfig())
 
-    def test_claim_unvisited_links_is_atomic(self, crawler):
-        """Simulate two workers racing to claim the same link."""
-        visited = set()
-        links = ["http://a.com/1", "http://a.com/2", "http://a.com/1"]
+    def test_run_config_passes_bounded_concurrency_to_crawl4ai(self, crawler):
+        cfg = crawler._build_run_config(stream=True)
 
-        async def worker():
-            return await crawler._claim_unvisited_links(links, visited)
+        assert cfg.semaphore_count == 6
 
-        async def main():
-            w1 = asyncio.create_task(worker())
-            w2 = asyncio.create_task(worker())
-            r1, r2 = await asyncio.gather(w1, w2)
-            return r1, r2
+    def test_worker_count_is_capped_for_browser_sessions(self):
+        crawler = MagnetCrawler(config=CrawlerConfig(concurrency=50))
 
-        r1, r2 = asyncio.run(main())
-        # The duplicate link should only appear in one result
-        all_claimed = r1 + r2
-        assert len(all_claimed) == len(set(all_claimed)), "Same link claimed by both workers"
+        assert crawler._worker_count == 8
 
     def test_seen_set_no_duplicates_under_race(self, crawler):
         """Two workers adding the same hash should not duplicate."""
         seen = set()
 
         async def worker(hash_key):
-            if hash_key in seen:
-                return False
-            seen.add(hash_key)
-            return True
+            async with crawler._seen_lock:
+                if hash_key in seen:
+                    return False
+                seen.add(hash_key)
+                return True
 
         async def main():
             w1 = asyncio.create_task(worker("abc123"))
@@ -51,6 +43,4 @@ class TestCrawlerConcurrency:
             return await asyncio.gather(w1, w2)
 
         r1, r2 = asyncio.run(main())
-        # Without a lock, both could return True (race condition)
-        # This test documents the expected behavior after fix
         assert not (r1 and r2), "Both workers claimed the same hash"

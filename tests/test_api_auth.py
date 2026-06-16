@@ -1,12 +1,13 @@
 """Tests for API key authentication middleware."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi.testclient import TestClient
 
 from magnet_harvester.bus import EventType
+from tests._client import asgi_client
 from magnet_harvester.config import settings
 from magnet_harvester.main import app
 
@@ -14,11 +15,9 @@ from magnet_harvester.main import app
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
-    with TestClient(app) as c:
+    with asgi_client(app) as c:
         ctx = c.app.state.ctx
-        ctx.pipeline.admit_crawl_target = AsyncMock(
-            return_value="https://example.com"
-        )
+        ctx.pipeline.admit_crawl_target = AsyncMock(return_value="https://example.com")
         ctx.api_key = "test-secret-key-123"
         yield c
 

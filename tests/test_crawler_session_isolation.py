@@ -1,5 +1,6 @@
 """Concurrent Crawl sessions keep independent mutable state."""
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,11 +21,22 @@ class OverlappingCrawler(MagnetCrawler):
     async def start(self):
         self._crawler = object()
 
-    async def _crawl_page(self, url, depth, visited, frontier, events, seen):
-        metrics = self._current_metrics()
-        metrics.pages_crawled += 1
-        await asyncio.sleep(0.02 if "first" in url else 0.01)
-        metrics.magnets_found += 1 if "first" in url else 2
+    async def _fetch_deep_stream(self, root_url, depth):
+        await asyncio.sleep(0.02 if "first" in root_url else 0.01)
+        count = 1 if "first" in root_url else 2
+        magnets = "\n".join(
+            f"magnet:?xt=urn:btih:{str(i + 1) * 40}&dn=Example.{i}.2160p"
+            for i in range(count)
+        )
+        yield SimpleNamespace(
+            url=root_url,
+            success=True,
+            markdown=magnets,
+            cleaned_html="",
+            html="",
+            links={},
+            metadata={"depth": 0},
+        )
 
 
 @pytest.mark.asyncio

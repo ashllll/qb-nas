@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import html
 import logging
 import re
 import urllib.parse
@@ -20,8 +21,10 @@ log = logging.getLogger(__name__)
 
 # ── 正则表达式 ──────────────────────────────
 
+BTIH_VALUE_PATTERN = r'(?:[a-fA-F0-9]{40}|[a-zA-Z2-7]{32})'
+
 MAGNET_RE = re.compile(
-    r'magnet:\?xt=urn:btih:[a-fA-F0-9]{32,40}(?![a-fA-F0-9])(?:[^\s\'"<>\)]+)?',
+    rf'magnet:\?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])(?:[^\s\'"<>\)]+)?',
     re.IGNORECASE,
 )
 
@@ -30,7 +33,7 @@ MAGNET_FULL_RE = re.compile(
     re.IGNORECASE,
 )
 
-HASH_RE = re.compile(r'btih:([a-fA-F0-9]{32,40})(?![a-fA-F0-9])', re.IGNORECASE)
+HASH_RE = re.compile(rf'btih:({BTIH_VALUE_PATTERN})(?![a-zA-Z0-9])', re.IGNORECASE)
 
 SIZE_RE = re.compile(r'xl=(?:(\d+)|size=(\d+))', re.IGNORECASE)
 
@@ -45,7 +48,7 @@ JSON_MAGNET_RE = re.compile(
 )
 
 BTIH_PATTERN_RE = re.compile(
-    r'btih:([a-fA-F0-9]{32,40})(?![a-fA-F0-9])',
+    rf'btih:({BTIH_VALUE_PATTERN})(?![a-zA-Z0-9])',
     re.IGNORECASE,
 )
 
@@ -70,7 +73,8 @@ def parse_magnet(raw: str) -> Optional[dict]:
         }
         或 None (如果无法解析)
     """
-    raw = raw.strip().rstrip("'\"").split()[0]
+    raw = html.unescape(raw.strip().rstrip("'\"")).split()[0]
+    raw = urllib.parse.unquote(raw)
     m = HASH_RE.search(raw)
     if not m:
         return None
@@ -164,29 +168,45 @@ def extract_from_text(text: str) -> List[dict]:
     """
     items: List[dict] = []
     seen: Set[str] = set()
+    text_sources = _normalise_text_sources(text)
 
     # 模式1：标准 magnet: 链接
-    for raw in MAGNET_RE.findall(text):
-        item = parse_magnet(raw)
-        if item and item["hash"] not in seen:
-            seen.add(item["hash"])
-            items.append(item)
-
-    # 模式2：Base64 编码
-    decoded_b64 = try_decode_base64(text)
-    for raw in decoded_b64:
-        item = parse_magnet(raw)
-        if item and item["hash"] not in seen:
-            seen.add(item["hash"])
-            items.append(item)
-
-    # 模式3：JSON 引号中的磁力链接
-    for m in JSON_MAGNET_RE.finditer(text):
-        raw = m.group(1) or m.group(2)
-        if raw:
+    for source in text_sources:
+        for raw in MAGNET_RE.findall(source):
             item = parse_magnet(raw)
             if item and item["hash"] not in seen:
                 seen.add(item["hash"])
                 items.append(item)
 
+    # 模式2：Base64 编码
+    for source in text_sources:
+        decoded_b64 = try_decode_base64(source)
+        for raw in decoded_b64:
+            item = parse_magnet(raw)
+            if item and item["hash"] not in seen:
+                seen.add(item["hash"])
+                items.append(item)
+
+    # 模式3：JSON 引号中的磁力链接
+    for source in text_sources:
+        for m in JSON_MAGNET_RE.finditer(source):
+            raw = m.group(1) or m.group(2)
+            if raw:
+                item = parse_magnet(raw)
+                if item and item["hash"] not in seen:
+                    seen.add(item["hash"])
+                    items.append(item)
+
     return items
+
+
+def _normalise_text_sources(text: str) -> List[str]:
+    sources: List[str] = []
+    for candidate in (
+        text,
+        html.unescape(text),
+        urllib.parse.unquote(html.unescape(text)),
+    ):
+        if candidate and candidate not in sources:
+            sources.append(candidate)
+    return sources

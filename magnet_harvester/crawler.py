@@ -13,23 +13,34 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
+import re
 import time
 from contextvars import ContextVar
-from urllib.parse import urljoin, urlparse
-from typing import AsyncGenerator, Callable, List, Optional, Protocol, Set, runtime_checkable
+from typing import AsyncGenerator, List, Optional, Set
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai import (
+    AsyncWebCrawler,
+    BrowserConfig,
+    CacheMode,
+    CrawlerRunConfig,
+)
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+from crawl4ai.deep_crawling.filters import FilterChain, URLFilter, URLPatternFilter
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_parser import extract_from_text
-from magnet_harvester.services.site_auth import parse_site_cookies, get_cookies_for_url
+from magnet_harvester.services.site_auth import parse_site_cookies
 from magnet_harvester.utils.url_validator import (
     CrawlTargetAdmission,
     URLValidationError,
 )
 
 log = logging.getLogger(__name__)
+
+DETAIL_URL_RE = re.compile(
+    r".*(/(details?|torrent|view|resource|movie|subject)/|[?&](id|tid|movie_id|detail)=).*",
+    re.IGNORECASE,
+)
 
 
 class CrawlMetrics:
@@ -38,7 +49,6 @@ class CrawlMetrics:
         self.pages_crawled = 0
         self.magnets_found = 0
         self.errors = 0
-        self.retries = 0
 
     @property
     def elapsed(self) -> float:
@@ -50,7 +60,6 @@ class CrawlMetrics:
             "pages_crawled": self.pages_crawled,
             "magnets_found": self.magnets_found,
             "errors": self.errors,
-            "retries": self.retries,
         }
 
 
@@ -64,9 +73,27 @@ class CrawlPhase(Protocol):
 
 
 def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
-    """按分辨率过滤磁力列表，只保留含指定分辨率关键词的条目"""
-    allowed_lower = {a.lower() for a in allowed}
+    """Filter crawler results to the configured resolution keywords."""
+    allowed_lower = {a.lower() for a in allowed if a}
     return [it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)]
+
+
+class CrawlAdmissionFilter(URLFilter):
+    """Apply project URL safety checks inside crawl4ai's deep crawl filter chain."""
+
+    def __init__(self, target_admission: CrawlTargetAdmission):
+        super().__init__()
+        self._target_admission = target_admission
+
+    async def apply(self, url: str) -> bool:
+        try:
+            await self._target_admission.admit_redirect_chain(url)
+        except URLValidationError:
+            self._update_stats(False)
+            log.warning("跳过不安全的详情页链接: %s", url)
+            return False
+        self._update_stats(True)
+        return True
 
 
 class MagnetCrawler:
@@ -88,8 +115,18 @@ class MagnetCrawler:
                 timeout=settings.CRAWLER_TIMEOUT,
                 max_depth=settings.CRAWLER_MAX_DEPTH,
                 concurrency=settings.CRAWLER_CONCURRENCY,
+                max_detail_links=settings.CRAWLER_MAX_DETAIL_LINKS,
                 headless=settings.CRAWLER_HEADLESS,
                 allowed_resolutions=settings.crawler.allowed_resolutions,
+                wait_until=settings.CRAWLER_WAIT_UNTIL,
+                delay_before_return_html=settings.CRAWLER_DELAY_BEFORE_HTML,
+                scan_full_page=settings.CRAWLER_SCAN_FULL_PAGE,
+                scroll_delay=settings.CRAWLER_SCROLL_DELAY,
+                max_scroll_steps=settings.CRAWLER_MAX_SCROLL_STEPS,
+                process_iframes=settings.CRAWLER_PROCESS_IFRAMES,
+                flatten_shadow_dom=settings.CRAWLER_FLATTEN_SHADOW_DOM,
+                remove_overlay_elements=settings.CRAWLER_REMOVE_OVERLAYS,
+                remove_consent_popups=settings.CRAWLER_REMOVE_CONSENT_POPUPS,
             )
         else:
             self._config = config
@@ -99,12 +136,18 @@ class MagnetCrawler:
             "crawl_session_metrics",
             default=None,
         )
-        self._visited_lock = asyncio.Lock()
         self._seen_lock = asyncio.Lock()
         self._target_admission = target_admission or CrawlTargetAdmission()
 
     async def admit_url(self, url: str) -> str:
         return await self._target_admission.admit(url)
+
+    @property
+    def max_depth(self) -> int:
+        return self._config.max_depth
+
+    def _clamp_depth(self, depth: int) -> int:
+        return max(1, min(int(depth), self._config.max_depth))
 
     @staticmethod
     def _build_site_cookies() -> list[dict]:
@@ -182,23 +225,21 @@ class MagnetCrawler:
             {"type": "done", "total": N, ...}     — 爬取完成
         """
         url = await self.admit_url(url)
+        await self._target_admission.admit_redirect_chain(url)
         if not self._crawler:
             await self.start()
 
+        effective_depth = self._clamp_depth(depth)
         self._session_metrics.set(CrawlMetrics())
         seen: Set[str] = set()
-        visited: Set[str] = {url}
-        frontier: asyncio.Queue[tuple[str, int]] = asyncio.Queue()
         events: asyncio.Queue[dict | None] = asyncio.Queue()
 
-        await frontier.put((url, depth))
         session_task = asyncio.create_task(
             self._run_crawl_session(
                 root_url=url,
-                visited=visited,
-                frontier=frontier,
                 events=events,
                 seen=seen,
+                depth=effective_depth,
             ),
             name="crawl-session",
         )
@@ -219,29 +260,26 @@ class MagnetCrawler:
     async def _run_crawl_session(
         self,
         root_url: str,
-        visited: Set[str],
-        frontier: asyncio.Queue[tuple[str, int]],
         events: asyncio.Queue[dict | None],
         seen: Set[str],
+        depth: int,
     ) -> None:
-        workers: list[asyncio.Task] = []
-
         try:
-            for idx in range(self._worker_count):
-                workers.append(
-                    asyncio.create_task(
-                        self._crawl_worker(visited, frontier, events, seen),
-                        name=f"crawl-worker:{idx}",
-                    )
+            await events.put({"type": "progress", "msg": "正在爬取...", "url": root_url, "depth": depth})
+            async for result in self._fetch_deep_stream(root_url, depth):
+                await self._handle_crawl_result(
+                    result=result,
+                    source_url=getattr(result, "url", root_url) or root_url,
+                    events=events,
+                    seen=seen,
                 )
-
-            await frontier.join()
-
-            # 安全取消所有 worker（在 gather 外取消，避免 ExceptionGroup）
-            for task in workers:
-                task.cancel()
-            await asyncio.gather(*workers, return_exceptions=True)
-
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.exception("深爬会话异常: %s", exc)
+            metrics = self._current_metrics()
+            metrics.errors += 1
+            await events.put({"type": "error", "msg": str(exc), "url": root_url})
         finally:
             metrics = self._current_metrics()
             await events.put({
@@ -252,57 +290,27 @@ class MagnetCrawler:
             })
             await events.put(None)
 
-    async def _crawl_worker(
-        self,
-        visited: Set[str],
-        frontier: asyncio.Queue[tuple[str, int]],
-        events: asyncio.Queue[dict | None],
-        seen: Set[str],
-    ) -> None:
-        while True:
-            current_url, remaining_depth = await frontier.get()
-            try:
-                await self._crawl_page(
-                    current_url,
-                    remaining_depth,
-                    visited,
-                    frontier,
-                    events,
-                    seen,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                self._current_metrics().errors += 1
-                log.warning(f"页面处理异常: {current_url} - {e}", exc_info=e)
-                await events.put({"type": "error", "msg": str(e), "url": current_url})
-            finally:
-                frontier.task_done()
-
     @property
     def _worker_count(self) -> int:
         return max(1, min(self._config.concurrency, 8))
 
-    async def _crawl_page(
+    async def _handle_crawl_result(
         self,
-        url: str,
-        depth: int,
-        visited: Set[str],
-        frontier: asyncio.Queue[tuple[str, int]],
+        result,
+        source_url: str,
         events: asyncio.Queue[dict | None],
         seen: Set[str],
     ) -> None:
         metrics = self._current_metrics()
         metrics.pages_crawled += 1
-        await events.put({"type": "progress", "msg": "正在爬取...", "url": url, "depth": depth})
-
-        result = await self._fetch_with_retry(url)
-        if result is None:
+        result_url = getattr(result, "url", source_url) or source_url
+        if not getattr(result, "success", False):
             metrics.errors += 1
-            await events.put({"type": "error", "msg": "页面加载失败", "url": url})
+            msg = getattr(result, "error_message", "") or "页面加载失败"
+            await events.put({"type": "error", "msg": msg, "url": result_url})
             return
 
-        items = self._extract_page_items(result, source_url=url)
+        items = self._extract_page_items(result, source_url=result_url)
         new_count = 0
         for item in items:
             hash_key = item["hash"]
@@ -317,50 +325,56 @@ class MagnetCrawler:
         await events.put({
             "type": "progress",
             "msg": f"发现 {new_count} 个新磁力",
-            "url": url,
+            "url": result_url,
             "metrics": metrics.as_dict(),
         })
 
-        if depth <= 1:
-            return
+    async def _fetch_deep_stream(self, root_url: str, depth: int):
+        result_stream = await self._crawler.arun(
+            root_url,
+            config=self._build_run_config(
+                stream=True,
+                deep_crawl_strategy=self._build_deep_crawl_strategy(depth),
+            ),
+        )
+        async for result in result_stream:
+            yield result
 
-        detail_links = self._extract_detail_links(url, result.links)
-        claimed = await self._claim_unvisited_links(detail_links, visited)
-        if claimed:
-            await events.put({
-                "type": "progress",
-                "msg": f"并发排队 {len(claimed)} 个详情页",
-                "url": url,
-                "depth": depth,
-            })
+    def _build_deep_crawl_strategy(self, depth: int) -> BFSDeepCrawlStrategy:
+        return BFSDeepCrawlStrategy(
+            max_depth=max(0, depth - 1),
+            filter_chain=FilterChain([
+                URLPatternFilter(DETAIL_URL_RE, use_glob=False),
+                CrawlAdmissionFilter(self._target_admission),
+            ]),
+            include_external=False,
+            max_pages=max(1, self._config.max_detail_links + 1),
+            logger=log,
+        )
 
-        for link in claimed:
-            await frontier.put((link, depth - 1))
-
-    async def _fetch_with_retry(self, url: str):
-        for retry_count in range(3):
-            try:
-                await self._target_admission.admit_redirect_chain(url)
-                run_cfg = CrawlerRunConfig(
-                    cache_mode=CacheMode.ENABLED,
-                    word_count_threshold=1,
-                    verbose=False,
-                    page_timeout=self._config.timeout * 1000,
-                )
-                result = await self._crawler.arun(url=url, config=run_cfg)
-                if result.success:
-                    return result
-                raise RuntimeError(getattr(result, "error_message", "") or "页面加载失败")
-            except URLValidationError:
-                raise
-            except Exception as e:
-                if retry_count >= 2:
-                    log.warning(f"页面加载最终失败: {url} - {e}")
-                    return None
-                self._current_metrics().retries += 1
-                delay = 2 ** retry_count + random.uniform(0, 1)
-                log.info(f"页面加载失败，重试 {retry_count + 1}: {url} - {e}")
-                await asyncio.sleep(delay)
+    def _build_run_config(
+        self,
+        stream: bool = False,
+        deep_crawl_strategy: BFSDeepCrawlStrategy | None = None,
+    ) -> CrawlerRunConfig:
+        return CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            word_count_threshold=1,
+            verbose=False,
+            stream=stream,
+            page_timeout=self._config.timeout * 1000,
+            wait_until=self._config.wait_until,
+            delay_before_return_html=self._config.delay_before_return_html,
+            scan_full_page=self._config.scan_full_page,
+            scroll_delay=self._config.scroll_delay,
+            max_scroll_steps=self._config.max_scroll_steps,
+            process_iframes=self._config.process_iframes,
+            flatten_shadow_dom=self._config.flatten_shadow_dom,
+            remove_overlay_elements=self._config.remove_overlay_elements,
+            remove_consent_popups=self._config.remove_consent_popups,
+            deep_crawl_strategy=deep_crawl_strategy,
+            semaphore_count=self._worker_count,
+        )
 
     def _extract_page_items(self, result, source_url: str) -> List[dict]:
         content_sources: List[str] = []
@@ -378,53 +392,3 @@ class MagnetCrawler:
         for item in items:
             item.setdefault("source_url", source_url)
         return items
-
-    def _extract_detail_links(self, parent_url: str, links: dict | None) -> List[str]:
-        if not links:
-            return []
-
-        parsed_parent = urlparse(parent_url)
-        internal_links = links.get("internal", []) or []
-        detail_links: List[str] = []
-        seen_links: Set[str] = set()
-
-        for link in internal_links:
-            href = link.get("href", "") if isinstance(link, dict) else str(link)
-            if not href or href in seen_links:
-                continue
-
-            href = urljoin(parent_url, href)
-            parsed = urlparse(href)
-            if parsed_parent.netloc and parsed.netloc and parsed_parent.netloc != parsed.netloc:
-                continue
-
-            path = parsed.path.lower()
-            query = parsed.query.lower()
-            is_detail = any(token in path for token in (
-                "/details/", "/detail/", "/torrent/", "/view/", "/resource/", "/movie/", "/subject/",
-            )) or any(token in query for token in ("id=", "tid=", "movie_id=", "detail="))
-
-            if not is_detail:
-                continue
-
-            seen_links.add(href)
-            detail_links.append(href)
-            if len(detail_links) >= 50:
-                break
-
-        return detail_links
-
-    async def _claim_unvisited_links(self, links: List[str], visited: Set[str]) -> List[str]:
-        claimed: List[str] = []
-        for link in links:
-            try:
-                await self.admit_url(link)
-            except URLValidationError:
-                log.warning("跳过不安全的详情页链接: %s", link)
-                continue
-            async with self._visited_lock:
-                if link in visited:
-                    continue
-                visited.add(link)
-                claimed.append(link)
-        return claimed

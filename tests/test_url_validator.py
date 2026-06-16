@@ -5,6 +5,7 @@ import pytest
 
 from magnet_harvester.utils.url_validator import (
     CrawlTargetAdmission,
+    REDIRECT_PROBE_TIMEOUT_SEC,
     URLValidationError,
     validate_crawl_url,
 )
@@ -76,6 +77,10 @@ class TestValidateCrawlUrl:
 
     def test_accepts_public_ip_https(self):
         assert validate_crawl_url("https://1.1.1.1") is True
+
+
+def test_redirect_probe_timeout_is_short_for_crawl_speed():
+    assert REDIRECT_PROBE_TIMEOUT_SEC == 2.0
 
 
 @pytest.mark.asyncio

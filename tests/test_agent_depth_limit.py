@@ -12,8 +12,12 @@ from magnet_harvester.bus import MessageBus
 
 
 class FakePipeline:
-    def __init__(self):
+    def __init__(self, max_depth=2):
+        self.max_depth = max_depth
         self.last_depth = None
+
+    def max_crawl_depth(self):
+        return self.max_depth
 
     async def admit_crawl_target(self, url):
         return url
@@ -30,7 +34,7 @@ class FakePipeline:
 
 @pytest.mark.asyncio
 async def test_start_crawl_depth_clamped():
-    """验证 depth 被限制在 1-3 范围内"""
+    """验证 depth 被限制在 1-min(3, max_crawl_depth) 范围内"""
     store = InMemoryItemStore()
     bus = MessageBus()
     pipeline = FakePipeline()
@@ -42,20 +46,34 @@ async def test_start_crawl_depth_clamped():
     await asyncio.sleep(0.1)
     assert pipeline.last_depth == 1
 
-    # depth = 5 → 限制为 3
+    # depth = 5 → 限制为 pipeline max_depth (2)
     result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 5})
-    assert result["depth"] == 3
+    assert result["depth"] == 2
     await asyncio.sleep(0.1)
-    assert pipeline.last_depth == 3
+    assert pipeline.last_depth == 2
 
-    # depth = 10 → 限制为 3
+    # depth = 10 → 限制为 pipeline max_depth (2)
     result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 10})
-    assert result["depth"] == 3
+    assert result["depth"] == 2
     await asyncio.sleep(0.1)
-    assert pipeline.last_depth == 3
+    assert pipeline.last_depth == 2
 
     # depth = 2 → 保持不变
     result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 2})
     assert result["depth"] == 2
     await asyncio.sleep(0.1)
     assert pipeline.last_depth == 2
+
+
+@pytest.mark.asyncio
+async def test_start_crawl_respects_pipeline_max_depth():
+    """当 pipeline 允许更深时，硬上限 3 仍然生效"""
+    store = InMemoryItemStore()
+    bus = MessageBus()
+    pipeline = FakePipeline(max_depth=5)
+    executor = ToolExecutor(store, pipeline, bus)
+
+    result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 10})
+    assert result["depth"] == 3
+    await asyncio.sleep(0.1)
+    assert pipeline.last_depth == 3

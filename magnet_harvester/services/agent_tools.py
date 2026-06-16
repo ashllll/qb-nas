@@ -3,23 +3,21 @@ ToolExecutor — dispatches agent tool calls to store/pipeline operations.
 """
 from __future__ import annotations
 
-import asyncio
-import logging
 from typing import Protocol
 
-from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
+from magnet_harvester.item_transitions import MagnetItemTransitions
+from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import item_summary
-
-log = logging.getLogger(__name__)
-
 
 class PipelineToolTarget(Protocol):
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
     async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
     async def reclassify(self, hashes: list[str]): ...
+    def max_crawl_depth(self) -> int: ...
 
 
 class ToolExecutor:
@@ -31,20 +29,23 @@ class ToolExecutor:
         pipeline: PipelineToolTarget | None,
         bus: MessageBus,
         task_manager: BackgroundTaskSpawner | None = None,
+        transitions: MagnetItemTransitions | None = None,
+        action_executor: UserActionExecutor | None = None,
     ):
         self._store = store
         self._pipeline = pipeline
         self._bus = bus
         self._task_manager = task_manager
-
-    def _spawn(self, coro, name: str):
-        if self._task_manager is not None:
-            return self._task_manager.create(coro, name=name)
-        return asyncio.create_task(coro, name=name)
+        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
+        self._actions = action_executor or UserActionExecutor(
+            store=store,
+            pipeline=pipeline,
+            task_manager=task_manager,
+            transitions=self._transitions,
+        )
 
     async def execute(self, name: str, inp: dict) -> dict:
         store = self._store
-        pipeline = self._pipeline
 
         if name == "get_stats":
             s = store.stats()
@@ -59,50 +60,27 @@ class ToolExecutor:
 
         if name == "start_crawl":
             url = inp.get("url", "").strip()
-            if not url:
-                return {"status": "error", "reason": "url 不能为空"}
             try:
-                await pipeline.admit_crawl_target(url)
+                return await self._actions.start_crawl(
+                    url,
+                    depth=int(inp.get("depth", 1)),
+                    auto_download=False,
+                )
             except ValueError as exc:
                 return {"status": "error", "reason": str(exc)}
-            depth = int(inp.get("depth", 1))
-            depth = max(1, min(depth, 3))  # 限制深度 1-3，防止指数爆炸
-            self._spawn(
-                pipeline.execute(url, depth=depth, auto_download=False),
-                name=f"crawl:{url[:40]}",
-            )
-            return {"status": "started", "url": url, "depth": depth}
 
         if name == "add_to_queue":
             hashes = inp.get("hashes", [])
             if hashes == ["all"]:
-                pending = store.get_pending()
-                hashes = [i.hash for i in pending]
-            self._spawn(pipeline.download(hashes), name="download_batch")
-            return {"status": "started", "count": len(hashes)}
+                return await self._actions.download_pending()
+            return await self._actions.download(hashes, task_name="download_batch")
 
         if name == "reclassify_item":
             h = inp.get("hash", "")
             cat = inp.get("category", "")
             if len(h) < 8:
                 return {"status": "error", "reason": "hash 至少需要 8 位前缀"}
-            matches = store.get_hashes_by_prefix(h)
-            if matches:
-                match = matches[0]
-                store.update(match, category=cat, save_path="")
-                await self._bus.emit(
-                    Event(
-                        EventType.CLASSIFY_DONE,
-                        {
-                            "hash": match,
-                            "category": cat,
-                            "confidence": "manual",
-                            "reason": "手动修改",
-                        },
-                    )
-                )
-                return {"status": "ok", "hash": match, "new_category": cat}
-            return {"status": "not_found", "hash": h}
+            return await self._actions.manually_reclassify(h, cat)
 
         if name == "search_items":
             query = inp.get("query", "")
@@ -112,9 +90,6 @@ class ToolExecutor:
         if name == "clear_all":
             if not inp.get("confirm"):
                 return {"status": "cancelled", "reason": "需要 confirm=true"}
-            count = store.count
-            store.clear()
-            await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
-            return {"status": "cleared", "removed": count}
+            return await self._actions.clear_items()
 
         return {"error": f"未知工具: {name}"}

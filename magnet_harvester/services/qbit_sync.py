@@ -9,7 +9,7 @@ from typing import Protocol
 
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.item_events import ItemEventEmitter
+from magnet_harvester.item_transitions import MagnetItemTransitions
 from magnet_harvester.models import TaskStatus
 from magnet_harvester.store import ItemStore
 
@@ -32,6 +32,7 @@ class QBitSyncLoop:
         bus: MessageBus,
         poll_interval: float = 2.0,
         task_manager: BackgroundTaskSpawner | None = None,
+        transitions: MagnetItemTransitions | None = None,
     ):
         self._qbit = qbit_client
         self._store = store
@@ -41,7 +42,7 @@ class QBitSyncLoop:
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
-        self._events = ItemEventEmitter(store=store, bus=bus)
+        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     async def start(self):
         if self._task_manager is not None:
@@ -62,12 +63,6 @@ class QBitSyncLoop:
         """Align future sync polls with a newly committed qB adapter."""
         async with self._lock:
             self._qbit = new_qbit
-
-    async def _emit_store_changed(
-        self, hash_key: str, previous_status: TaskStatus | None = None
-    ):
-        await self._events.emit_item_changed(hash_key)
-        await self._events.emit_download_result(hash_key, previous_status=previous_status)
 
     async def _run(self):
         while not self._stop_event.is_set():
@@ -113,15 +108,7 @@ class QBitSyncLoop:
                         and item.status != TaskStatus.success
                     ):
                         previous_status = item.status
-                        store.update(
-                            hash_key,
-                            status=TaskStatus.error,
-                            error_msg="种子已从 qBittorrent 中消失",
-                            torrent_state="removed",
-                        )
-                        await self._emit_store_changed(
-                            hash_key, previous_status=previous_status
-                        )
+                        await self._transitions.download_removed(hash_key, previous_status)
                     continue
 
                 mapped = qbit.map_torrent_status(torrent)
@@ -138,7 +125,8 @@ class QBitSyncLoop:
                     fields["error_msg"] = None
 
                 if fields:
-                    store.update(hash_key, **fields)
-                    await self._emit_store_changed(
-                        hash_key, previous_status=previous_status
+                    await self._transitions.download_status_changed(
+                        hash_key,
+                        fields=fields,
+                        previous_status=previous_status,
                     )

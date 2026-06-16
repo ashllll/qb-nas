@@ -1,19 +1,21 @@
 """Integration tests for SSRF protection at API level."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi.testclient import TestClient
 
 from magnet_harvester.main import app
+from tests._client import asgi_client
 
 
 @pytest.fixture
 def client(monkeypatch):
     from magnet_harvester.config import settings
+
     monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
-    with TestClient(app) as c:
+    with asgi_client(app) as c:
         yield c
 
 

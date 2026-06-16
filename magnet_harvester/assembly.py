@@ -8,15 +8,17 @@ from magnet_harvester.api.websocket import WSBroadcaster
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.classifier import LocalClassifier
 from magnet_harvester.config import settings
-from magnet_harvester.context.app_context import AppContext
+from magnet_harvester.context.app_context import AppContext, QBitRuntime
 from magnet_harvester.crawler import MagnetCrawler
-from magnet_harvester.errors import ErrorHandler
+from magnet_harvester.errors import error_handler
+from magnet_harvester.item_transitions import MagnetItemTransitions
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.services.agent_tools import ToolExecutor
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
 from magnet_harvester.services.qbit_sync import QBitSyncLoop
 from magnet_harvester.services.stats import SystemStats
+from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import InMemoryItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -46,6 +48,7 @@ def build_runtime() -> AppRuntime:
     store = InMemoryItemStore()
     bus = MessageBus()
     bg_manager = BGTaskManager()
+    item_transitions = MagnetItemTransitions(store=store, bus=bus)
     pipeline = HarvestPipeline(
         crawler=crawler,
         classifier=classifier,
@@ -53,18 +56,39 @@ def build_runtime() -> AppRuntime:
         store=store,
         bus=bus,
         task_manager=bg_manager,
+        transitions=item_transitions,
     )
     app_stats = SystemStats()
     broadcaster = WSBroadcaster(bus=bus, store=store)
+    action_executor = UserActionExecutor(
+        store=store,
+        pipeline=pipeline,
+        task_manager=bg_manager,
+        transitions=item_transitions,
+        stats=app_stats,
+    )
     sync_loop = QBitSyncLoop(
         qbit_client=qbit,
         store=store,
         bus=bus,
         task_manager=bg_manager,
+        transitions=item_transitions,
     )
-    tool_executor = ToolExecutor(store=store, pipeline=pipeline, bus=bus, task_manager=bg_manager)
-    clipboard_monitor = ClipboardMonitor(bus=bus, store=store, classifier=classifier, pipeline=pipeline)
-    error_handler = ErrorHandler()
+    tool_executor = ToolExecutor(
+        store=store,
+        pipeline=pipeline,
+        bus=bus,
+        task_manager=bg_manager,
+        transitions=item_transitions,
+        action_executor=action_executor,
+    )
+    clipboard_monitor = ClipboardMonitor(
+        bus=bus,
+        store=store,
+        classifier=classifier,
+        pipeline=pipeline,
+        transitions=item_transitions,
+    )
 
     ctx = AppContext(
         store=store,
@@ -78,9 +102,16 @@ def build_runtime() -> AppRuntime:
         bg_manager=bg_manager,
         broadcaster=broadcaster,
         tool_executor=tool_executor,
+        action_executor=action_executor,
         qbit_sync=sync_loop,
         qbit_lock=qbit_lock,
         clipboard_monitor=clipboard_monitor,
         error_handler=error_handler,
+        item_transitions=item_transitions,
+    )
+    ctx.qbit_runtime = QBitRuntime(
+        ctx=ctx,
+        settings=settings,
+        client_factory=QBittorrentClient,
     )
     return AppRuntime(ctx=ctx, sync_loop=sync_loop)
