@@ -6,7 +6,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.classifier.local_classifier import LocalClassifier
+from magnet_harvester.classifier.local_classifier import LocalClassificationEngine, LocalClassifier
 from magnet_harvester.pipeline import ClassifyPhase
 
 
@@ -14,6 +14,15 @@ def test_conforms_to_classify_phase_protocol():
     """LocalClassifier 符合 ClassifyPhase 协议"""
     clf = LocalClassifier()
     assert isinstance(clf, ClassifyPhase)
+
+
+def test_local_classification_engine_has_narrow_interface():
+    """本地规则引擎只负责名称分类，协议兼容面留给 LocalClassifier。"""
+    engine = LocalClassificationEngine()
+    result = engine.classify_name("Avatar.The.Way.of.Water.2022.2160p.BluRay")
+    assert result["category"] == "电影"
+    assert not hasattr(engine, "get_cache_stats")
+    assert not hasattr(engine, "usage")
 
 
 def test_tv_series():
@@ -63,6 +72,13 @@ def test_movie_default():
     clf = LocalClassifier()
     result = clf.classify_one("Avatar.The.Way.of.Water.2022.2160p.BluRay")
     assert result["category"] == "电影"
+
+
+def test_resolution_without_release_source_is_not_movie_default():
+    """普通标题+年份+分辨率不自动归电影，避免过宽 fallback。"""
+    clf = LocalClassifier()
+    result = clf.classify_one("Avatar.2022.2160p")
+    assert result["category"] == "其他"
 
 
 def test_unknown_default():

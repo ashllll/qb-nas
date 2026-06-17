@@ -3,18 +3,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
-from pathlib import Path
-from typing import Dict, List, Optional, Protocol, runtime_checkable
+from typing import Dict, List, Optional
 
 import httpx
 
 from magnet_harvester.config import QBitConfig
 from magnet_harvester.qbit_client._transport import QBitTransport
 from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
-from magnet_harvester.qbit_client.paths import QBitPathResolver, _safe_fs_segment
+from magnet_harvester.qbit_client.paths import QBitPathResolver
 from magnet_harvester.qbit_client.stats import QBittorrentStats
+from magnet_harvester.qbit_client.submitter import MagnetSubmitter
+from magnet_harvester.qbit_client.sync_state import QBitSyncState
 
 log = logging.getLogger(__name__)
 
@@ -40,9 +40,7 @@ class QBittorrentClient:
         self._cached_default_path: str | None = None
         self._category_locks: dict[str, asyncio.Lock] = {}
         self.last_error: str | None = None
-        self._maindata_rid = 0
-        self._torrent_snapshot: Dict[str, dict] = {}
-        self._recently_removed: set[str] = set()
+        self._sync_state = QBitSyncState()
         self._path_resolver = QBitPathResolver(
             get_categories=self.get_categories,
             get_torrents=self._get_torrents_list,
@@ -88,30 +86,10 @@ class QBittorrentClient:
 
     async def poll_torrent_snapshot(self) -> Dict[str, dict]:
         """增量同步 qB torrent 状态，并缓存当前快照。"""
-        data = await self.get_maindata(rid=self._maindata_rid)
-        if not data:
-            return dict(self._torrent_snapshot)
-
-        self._maindata_rid = data.get("rid", self._maindata_rid)
-
-        torrents = data.get("torrents", {}) or {}
-        for hash_key, info in torrents.items():
-            self._torrent_snapshot[hash_key.lower()] = info
-
-        removed = {str(h).lower() for h in data.get("torrents_removed", [])}
-        if removed:
-            self._recently_removed = removed
-            for hash_key in removed:
-                self._torrent_snapshot.pop(hash_key, None)
-        else:
-            self._recently_removed = set()
-
-        return dict(self._torrent_snapshot)
+        return await self._sync_state.poll(self.get_maindata)
 
     def take_recently_removed(self) -> set[str]:
-        removed = set(self._recently_removed)
-        self._recently_removed.clear()
-        return removed
+        return self._sync_state.take_recently_removed()
 
     @staticmethod
     def map_torrent_status(torrent: dict) -> dict:
@@ -241,78 +219,34 @@ class QBittorrentClient:
         - add 时不传 savepath，让 qB 根据分类的 savePath 自动路由
         - autoTMM=true 让 qB 自动管理分类目录
         """
-        self.stats.total_added += 1
+        def record_attempt():
+            self.stats.total_added += 1
 
-        # 0. 校验磁力格式
-        btih_match = re.search(r'btih:([A-Za-z0-9]{8,40})', magnet)
-        if not btih_match:
-            self.last_error = "磁力链接格式无效（缺少 btih）"
+        def record_success():
+            self.stats.total_success += 1
+            self.stats.consecutive_failures = 0
+            self.stats.last_success_time = time.time()
+
+        def record_failure():
             self.stats.total_failed += 1
             self.stats.consecutive_failures += 1
             self.stats.last_failure_time = time.time()
-            return False
-        btih_prefix = btih_match.group(1)[:8]
 
-        # 1. 确保分类在 qB 中存在（自动创建不存在的分类）
-        category_save_path = save_path
-        if category_save_path and not category_save_path.startswith("/"):
-            base = await self.get_base_save_path()
-            if base:
-                category_save_path = f"{base}/{category_save_path}"
-        # 即使无法拼接完整路径，也传入分类名让 ensure_category 至少创建分类
-        if not category_save_path:
-            category_save_path = save_path  # 保留原始值（如 "SexArt"），qB 可据此创建
+        def set_last_error(msg: str | None) -> None:
+            self.last_error = msg
 
-        # 2. 如果配置了 FS_BASE_PATH，先创建真实目录（qB 的 createCategory 不是 mkdir）
-        fs_base = self._config.fs_base_path.strip()
-        if fs_base:
-            (Path(fs_base) / _safe_fs_segment(category)).mkdir(parents=True, exist_ok=True)
-
-        try:
-            # 2. 确保分类存在且路径正确
-            if category_save_path:
-                category_ok = await self.ensure_category(category, category_save_path)
-                if not category_ok:
-                    log.warning(f"分类 [{category}] 创建失败")
-
-            # 3. 添加任务 — 只传 category + autoTMM，不传 savepath
-            r = await self._req("POST", "/torrents/add", data={
-                "urls":     magnet,
-                "category": category,
-                "use_auto_torrent_management":  "true",
-            })
-
-            ok = r.text.strip() == "Ok."
-
-            if ok:
-                self.stats.total_success += 1
-                self.stats.consecutive_failures = 0
-                self.stats.last_success_time = time.time()
-                log.debug(f"添加种子成功: {category}")
-            else:
-                # qB 返回 Fails. — 检查是否种子已存在（重复添加）
-                existing = await self._find_torrent_by_prefix(btih_prefix)
-                if existing:
-                    log.info(f"种子已存在于 qB (btih:{btih_prefix}…)，跳过: {existing.get('name', '?')[:40]}")
-                    self.stats.total_success += 1
-                    self.stats.consecutive_failures = 0
-                    return True
-
-                self.last_error = f"qB 拒绝 (btih:{btih_prefix}…) — {r.text.strip()[:100]}"
-                self.stats.total_failed += 1
-                self.stats.consecutive_failures += 1
-                self.stats.last_failure_time = time.time()
-                log.warning(f"add_magnet 失败: {self.last_error}")
-
-            return ok
-
-        except Exception as e:
-            self.last_error = str(e)
-            self.stats.total_failed += 1
-            self.stats.consecutive_failures += 1
-            self.stats.last_failure_time = time.time()
-            log.error(f"add_magnet 异常: {e}")
-            return False
+        submitter = MagnetSubmitter(
+            request=self._req,
+            ensure_category=self.ensure_category,
+            get_base_save_path=self.get_base_save_path,
+            find_torrent_by_prefix=self._find_torrent_by_prefix,
+            fs_base_path=self._config.fs_base_path,
+            set_last_error=set_last_error,
+            record_attempt=record_attempt,
+            record_success=record_success,
+            record_failure=record_failure,
+        )
+        return await submitter.add_magnet(magnet, category, save_path)
 
     async def get_torrents(
         self,

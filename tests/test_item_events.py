@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import asyncio
 
-from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.bus import EventType, MessageBus
 from magnet_harvester.item_events import ItemEventEmitter
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore

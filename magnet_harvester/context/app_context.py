@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from fastapi import Request
 
@@ -97,22 +97,53 @@ class AppContext:
 
 
 @dataclass
+class QBitReplacementTarget:
+    """Narrow seam for hot-swapping the active qBittorrent adapter.
+
+    Does not hold the full AppContext; only the lock, callbacks, and
+    optional dependents needed to coordinate a replacement.
+    """
+
+    lock: asyncio.Lock | None
+    get_qbit: Callable[[], QBittorrentClient | None]
+    set_qbit: Callable[[QBittorrentClient | None], None]
+    qbit_sync: QBitSyncLike | None = None
+    pipeline: "HarvestPipeline" | None = None
+
+    @classmethod
+    def from_context(cls, ctx: AppContext) -> "QBitReplacementTarget":
+        return cls(
+            lock=ctx.qbit_lock,
+            get_qbit=lambda: ctx.qbit,
+            set_qbit=lambda value: setattr(ctx, "qbit", value),
+            qbit_sync=ctx.qbit_sync,
+            pipeline=ctx.pipeline,
+        )
+
+    async def replace(self, new_qbit: QBittorrentClient) -> None:
+        """Hot-swap the active qBittorrent adapter and update dependents."""
+        lock = self.lock or asyncio.Lock()
+        async with lock:
+            old_qbit = self.get_qbit()
+            if self.qbit_sync is not None:
+                await self.qbit_sync.replace_qbit_client(new_qbit)
+            self.set_qbit(new_qbit)
+            if self.pipeline is not None:
+                self.pipeline.replace_download_phase(new_qbit)
+            if old_qbit is not None:
+                await old_qbit.close()
+
+
+@dataclass
 class QBitRuntime:
     ctx: AppContext
     settings: Settings = field(default_factory=lambda: default_settings)
     client_factory: type[QBittorrentClient] = field(default_factory=lambda: QBittorrentClient)
+    replacement_target: QBitReplacementTarget | None = None
 
     async def replace_qbit(self, new_qbit):
-        lock = self.ctx.qbit_lock or asyncio.Lock()
-        async with lock:
-            old_qbit = self.ctx.qbit
-            if self.ctx.qbit_sync is not None:
-                await self.ctx.qbit_sync.replace_qbit_client(new_qbit)
-            self.ctx.qbit = new_qbit
-            if self.ctx.pipeline is not None:
-                self.ctx.pipeline.replace_download_phase(new_qbit)
-            if old_qbit is not None:
-                await old_qbit.close()
+        target = self.replacement_target or QBitReplacementTarget.from_context(self.ctx)
+        await target.replace(new_qbit)
 
     async def replace_qbit_config(
         self,

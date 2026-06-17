@@ -52,8 +52,9 @@ LOCAL_RULES: List[Tuple[str, str]] = [
     (r'专辑|单曲|ost\b|soundtrack|album\b|hires|hi-?res|黑胶|无损|母带', "音乐"),
     (r'\.flac|\.mp3|\.aac|\.wav|\.dff|\.dsf|\.ape|\.alac|\.ogg', "音乐"),
 
-    # ── 电影：仅显式电影关键词，不把普通标题+画质/编码默认归电影 ──
+    # ── 电影：显式电影关键词或带发布源标记的电影格式 ──
     (r'电影|movie\b|filme?\b|片源|枪版|tc版|ts版|cam\b|hd-?tc', "电影"),
+    (r'\b(19|20)\d{2}\b.*\b(blu-?ray|bdrip|web-?dl|webrip|hdrip|remux|dvdrip)\b', "电影"),
 
     # ── 图像/壁纸 ──
     (r'壁纸|wallpaper|stock\s*photo|图包|写真', "其他"),

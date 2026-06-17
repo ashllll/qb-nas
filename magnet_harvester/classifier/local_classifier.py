@@ -10,7 +10,6 @@ import logging
 from typing import Callable, List
 
 from magnet_harvester.classifier.rule import (
-    ClassificationResult,
     ClassificationRule,
     FallbackRule,
     KeywordRule,
@@ -20,21 +19,10 @@ from magnet_harvester.classifier.rule import (
 log = logging.getLogger(__name__)
 
 
-class LocalClassifier:
-    """纯本地规则分类器。
-
-    公共接口（符合 ClassifyPhase 协议）:
-        classify_stream_batch(items, on_result) — 流式批量分类
-        classify_sync_batch(items)              — 同步批量分类（便捷）
-        classify_one(name)                      — 单条分类
-        usage                                   — 占位 UsageStats
-        get_cache_stats()                       — 占位
-        clear_cache()                           — 空操作
-    """
+class LocalClassificationEngine:
+    """Classifies names through the configured local rule chain."""
 
     def __init__(self, rule_chain: List[ClassificationRule] | None = None):
-        self.usage = _NullUsageStats()
-        self._ok = True
         if rule_chain is not None:
             self._rule_chain = rule_chain
         else:
@@ -45,7 +33,7 @@ class LocalClassifier:
                 FallbackRule(),
             ]
 
-    def _classify_name(self, name: str) -> dict:
+    def classify_name(self, name: str) -> dict:
         """分类单个名称：按规则链优先级匹配，返回统一结果格式。"""
         for rule in self._rule_chain:
             result = rule.apply(name)
@@ -64,6 +52,24 @@ class LocalClassifier:
             "save_path": "其他",
         }
 
+
+class LocalClassifier:
+    """ClassifyPhase adapter for the local rule engine.
+
+    Local classification itself lives in LocalClassificationEngine; this class
+    keeps the pipeline compatibility surface (`usage`, cache stats, streaming
+    callbacks) at the adapter seam.
+    """
+
+    def __init__(
+        self,
+        rule_chain: List[ClassificationRule] | None = None,
+        engine: LocalClassificationEngine | None = None,
+    ):
+        self.usage = _NullUsageStats()
+        self._ok = True
+        self._engine = engine or LocalClassificationEngine(rule_chain=rule_chain)
+
     # ── 协议方法 ──────────────────────────
 
     async def classify_stream_batch(
@@ -75,7 +81,7 @@ class LocalClassifier:
         results: list[dict] = []
         for item in items:
             idx = item.get("index", -1)
-            result = self._classify_name(item.get("name", ""))
+            result = self._engine.classify_name(item.get("name", ""))
             results.append(result)
             if on_result and idx >= 0:
                 on_result(idx, result)
@@ -86,13 +92,13 @@ class LocalClassifier:
     def classify_sync_batch(self, items: list[dict]) -> list[dict]:
         """同步批量分类（非协程版本）"""
         return [
-            self._classify_name(item.get("name", ""))
+            self._engine.classify_name(item.get("name", ""))
             for item in items
         ]
 
     def classify_one(self, name: str) -> dict:
         """单条分类"""
-        return self._classify_name(name)
+        return self._engine.classify_name(name)
 
     # ── 兼容方法 ────
 

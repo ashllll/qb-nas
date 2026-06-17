@@ -8,6 +8,8 @@ Used by HarvestPipeline during crawl→classify→download orchestration.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.item_events import ItemEventEmitter
 from magnet_harvester.models import MagnetItem, TaskStatus
@@ -138,6 +140,51 @@ class MagnetItemTransitions:
         """emit_item_changed + 有条件 emit_download_result"""
         await self._events.emit_item_changed(hash_key)
         await self._events.emit_download_result(hash_key, previous_status)
+
+    async def reconcile_download_snapshot(
+        self,
+        hash_key: str,
+        item: MagnetItem,
+        torrent: dict | None,
+        mapper: Callable[[dict], dict],
+        *,
+        was_removed: bool = False,
+    ) -> bool:
+        """Reconcile a tracked MagnetItem against a qBittorrent torrent snapshot.
+
+        If the torrent snapshot is missing and the hash was recently removed,
+        mark the item as error/removed (unless it already succeeded). If a
+        torrent snapshot is present, compute field diffs via *mapper* and apply
+        a status-changed transition.
+
+        Returns True if the item was modified, False otherwise.
+        """
+        if torrent is None:
+            if was_removed and item.status != TaskStatus.success:
+                await self.download_removed(hash_key, item.status)
+                return True
+            return False
+
+        mapped = mapper(torrent)
+        fields: dict = {}
+
+        if item.status != mapped["status"]:
+            fields["status"] = mapped["status"]
+        if item.progress != mapped["progress"]:
+            fields["progress"] = mapped["progress"]
+        if item.torrent_state != mapped["torrent_state"]:
+            fields["torrent_state"] = mapped["torrent_state"]
+        if item.error_msg and mapped["status"] != TaskStatus.error:
+            fields["error_msg"] = None
+
+        if fields:
+            await self.download_status_changed(
+                hash_key,
+                fields=fields,
+                previous_status=item.status,
+            )
+            return True
+        return False
 
     async def cleared(self) -> int:
         """清空全部 + ITEMS_CLEARED"""

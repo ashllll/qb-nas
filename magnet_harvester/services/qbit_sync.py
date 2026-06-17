@@ -101,32 +101,12 @@ class QBitSyncLoop:
             for item in tracked_items:
                 hash_key = item.hash
                 torrent = snapshot.get(hash_key.lower())
+                is_removed = hash_key.lower() in removed_hashes
 
-                if torrent is None:
-                    if (
-                        hash_key.lower() in removed_hashes
-                        and item.status != TaskStatus.success
-                    ):
-                        previous_status = item.status
-                        await self._transitions.download_removed(hash_key, previous_status)
-                    continue
-
-                mapped = qbit.map_torrent_status(torrent)
-                previous_status = item.status
-                fields: dict = {}
-
-                if previous_status != mapped["status"]:
-                    fields["status"] = mapped["status"]
-                if item.progress != mapped["progress"]:
-                    fields["progress"] = mapped["progress"]
-                if item.torrent_state != mapped["torrent_state"]:
-                    fields["torrent_state"] = mapped["torrent_state"]
-                if item.error_msg and mapped["status"] != TaskStatus.error:
-                    fields["error_msg"] = None
-
-                if fields:
-                    await self._transitions.download_status_changed(
-                        hash_key,
-                        fields=fields,
-                        previous_status=previous_status,
-                    )
+                await self._transitions.reconcile_download_snapshot(
+                    hash_key,
+                    item,
+                    torrent,
+                    qbit.map_torrent_status,
+                    was_removed=is_removed,
+                )
