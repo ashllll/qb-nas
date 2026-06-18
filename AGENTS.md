@@ -1,146 +1,237 @@
-# AGENTS.md
+# Magnet Harvester — AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Magnet Harvester is a FastAPI-based async service that crawls web pages for `magnet:` links, classifies them with local rule chains, and submits selected items to qBittorrent via Web API for NAS downloading. It also provides a single-page Web UI, WebSocket real-time push, system clipboard monitoring, and Agent tool interfaces.
 
-## Project Overview
+**Current version: v3.0.0**
 
-Magnet Harvester is a FastAPI-based service that crawls websites for magnet links, classifies them using MiniMax AI, and adds them to qBittorrent for NAS downloading.
+## Project
+
+- **Stack**: Python 3.11+ · FastAPI · Pydantic v2 · crawl4ai + Playwright · httpx · pyperclip
+- **Entry point**: `run.py` (invokes `uvicorn` with settings from `magnet_harvester.config.settings`)
+- **Config**: `.env` file (see `.env.example`), parsed by `pydantic-settings` into `Settings` at `magnet_harvester/config.py`
+- **License**: MIT
+
+## Commands
+
+All commands run from the project root.
+
+```bash
+# Setup
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1   # Windows
+source .venv/bin/activate       # Linux/macOS
+pip install -r requirements.txt
+playwright install chromium
+cp .env.example .env            # then edit .env with your qB credentials
+
+# Run
+python run.py
+# or
+uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
+
+# Test
+python -m pytest tests -v
+python -m pytest tests -q        # Quick (quiet)
+python tests/test_imports.py     # Smoke test
+
+# Lint & format (Python)
+ruff check magnet_harvester tests
+ruff format magnet_harvester tests
+
+# Full check (via npm, auto-runs on pre-commit)
+npm run lint     # ruff check
+npm test         # pytest -q
+npm run check    # lint + test
+```
+
+**Important**: npm scripts in `package.json` reference `./.venv/bin/python` (Unix path). On Windows either run the `ruff`/`pytest` commands directly or adjust the paths.
 
 ## Architecture
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌────────────────┐
-│   Web UI    │────▶│  FastAPI    │────▶│  Crawler       │
-│  (index.html│◀────│   (main.py) │◀────│ (crawl4ai)     │
+│   Web UI    │────▶│  FastAPI    │────▶│  MagnetCrawler │
+│ index.html  │◀────│  main.py    │◀────│   crawl4ai     │
 └─────────────┘     └──────┬──────┘     └───────┬────────┘
                            │                    │
         ┌──────────────────┼────────────────────┼──────────────┐
         ▼                  ▼                    ▼              ▼
-   ┌─────────┐       ┌──────────┐       ┌────────────┐  ┌──────────┐
-   │  Agent  │       │Classifier│       │MagnetParser│  │ qBittorrent
-   │(MiniMax)│       │(MiniMax) │       │ (regex)    │  │ Client  │
-   └─────────┘       └──────────┘       └────────────┘  └──────────┘
+   ┌───────────┐    ┌──────────────┐    ┌────────────┐  ┌──────────┐
+   │ Local     │    │ SiteAuth     │    │MagnetParser│  │ qBittorrent│
+   │Classifier │    │ Cookie注入    │    │ regex      │  │ Client    │
+   └───────────┘    └──────────────┘    └────────────┘  └──────────┘
+                           ▲
+                    ┌──────────────┐
+                    │ClipboardMon  │
+                    │ pyperclip轮询 │
+                    └──────────────┘
 ```
 
-**Key Components:**
+### Load-bearing modules
 
-- `main.py` - FastAPI server with WebSocket (`/ws`) and REST endpoints, includes `/api/config` for qB connection settings
-- `crawler.py` - Crawl4AI-based web crawler with magnet link extraction and resolution filtering (2160p/4k only)
-- `classifier/` - Local rule-based classification (no AI), with adult studio recognition via `studio_recognizer.py`
-- `magnet_parser.py` - Regex-based magnet link extraction from text/markdown/html
-- `qbit_client.py` - qBittorrent Web API v2 client with auto-login, category creation, and default path detection
-- `config.py` - Pydantic settings from `.env` file
-- `store.py` - ItemStore protocol + InMemoryItemStore + FakeStore for testing
-- `bus.py` - MessageBus event system with NullBus for testing
+| Package/Module | Role |
+|---|---|
+| `main.py` | FastAPI app instance, lifespan (single assembly point via `build_runtime()`) |
+| `assembly.py` | `build_runtime()` wires all services into `AppContext` |
+| `config.py` | `Settings` (pydantic-settings) → `.env`; sub-configs: `CrawlerConfig`, `QBitConfig`, `ServiceConfig` |
+| `models.py` | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus` enum, `MetricSnapshot` |
+| `crawler.py` | `MagnetCrawler` — crawl4ai-based async crawler with depth limits, resolution filtering, cookie injection |
+| `magnet_parser.py` | Regex + Base64 extraction of magnet links from text/markdown/html |
+| `pipeline.py` | `HarvestPipeline` — orchestrates crawl → classify → download |
+| `store.py` | `ItemStore` protocol + `InMemoryItemStore` |
+| `bus.py` | `MessageBus` event system (pub/sub), `NullBus` for testing |
+| `transitions.py` | `MagnetItemTransitions` — state change + event emission |
+| `item_events.py` | Event payload helpers for item changes |
+| `errors.py` | `ErrorHandler` — deduplicated structured error aggregation |
+| `classifier/` | Local rule-chain classifier (KeywordRule → StudioRule → FallbackRule) |
+| `qbit_client/` | qBittorrent WebAPI v2 client (transport, mapper, paths, submitter, sync_state, stats) |
+| `services/` | Background services: `QBitSyncLoop`, `ToolExecutor`, `UserActionExecutor`, `ClipboardMonitor`, `SiteAuth`, `SystemStats` |
+| `context/` | `AppContext` (dependency container) + `QBitRuntime` (hot-swap adapter) |
+| `api/` | REST routes, WebSocket broadcaster, static page router |
+| `utils/` | `url_validator` (SSRF protection), `auth`, `bg_tasks`, `serializers` |
 
-## Project Structure
+### Classification rule chain
+
+1. **KeywordRule** (high confidence) — exact/broad keyword match from `config/category_keywords.json`
+2. **StudioRule** (medium confidence) — publisher/brand recognition via `studio_recognizer.py`
+3. **FallbackRule** (low confidence) — regex fallback in `fallback.py`, always returns a result
+
+Categories: `电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他`
+
+### Data flow
+
+1. User submits URL via UI/API → `MagnetCrawler.crawl()` → magnet links extracted
+2. New items stored via `MagnetItemTransitions.found()` → `InMemoryItemStore` + `MessageBus` event
+3. `HarvestPipeline._stream_classify()` runs rule chain on newly found items
+4. User triggers download (or auto-download) → `QBittorrentClient.add_magnet()` with auto category/save path
+5. `QBitSyncLoop` polls qB every 2s → syncs torrent state → emits events on terminal state changes
+6. `WSBroadcaster` subscribes to `MessageBus` → pushes all events to WebSocket clients
+
+## Project structure
 
 ```
 qb-nas/
-├── pyproject.toml              # 项目元数据 + 依赖声明
-├── run.py                      # 入口脚本
-├── magnet_harvester/           # Python 包
+├── run.py                              # Entry script
+├── pyproject.toml                      # Metadata, dependencies, ruff/pytest config
+├── package.json                        # Husky hooks, lint-staged, prettier
+├── requirements.txt                    # Runtime deps
+├── .env.example                        # Environment variable template
+├── config/
+│   └── category_keywords.json          # Keyword classification rules
+├── static/
+│   └── index.html                      # Single-page Web UI
+├── docs/
+│   ├── adr/ADR-0001-centralized-assembly-in-lifespan.md
+│   └── agents/domain.md
+├── magnet_harvester/                   # Main Python package
 │   ├── __init__.py
-│   ├── main.py                 # FastAPI 应用
-│   ├── agent.py                # Agent 对话循环
-│   ├── classifier.py           # AI 分类器
-│   ├── crawler.py              # Crawl4AI 爬虫
-│   ├── magnet_parser.py        # 磁力链接解析（正则提取）
-│   ├── qbit_client.py          # qBittorrent API
-│   ├── tts_client.py           # TTS 语音通知
-│   ├── config.py               # 配置（子配置拆分）
-│   ├── models.py               # Pydantic 模型
-│   ├── errors.py               # 错误处理
-│   ├── store.py                # ItemStore（中央存储）
-│   ├── bus.py                  # MessageBus（事件总线）
-│   └── pipeline.py             # HarvestPipeline（管道编排）
-├── tests/                      # 单元测试
-├── docs/                       # 文档
-├── static/                     # Web UI 静态资源
-├── AGENTS.md                   # 项目说明
-├── .env.example                # 环境变量模板
-└── requirements.txt
-```
-
-## Development Commands
-
-**Setup:**
-
-```bash
-pip install -r requirements.txt
-playwright install chromium
-cp .env.example .env  # Edit with your credentials
-```
-
-**Run:**
-
-```bash
-python run.py                # 推荐：入口脚本
-python -m magnet_harvester   # 或使用包方式
-uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
-```
-
-**Run tests:**
-
-```bash
-python tests/test_imports.py          # Import verification
-python tests/test_base64.py           # Base64 regex tests
-# Or run all
-python -m pytest tests/ -v
+│   ├── main.py                         # FastAPI app + lifespan
+│   ├── config.py                       # Settings + sub-configs
+│   ├── models.py                       # Pydantic models
+│   ├── crawler.py                      # crawl4ai crawler
+│   ├── magnet_parser.py                # Magnet link extraction (regex + Base64)
+│   ├── pipeline.py                     # HarvestPipeline orchestration
+│   ├── store.py                        # InMemoryItemStore
+│   ├── bus.py                          # MessageBus
+│   ├── transitions.py                  # MagnetItemTransitions
+│   ├── item_events.py                  # Event payload helpers
+│   ├── errors.py                       # ErrorHandler
+│   ├── assembly.py                     # build_runtime()
+│   ├── api/
+│   │   ├── pages.py                    # Static page router
+│   │   ├── routes.py                   # REST API endpoints
+│   │   └── websocket.py                # /ws WebSocket broadcaster
+│   ├── classifier/
+│   │   ├── __init__.py                 # Exports LocalClassifier, LOCAL_RULES, VALID_CATEGORIES
+│   │   ├── local_classifier.py         # LocalClassifier + LocalClassificationEngine
+│   │   ├── rule.py                     # ClassificationRule protocol, KeywordRule, StudioRule, FallbackRule
+│   │   ├── keyword_recognizer.py       # KeywordCategoryRecognizer (→ config/category_keywords.json)
+│   │   ├── studio_recognizer.py        # Publisher/brand recognition rules
+│   │   └── fallback.py                 # LOCAL_RULES, classify_local, make_fallback
+│   ├── qbit_client/
+│   │   ├── __init__.py                 # Exports QBittorrentClient, TorrentStatusMapper, etc.
+│   │   ├── client.py                   # QBittorrentClient facade
+│   │   ├── _transport.py               # HTTP transport, login, retry
+│   │   ├── mapper.py                   # qB state → TaskStatus mapping
+│   │   ├── paths.py                    # Save path inference & safety
+│   │   ├── stats.py                    # QBittorrentStats
+│   │   ├── submitter.py                # MagnetSubmitter
+│   │   └── sync_state.py               # Incremental sync state
+│   ├── services/
+│   │   ├── agent_tools.py              # ToolExecutor — agent tool dispatch
+│   │   ├── clipboard_monitor.py        # ClipboardMonitor (pyperclip polling)
+│   │   ├── qbit_sync.py                # QBitSyncLoop
+│   │   ├── site_auth.py                # Cookie injection helper
+│   │   ├── stats.py                    # SystemStats
+│   │   └── user_actions.py             # UserActionExecutor
+│   ├── context/
+│   │   └── app_context.py              # AppContext, QBitRuntime, QBitReplacementTarget
+│   └── utils/
+│       ├── auth.py                     # API Key authentication dependency
+│       ├── url_validator.py            # SSRF protection + URL validation
+│       ├── serializers.py              # Response serializers
+│       └── bg_tasks.py                 # BGTaskManager (wraps asyncio.create_task)
+└── tests/                              # 80+ test files mirroring module structure
 ```
 
 ## Configuration
 
-All settings are in `.env` (see `.env.example`):
+All settings in `.env` (see `.env.example`). Key categories:
 
-- `QBIT_HOST`, `QBIT_USERNAME`, `QBIT_PASSWORD` - qBittorrent connection
-- `MINIMAX_API_KEY` - Get from https://platform.minimaxi.com/user-center/basic-information/interface-key
-- `PATH_*` - Download directories for each category (电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他)
-- `TTS_ENABLED` - Voice notifications (default: true)
+| Variable | Default | Description |
+|---|---|---|
+| `QBIT_HOST` | `http://192.168.1.100:8080` | qBittorrent Web UI |
+| `QBIT_USERNAME` / `QBIT_PASSWORD` | `admin` / `adminadmin` | qB credentials |
+| `SERVICE_HOST` / `SERVICE_PORT` | `127.0.0.1` / `8899` | Service listen address |
+| `API_KEY` | `""` (empty = disabled) | Write-op auth; **required** on non-loopback |
+| `ALLOW_INSECURE_WRITE_API` | `false` | Dev-only bypass for write auth |
+| `CORS_ALLOWED_ORIGINS` | `""` (disabled) | Comma-separated CORS origins |
+| `CRAWLER_*` | See `.env.example` | Crawler timeout, depth, concurrency, resolution filter |
+| `FS_BASE_PATH` | `""` | Local FS root for dir creation (optional) |
+| `MIN_DISK_SPACE_GB` | `10.0` | Disk warning threshold |
+| `SITE_COOKIES` | `{}` | JSON `{"domain": "cookie-string"}` for cookie injection |
 
-## Key Implementation Details
+**Security posture**: Service refuses to start on non-loopback without `API_KEY` or `ALLOW_INSECURE_WRITE_API=true`.
 
-**Crawler (`crawler.py`):**
+## Conventions
 
-- Uses `crawl4ai` (AsyncWebCrawler) instead of raw Playwright
-- Clean markdown/text extraction via crawl4ai
-- Magnet link extraction via `magnet_parser.py` (regex + Base64 decode)
-- Depth-limited crawling (max 3) with crawl4ai link discovery
-- `text_mode=True` blocks media resources to reduce bandwidth
+- **Python 3.11+**: Use `from __future__ import annotations` in every file
+- **Formatting**: ruff, line length 100 — run `ruff format` before committing
+- **Types**: New code must have type annotations; Protocols for adapter seams
+- **Async**: API, crawler, WebSocket, bg tasks are async; sync ops via `asyncio.to_thread`
+- **DI**: Services receive dependencies via constructors; `AppContext` is the sole runtime container — no module-level mutable globals
+- **Background tasks**: Use `BGTaskManager.create()`, never bare `asyncio.create_task`
+- **Events**: State changes go through `MessageBus.emit()`; `WSBroadcaster` handles push — don't write directly to WebSocket
+- **Error logging**: Use `ErrorHandler` for structured errors; log critical exceptions with traceback
+- **Code search**: Default to codebase-memory-mcp tools (`search_graph`, `trace_path`, `get_code_snippet`) over codegraph/grep for structural queries. Fall back to grep only for non-code text/config files.
+- **Comments**: Chinese preferred for comments, logs, error messages; docs mainly in Chinese
 
-**Classifier (`classifier.py`):**
+## Testing
 
-- Uses Anthropic SDK with MiniMax's Codex-compatible API endpoint
-- Streaming batch classification with per-item callbacks
-- Local regex rules as fallback for rate limit failures
-- Optional thinking-based recheck for low-confidence items (concurrency limited to 3)
-- Categories: 电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他
+- **Framework**: pytest + pytest-asyncio (`asyncio_mode = auto` in `pyproject.toml`)
+- **Test doubles**: `InMemoryItemStore` for store, `NullBus` for bus, manual `AppContext` for DI
+- **80+ test files** covering: URL validation/SSRF, qB client modules (transport, path, submitter, sync, mapper), crawler entry/concurrency, classifier rule chain, state transitions/events, API auth/routes, WebSocket broadcast, clipboard monitor
+- **Pre-commit**: `npm run check` runs `ruff check` + `pytest -q`
 
-**Agent (`agent.py`):**
+## Key design decisions
 
-- Tool-based agent with 7 tools: get_stats, list_items, start_crawl, add_to_queue, reclassify_item, search_items, clear_all
-- Sliding window history trimming (max 20 turns) to stay within context limits
-- MAX_TURNS=8 safety limit to prevent runaway loops
+- **Single assembly point**: `main.py` lifespan calls `build_runtime()` — all wiring in one place (see ADR-0001)
+- **Phase protocols**: `CrawlPhase`, `ClassifyPhase`, `DownloadPhase` protocols enable hot-swappable implementations
+- **Hot-swap qB config**: `QBitRuntime.replace_qbit_config()` validates, persists, and swaps the client atomically
+- **SSRF protection**: `url_validator` blocks loopback, link-local, multicast, RFC 1918 addresses, plus checks redirect chains
+- **No external AI**: Classification is 100% local rules — no API calls to any external service
 
-**WebSocket Protocol:**
+## Agent Skills 自动化
 
-- `/ws` - Real-time magnet item updates (broadcast on discovery, classification, download status)
-- `/ws/chat` - Agent conversation with streaming tokens and tool call notifications
+本项目使用 [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) 技能包（已全局安装 24 skills）。进入项目时会自动识别当前开发阶段并加载对应技能工作流：
 
-## Common Patterns
+- **新需求 / 特性** → 先加载 `spec-driven-development`，然后 `planning-and-task-breakdown`
+- **实现代码** → `incremental-implementation` + 按需 `test-driven-development`
+- **审查 / 简化** → `code-review-and-quality` + `code-simplification`
+- **发布部署** → `git-workflow-and-versioning` + `shiping-and-launch`
 
-**Adding a new API endpoint:**
+斜杠命令：`/spec` `/plan` `/build` `/test` `/review` `/code-simplify` `/ship`
 
-1. Add Pydantic model in `models.py` if needed
-2. Implement the handler in `api/routes.py` and receive runtime dependencies through `Depends(get_context)`
-3. If the endpoint schedules detached async work, use the injected `BGTaskManager` path from `AppContext`
-4. Use `MessageBus`/`WSBroadcaster`-driven updates rather than writing directly to websocket clients
+## Notes
 
-**Modifying classification behavior:**
-
-- Edit `LOCAL_RULES` in `classifier.py` for regex-based pre-filtering
-- Adjust `SYSTEM_PROMPT` for AI classification instructions
-- Categories must match keys in `settings.CATEGORY_PATHS`
-
-**Background tasks:**
-Always route detached coroutines through `BGTaskManager`, typically via the runtime dependencies injected through `AppContext`.
+<!-- Quick-add space for per-session notes -->

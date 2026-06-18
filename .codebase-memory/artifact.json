@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "commit": "",
+    "indexed_at": "2026-06-18T18:04:30Z",
+    "project": "F-code-qb-nas",
+    "nodes": 2577,
+    "edges": 7465,
+    "original_size": 5308416,
+    "compressed_size": 1062726,
+    "compression_level": 9
+}
