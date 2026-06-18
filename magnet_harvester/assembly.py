@@ -14,7 +14,6 @@ from magnet_harvester.errors import error_handler
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
-from magnet_harvester.services.agent_tools import ToolExecutor
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
 from magnet_harvester.services.qbit_sync import QBitSyncLoop
 from magnet_harvester.services.stats import SystemStats
@@ -74,14 +73,6 @@ def build_runtime() -> AppRuntime:
         task_manager=bg_manager,
         transitions=item_transitions,
     )
-    tool_executor = ToolExecutor(
-        store=store,
-        pipeline=pipeline,
-        bus=bus,
-        task_manager=bg_manager,
-        transitions=item_transitions,
-        action_executor=action_executor,
-    )
     clipboard_monitor = ClipboardMonitor(
         bus=bus,
         store=store,
@@ -101,7 +92,6 @@ def build_runtime() -> AppRuntime:
         stats=app_stats,
         bg_manager=bg_manager,
         broadcaster=broadcaster,
-        tool_executor=tool_executor,
         action_executor=action_executor,
         qbit_sync=sync_loop,
         qbit_lock=qbit_lock,

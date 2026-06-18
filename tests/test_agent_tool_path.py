@@ -1,11 +1,9 @@
 """
-P2-24: Agent 工具路径测试
-
-缺陷: reclassify_item 将 save_path 直接设为分类名，而不是实际文件系统路径
-验证: qbit_client 已自动处理非绝对路径的拼接，但 agent_tools 应使用空字符串让 qB 自动管理
+P2-24: Agent 工具路径测试 (UserActionExecutor)
 """
 import pytest
-from magnet_harvester.services.agent_tools import ToolExecutor
+from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import InMemoryItemStore
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
@@ -24,18 +22,21 @@ def make_item(hash_val: str) -> MagnetItem:
 
 @pytest.mark.asyncio
 async def test_reclassify_item_updates_category_and_save_path():
-    """验证 reclassify_item 正确更新 category 和 save_path"""
+    """验证 manually_reclassify 正确更新 category 和 save_path"""
     store = InMemoryItemStore()
     bus = MessageBus()
-    executor = ToolExecutor(store, None, bus)
+    transitions = MagnetItemTransitions(store=store, bus=bus)
+    executor = UserActionExecutor(
+        store=store, pipeline=None,
+        task_manager=None, transitions=transitions,
+    )
 
     store.add(make_item("abc123def"))
 
-    result = await executor.execute("reclassify_item", {"hash": "abc123de", "category": "电影"})
+    result = await executor.manually_reclassify("abc123de", "电影")
     assert result["status"] == "ok"
     assert result["new_category"] == "电影"
 
     item = store.get("abc123def")
     assert item.category == "电影"
-    # save_path 应为空字符串，让 qB 自动管理路径
     assert item.save_path == ""

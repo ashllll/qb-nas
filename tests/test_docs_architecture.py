@@ -29,7 +29,7 @@ def test_context_and_adr_reference_current_runtime_terms():
 
     assert "WSBroadcaster" in context
     assert "QBitSyncLoop" in context
-    assert "ToolExecutor" in context
+    assert "UserActionExecutor" in context
     assert "BGTaskManager" in context
     assert "lifespan()" in adr
     assert "sole assembler" in adr

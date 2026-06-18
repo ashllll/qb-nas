@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Callable
 
 from magnet_harvester.bus import Event, EventType, MessageBus
-from magnet_harvester.item_events import ItemEventEmitter
+from magnet_harvester.utils.serializers import item_payload
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
 
@@ -26,7 +26,41 @@ class MagnetItemTransitions:
     def __init__(self, store: ItemStore, bus: MessageBus):
         self._store = store
         self._bus = bus
-        self._events = ItemEventEmitter(store=store, bus=bus)
+
+    # ── Event emission helpers (inlined from ItemEventEmitter) ──
+
+    async def _emit_item_changed(self, hash_key: str) -> None:
+        item = self._store.get(hash_key)
+        if item is not None:
+            await self._bus.emit(
+                Event(EventType.STORE_CHANGED, {"item": item_payload(item)})
+            )
+
+    async def _emit_download_result(
+        self, hash_key: str, previous_status: TaskStatus | None = None
+    ) -> None:
+        item = self._store.get(hash_key)
+        if item is None:
+            return
+        is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
+        is_new_phase = previous_status in {
+            TaskStatus.pending, TaskStatus.adding, TaskStatus.classifying, None,
+        }
+        if is_terminal or is_new_phase:
+            await self._bus.emit(
+                Event(
+                    EventType.DOWNLOAD_RESULT,
+                    {
+                        "hash": hash_key,
+                        "status": item.status.value,
+                        "error_msg": item.error_msg,
+                        "progress": item.progress,
+                        "torrent_state": item.torrent_state,
+                    },
+                )
+            )
+
+    # ── State transitions ──
 
     async def found(self, item: MagnetItem) -> bool:
         if not self._store.add(item):
@@ -36,7 +70,7 @@ class MagnetItemTransitions:
 
     async def classification_started(self, hash_key: str):
         self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None)
-        await self._events.emit_item_changed(hash_key)
+        await self._emit_item_changed(hash_key)
 
     async def classified(self, hash_key: str, result: dict):
         self._store.update(
@@ -54,7 +88,7 @@ class MagnetItemTransitions:
             "confidence": result.get("confidence", ""),
             "reason": result.get("reason", ""),
         }))
-        await self._events.emit_item_changed(hash_key)
+        await self._emit_item_changed(hash_key)
 
     async def download_submitting(self, hash_key: str):
         item = self._store.get(hash_key)
@@ -67,7 +101,7 @@ class MagnetItemTransitions:
             torrent_state="submitting",
             error_msg=None,
         )
-        await self._events.emit_item_changed(hash_key)
+        await self._emit_item_changed(hash_key)
         await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
 
     async def download_submitted(self, hash_key: str):
@@ -78,13 +112,13 @@ class MagnetItemTransitions:
             progress=0.0,
             error_msg=None,
         )
-        await self._events.emit_item_changed(hash_key)
-        await self._events.emit_download_result(hash_key, previous_status=TaskStatus.adding)
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
     async def download_failed(self, hash_key: str, error_msg: str):
         self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg)
-        await self._events.emit_item_changed(hash_key)
-        await self._events.emit_download_result(hash_key, previous_status=TaskStatus.adding)
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
     # ── 以下方法来自 item_transitions.py（移植版，使用 ItemEventEmitter 委托）──
 
@@ -92,7 +126,7 @@ class MagnetItemTransitions:
         """found + emit_item_changed（剪贴板入口专用）"""
         if not await self.found(item):
             return False
-        await self._events.emit_item_changed(item.hash)
+        await self._emit_item_changed(item.hash)
         return True
 
     async def manually_classified(self, hash_key: str, category: str) -> bool:
@@ -105,7 +139,7 @@ class MagnetItemTransitions:
             "confidence": "manual",
             "reason": "手动修改",
         }))
-        await self._events.emit_item_changed(hash_key)
+        await self._emit_item_changed(hash_key)
         return True
 
     async def download_removed(self, hash_key: str, previous_status: TaskStatus | None):
@@ -138,8 +172,8 @@ class MagnetItemTransitions:
         previous_status: TaskStatus | None = None,
     ):
         """emit_item_changed + 有条件 emit_download_result"""
-        await self._events.emit_item_changed(hash_key)
-        await self._events.emit_download_result(hash_key, previous_status)
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, previous_status)
 
     async def reconcile_download_snapshot(
         self,

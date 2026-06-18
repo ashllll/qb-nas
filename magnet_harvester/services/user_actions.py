@@ -5,16 +5,11 @@ import asyncio
 from typing import Protocol
 
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.pipeline import PipelineProtocol
 from magnet_harvester.store import ItemStore
-
-
-class UserActionPipeline(Protocol):
-    async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
-    async def admit_crawl_target(self, url: str) -> str: ...
-    async def download(self, hashes: list[str]): ...
-    async def reclassify(self, hashes: list[str]): ...
-    def max_crawl_depth(self) -> int: ...
+from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.utils.bg_tasks import BGTaskManager
+from magnet_harvester.utils.serializers import item_summary
 
 
 class UserActionExecutor:
@@ -23,7 +18,7 @@ class UserActionExecutor:
     def __init__(
         self,
         store: ItemStore,
-        pipeline: UserActionPipeline | None,
+        pipeline: PipelineProtocol | None,
         task_manager: BackgroundTaskSpawner | None,
         transitions: MagnetItemTransitions,
         stats: StatsTracker | None = None,
@@ -35,9 +30,23 @@ class UserActionExecutor:
         self._stats = stats
 
     def _spawn(self, coro, *, name: str):
-        if self._task_manager is not None:
-            return self._task_manager.create(coro, name=name)
-        return asyncio.create_task(coro, name=name)
+        return BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
+
+    # ── 查询方法（原 ToolExecutor 的 store 直读操作）──
+
+    def get_stats(self) -> dict:
+        s = self._store.stats()
+        return {"total": s.total, "by_category": s.by_category, "by_status": s.by_status}
+
+    def list_items(self, *, category: str | None = None, status: str = "all", limit: int = 20) -> dict:
+        items = self._store.list(category=category, status=status, limit=limit)
+        return {"count": len(items), "items": [item_summary(i) for i in items]}
+
+    def search_items(self, *, query: str, limit: int = 20) -> dict:
+        hits = self._store.search(query)
+        return {"count": len(hits), "results": [item_summary(i) for i in hits[:limit]]}
+
+    # ── 操作方法 ──
 
     async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False) -> dict:
         if self._pipeline is None:
@@ -46,7 +55,10 @@ class UserActionExecutor:
         url = url.strip()
         if not url:
             return {"status": "error", "reason": "url 不能为空"}
-        await self._pipeline.admit_crawl_target(url)
+        try:
+            await self._pipeline.admit_crawl_target(url)
+        except ValueError as exc:
+            return {"status": "error", "reason": str(exc)}
         depth = max(1, min(int(depth), 3, self._pipeline.max_crawl_depth()))
         if self._stats is not None:
             self._stats.record_crawl()

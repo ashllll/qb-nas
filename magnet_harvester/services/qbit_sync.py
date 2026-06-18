@@ -11,7 +11,7 @@ from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import TaskStatus
-from magnet_harvester.store import ItemStore
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
@@ -52,8 +52,7 @@ class QBitSyncLoop:
             )
             return
 
-        self._task = asyncio.create_task(self._run(), name="qbit-sync-loop")
-        self._task.add_done_callback(self._on_task_done)
+        self._task = BGTaskManager.spawn(self._run(), name="qbit-sync-loop")
 
     async def stop(self):
         self._stop_event.set()
@@ -64,12 +63,6 @@ class QBitSyncLoop:
         """Align future sync polls with a newly committed qB adapter."""
         async with self._lock:
             self._qbit = new_qbit
-
-    def _on_task_done(self, task: asyncio.Task) -> None:
-        if not task.cancelled():
-            exc = task.exception()
-            if exc is not None:
-                log.error("QBitSyncLoop 后台任务异常退出: %s", exc, exc_info=exc)
 
     async def _run(self):
         while not self._stop_event.is_set():

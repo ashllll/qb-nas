@@ -167,35 +167,17 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             self.store = store
             self.active_count = 0
 
-    class FakeToolExecutor:
-        def __init__(
-            self,
-            store,
-            pipeline,
-            bus,
-            task_manager=None,
-            transitions=None,
-            action_executor=None,
-        ):
-            self.store = store
-            self.pipeline = pipeline
-            self.bus = bus
-            self.task_manager = task_manager
-            self.transitions = transitions
-            self.action_executor = action_executor
-
     monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
     monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
     monkeypatch.setattr(assembly_module, "LocalClassifier", FakeClassifier)
     monkeypatch.setattr(assembly_module, "QBitSyncLoop", FakeSyncLoop)
     monkeypatch.setattr(assembly_module, "WSBroadcaster", FakeBroadcaster)
-    monkeypatch.setattr(assembly_module, "ToolExecutor", FakeToolExecutor, raising=False)
 
     test_app = FastAPI(lifespan=main_module.lifespan)
 
     async with main_module.lifespan(test_app):
         ctx = test_app.state.ctx
-        assert ctx.tool_executor is not None
+        assert ctx.action_executor is not None
         assert ctx.broadcaster is not None
         assert ctx.bg_manager is not None
         assert ctx.stats is not None
@@ -329,7 +311,7 @@ def test_main_module_does_not_expose_legacy_runtime_globals():
 def test_appcontext_runtime_service_slots_are_not_typed_as_any():
     hints = AppContext.__annotations__
 
-    for field_name in ("stats", "bg_manager", "broadcaster", "tool_executor", "qbit_lock"):
+    for field_name in ("stats", "bg_manager", "broadcaster", "action_executor", "qbit_lock"):
         assert "Any" not in str(hints[field_name]), field_name
 
 
@@ -345,7 +327,7 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
         MagnetItemTransitions,
     )
     from magnet_harvester.qbit_client import QBittorrentClient
-    from magnet_harvester.services.agent_tools import ToolExecutor
+    from magnet_harvester.services.user_actions import UserActionExecutor
     from magnet_harvester.services.qbit_sync import QBitSyncLoop
 
     event_hints = Event.__annotations__
@@ -359,7 +341,7 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     download_phase_hints = DownloadPhase.__annotations__
     transitions_hints = MagnetItemTransitions.__init__.__annotations__
     pipeline_hints = HarvestPipeline.__init__.__annotations__
-    tool_executor_hints = ToolExecutor.__init__.__annotations__
+    action_executor_hints = UserActionExecutor.__init__.__annotations__
     qbit_sync_hints = QBitSyncLoop.__init__.__annotations__
 
     assert "Any" not in str(event_hints["data"]), "Event.data"
@@ -376,7 +358,7 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     assert "Any" not in str(pipeline_hints["store"]), "HarvestPipeline.store"
 
     for field_name in ("store", "pipeline", "task_manager"):
-        assert "Any" not in str(tool_executor_hints[field_name]), f"ToolExecutor.{field_name}"
+        assert "Any" not in str(action_executor_hints[field_name]), f"UserActionExecutor.{field_name}"
 
     for field_name in ("qbit_client", "store"):
         assert "Any" not in str(qbit_sync_hints[field_name]), f"QBitSyncLoop.{field_name}"

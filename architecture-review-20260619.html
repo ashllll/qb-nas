@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Architecture review — Magnet Harvester v3.0.0</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+  </script>
+  <style>
+    .seam { stroke-dasharray: 4 4; }
+    .leak { stroke: #dc2626; stroke-width: 2px; }
+    .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+  </style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+
+  <header class="space-y-4">
+    <h1 class="text-3xl font-serif font-bold tracking-tight">Magnet Harvester · architecture review</h1>
+    <div class="flex gap-6 text-sm text-slate-500">
+      <span>v3.0.0</span>
+      <span>2026-06-19</span>
+      <span>177 source files · 2,577 graph nodes</span>
+    </div>
+    <div class="flex gap-4 text-xs uppercase tracking-wider text-slate-400 pt-2 border-t border-slate-200">
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 border-[3px] border-slate-900"></span> deep module</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 border-2 border-dashed border-slate-400"></span> hypothetical seam</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 bg-red-500"></span> leakage</span>
+    </div>
+  </header>
+
+  <section id="candidates" class="space-y-10">
+
+    <!-- C1 -->
+    <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+      <div class="flex items-start justify-between">
+        <h2 class="text-xl font-serif font-semibold">C1 — Consolidate duplicate Pipeline protocols</h2>
+        <div class="flex gap-2">
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Strong</span>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6">
+        <div class="border border-red-100 rounded-lg bg-red-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-red-600 mb-3 font-medium">Before — two identical protocols</p>
+          <pre class="mermaid">
+graph TB
+    UA[UserActionPipeline]
+    PT[PipelineToolTarget]
+    HP[HarvestPipeline]
+    UA -.identical.-> PT
+    UA -->|satisfies| HP
+    PT -->|satisfies| HP
+    classDef dup fill:#fef2f2,stroke:#dc2626,stroke-width:2px,stroke-dasharray:4 4
+    class UA,PT dup
+          </pre>
+          <p class="text-xs text-slate-500 mt-2">5 methods each: <code class="font-mono">execute, admit_crawl_target, download, reclassify, max_crawl_depth</code></p>
+        </div>
+        <div class="border border-emerald-100 rounded-lg bg-emerald-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3 font-medium">After — one canonical protocol</p>
+          <pre class="mermaid">
+graph TB
+    PP[PipelineProtocol]
+    UA[UserActionExecutor]
+    TE[ToolExecutor]
+    HP[HarvestPipeline]
+    PP -->|satisfies| HP
+    UA -->|depends on| PP
+    TE -->|depends on| PP
+    classDef deep fill:#0f172a,stroke:#0f172a,color:#fff
+    class PP deep
+          </pre>
+          <p class="text-xs text-slate-500 mt-2">Single <code class="font-mono">PipelineProtocol</code> in <code>pipeline.py</code>, imported by both callers</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6 text-sm">
+        <div>
+          <p class="font-medium text-red-700 mb-1">Problem</p>
+          <p class="text-slate-600"><code>UserActionPipeline</code> in <code>services/user_actions.py</code> and <code>PipelineToolTarget</code> in <code>services/agent_tools.py</code> define the <em>identical</em> 5-method protocol. Change one, forget the other — the seam drifts.</p>
+        </div>
+        <div>
+          <p class="font-medium text-emerald-700 mb-1">Solution</p>
+          <p class="text-slate-600">Move the canonical protocol to <code>pipeline.py</code> (next to <code>HarvestPipeline</code>, its sole implementation). Both callers import from one place.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="font-medium text-slate-700 mb-1 text-sm">Wins</p>
+        <ul class="list-disc list-inside text-sm text-slate-600 space-y-0.5">
+          <li><strong>locality:</strong> protocol change touches one file</li>
+          <li><strong>leverage:</strong> one interface, two callers, one implementation</li>
+          <li>interface shrinks from 10 protocol methods (5+5) to 5</li>
+          <li>deletion test: delete either protocol, no callers break — they find the canonical one</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- C2 -->
+    <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+      <div class="flex items-start justify-between">
+        <h2 class="text-xl font-serif font-semibold">C2 — Collapse ToolExecutor into UserActionExecutor</h2>
+        <div class="flex gap-2">
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Worth exploring</span>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6">
+        <div class="border border-red-100 rounded-lg bg-red-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-red-600 mb-3 font-medium">Before — 7-branch switch + delegate</p>
+          <div class="space-y-2 text-xs font-mono">
+            <div class="flex items-center gap-2"><span class="px-2 py-0.5 bg-slate-200 rounded">GET /api/crawl</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-red-100 rounded">ToolExecutor.execute("start_crawl")</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-red-100 rounded">self._actions.start_crawl()</span></div>
+            <div class="flex items-center gap-2"><span class="px-2 py-0.5 bg-slate-200 rounded">Agent tool</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-red-100 rounded">ToolExecutor.execute("list_items")</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-slate-200 rounded">store.list()</span></div>
+            <div class="flex items-center gap-2"><span class="px-2 py-0.5 bg-slate-200 rounded">Agent tool</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-red-100 rounded">ToolExecutor.execute("clear_all")</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-red-100 rounded">self._actions.clear_items()</span></div>
+          </div>
+          <p class="text-xs text-slate-500 mt-3"><span class="font-medium text-red-600">interface cost:</span> 7 string-dispatched tool names + dict input/output — read the code to know the contract</p>
+        </div>
+        <div class="border border-emerald-100 rounded-lg bg-emerald-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3 font-medium">After — direct method calls</p>
+          <div class="space-y-2 text-xs font-mono">
+            <div class="flex items-center gap-2"><span class="px-2 py-0.5 bg-slate-200 rounded">GET /api/crawl</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-emerald-200 rounded">actions.start_crawl()</span></div>
+            <div class="flex items-center gap-2"><span class="px-2 py-0.5 bg-slate-200 rounded">Agent tool</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-emerald-200 rounded">actions.list_items()</span></div>
+            <div class="flex items-center gap-2"><span class="px-2 py-0.5 bg-slate-200 rounded">Agent tool</span><span class="text-slate-400">→</span><span class="px-2 py-0.5 bg-emerald-200 rounded">actions.clear_items()</span></div>
+          </div>
+          <p class="text-xs text-slate-500 mt-3"><span class="font-medium text-emerald-700">interface cost:</span> typed method signatures — IDE autocompletes the contract</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6 text-sm">
+        <div>
+          <p class="font-medium text-red-700 mb-1">Problem</p>
+          <p class="text-slate-600"><code>ToolExecutor.execute(name, inp)</code> is a 7-branch string dispatcher that mostly delegates to <code>UserActionExecutor</code>. The interface (string name + dict) is nearly as complex as the implementation (a switch). Adding a tool = new branch + new dict key contract.</p>
+        </div>
+        <div>
+          <p class="font-medium text-emerald-700 mb-1">Solution</p>
+          <p class="text-slate-600">Give <code>UserActionExecutor</code> the direct-read methods currently in the switch (<code>list_items</code>, <code>search_items</code>, <code>get_stats</code>). Agent callers call typed methods instead of string dispatch. Remove the switch layer.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="font-medium text-slate-700 mb-1 text-sm">Wins</p>
+        <ul class="list-disc list-inside text-sm text-slate-600 space-y-0.5">
+          <li><strong>depth:</strong> interface becomes typed methods, not opaque dispatch</li>
+          <li><strong>locality:</strong> tool logic lives in one class, not split across switch + delegate</li>
+          <li>delete 1 shallow module (~80 lines of switch code)</li>
+          <li>deletion test: delete ToolExecutor, complexity concentrates in UserActionExecutor</li>
+        </ul>
+        <div class="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+          <p class="font-medium mb-1">Risk — Agent tool surface contract</p>
+          <p>Tool callers currently depend on string names. If external agents reference <code>execute("list_items", ...)</code>, collapsing breaks the contract. Verify callers first; if only internal, collapse is safe.</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- C3 -->
+    <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+      <div class="flex items-start justify-between">
+        <h2 class="text-xl font-serif font-semibold">C3 — Centralise the _spawn task-creation pattern</h2>
+        <div class="flex gap-2">
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Strong</span>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6">
+        <div class="border border-red-100 rounded-lg bg-red-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-red-600 mb-3 font-medium">Before — scattered duplication</p>
+          <div class="space-y-1.5 text-xs font-mono text-slate-600">
+            <div class="border-l-2 border-red-300 pl-2"><code>pipeline.py:63</code> <span class="text-red-600">def _spawn</span></div>
+            <div class="border-l-2 border-red-300 pl-2"><code>user_actions.py:37</code> <span class="text-red-600">def _spawn</span></div>
+            <div class="border-l-2 border-red-300 pl-2"><code>qbit_sync.py:48</code> <span class="text-red-600">inline pattern</span></div>
+          </div>
+          <p class="text-xs text-slate-500 mt-2">Same 4-line pattern in 3 modules: <code class="font-mono">if task_manager: create(...) else: asyncio.create_task(...)</code></p>
+        </div>
+        <div class="border border-emerald-100 rounded-lg bg-emerald-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3 font-medium">After — one canonical helper</p>
+          <div class="space-y-1.5 text-xs font-mono text-slate-600">
+            <div class="border-l-2 border-emerald-400 pl-2"><code>bg_tasks.py</code> <span class="text-emerald-700">BGTaskManager.spawn(coro, *, mgr=None)</span></div>
+            <div class="pl-4 text-slate-400">used by pipeline, user_actions, qbit_sync</div>
+          </div>
+          <p class="text-xs text-slate-500 mt-2">Static method that takes optional <code>BackgroundTaskSpawner</code> — one place to evolve the fallback behaviour.</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6 text-sm">
+        <div>
+          <p class="font-medium text-red-700 mb-1">Problem</p>
+          <p class="text-slate-600">The "if task_manager: create else: asyncio.create_task" pattern appears in 3 modules. Change the fallback (e.g. add done-callback error logging) and the modules drift apart.</p>
+        </div>
+        <div>
+          <p class="font-medium text-emerald-700 mb-1">Solution</p>
+          <p class="text-slate-600">Add a static <code>BGTaskManager.spawn(coro, *, task_manager=None)</code> method. All three callers use it. The fallback logic lives in one module.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="font-medium text-slate-700 mb-1 text-sm">Wins</p>
+        <ul class="list-disc list-inside text-sm text-slate-600 space-y-0.5">
+          <li><strong>locality:</strong> task spawning behaviour changes in one place</li>
+          <li><strong>leverage:</strong> N callers get consistent error-logging, lifecycle tracking</li>
+          <li>deletion test: delete the pattern from any module — the canonical one still works</li>
+          <li>natural home for the <code>_on_task_done</code> callback (already added in recent defect fix)</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- C4 -->
+    <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+      <div class="flex items-start justify-between">
+        <h2 class="text-xl font-serif font-semibold">C4 — Inline ItemEventEmitter into MagnetItemTransitions</h2>
+        <div class="flex gap-2">
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Worth exploring</span>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6">
+        <div class="border border-red-100 rounded-lg bg-red-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-red-600 mb-3 font-medium">Before — one-adapter "seam"</p>
+          <pre class="mermaid">
+graph LR
+    MIT[MagnetItemTransitions]
+    IEE[ItemEventEmitter]
+    MIT -->|sole caller| IEE
+    classDef sole fill:#fef2f2,stroke:#dc2626,stroke-width:2px,stroke-dasharray:4 4
+    class IEE sole
+          </pre>
+          <p class="text-xs text-slate-500 mt-2">57 lines · 2 methods · 1 caller · seams that don't vary</p>
+        </div>
+        <div class="border border-emerald-100 rounded-lg bg-emerald-50/30 p-4">
+          <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3 font-medium">After — inlined helpers</p>
+          <pre class="mermaid">
+graph LR
+    MIT["MagnetItemTransitions<br/>+ _emit_item_changed<br/>+ _emit_download_result"]
+    classDef deep fill:#0f172a,stroke:#0f172a,color:#fff
+    class MIT deep
+          </pre>
+          <p class="text-xs text-slate-500 mt-2">Same logic, same footprint — but the module is <em>one thing</em>, not two things pretending to vary</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6 text-sm">
+        <div>
+          <p class="font-medium text-red-700 mb-1">Problem</p>
+          <p class="text-slate-600"><code>ItemEventEmitter</code> exists as a separate module, but <code>MagnetItemTransitions</code> is its <em>only</em> adapter. Per "one adapter = hypothetical seam," this is a seam that never materialised. The docstring claims use by QBitSyncLoop — but the code says otherwise.</p>
+        </div>
+        <div>
+          <p class="font-medium text-emerald-700 mb-1">Solution</p>
+          <p class="text-slate-600">Inline the two methods (<code>emit_item_changed</code>, <code>emit_download_result</code>) as private helpers on <code>MagnetItemTransitions</code>. Remove <code>item_events.py</code>. Interface stays identical.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="font-medium text-slate-700 mb-1 text-sm">Wins</p>
+        <ul class="list-disc list-inside text-sm text-slate-600 space-y-0.5">
+          <li><strong>locality:</strong> event emission lives next to the state transitions that need them</li>
+          <li>delete 1 file (57 lines) — complexity concentrates where it matters</li>
+          <li>deletion test: delete ItemEventEmitter, 2 methods reappear in transitions.py</li>
+          <li>no change to interface — tests survive untouched</li>
+        </ul>
+        <div class="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+          <p class="font-medium mb-1">Verify — docstring claims QBitSyncLoop usage</p>
+          <p>The <code>item_events.py</code> docstring says "Used by both MagnetItemTransitions and QBitSyncLoop." Grep confirms QBitSyncLoop never imports ItemEventEmitter. If a future branch plans to use it, the seam becomes real. Otherwise: inline.</p>
+        </div>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- Top Recommendation -->
+  <section id="top-recommendation" class="rounded-xl deep p-6 text-white space-y-4">
+    <p class="text-xs uppercase tracking-widest text-slate-300">Top recommendation</p>
+    <h3 class="text-xl font-serif font-semibold"><a href="#candidates" class="hover:underline">C3 — Centralise _spawn pattern</a></h3>
+    <p class="text-slate-200 text-sm max-w-2xl">
+      Highest leverage per unit of change. Three modules duplicate the same 4-line fallback logic.
+      A 15-line addition to <code>BGTaskManager</code> concentrates task-spawning behaviour in one module,
+      eliminates scattered duplication, and gives the recent <code>_on_task_done</code> error callback a natural home.
+      No interface changes — callers replace <code>self._spawn(coro)</code> with <code>BGTaskManager.spawn(coro, task_manager=self._task_manager)</code>.
+    </p>
+  </section>
+
+</main>
+</body>
+</html>

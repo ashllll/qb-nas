@@ -12,12 +12,20 @@ from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import ItemStore
-from magnet_harvester.crawler import CrawlPhase
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
 
 # ── Phase Protocols ──────────────────────────
+
+@runtime_checkable
+class PipelineProtocol(Protocol):
+    async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
+    async def admit_crawl_target(self, url: str) -> str: ...
+    async def download(self, hashes: list[str]): ...
+    async def reclassify(self, hashes: list[str]): ...
+    def max_crawl_depth(self) -> int: ...
 
 @runtime_checkable
 class UsageStats(Protocol):
@@ -61,9 +69,7 @@ class HarvestPipeline:
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     def _spawn(self, coro, *, name: str | None = None) -> asyncio.Task:
-        if self._task_manager is not None:
-            return self._task_manager.create(coro, name=name)
-        return asyncio.create_task(coro, name=name)
+        return BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
 
     async def admit_crawl_target(self, url: str) -> str:
         return await self._crawler.admit_url(url)

@@ -39,10 +39,6 @@ class BroadcasterLike(Protocol):
     async def handle_connection(self, ws) -> None: ...
 
 
-class ToolExecutorLike(Protocol):
-    async def execute(self, name: str, inp: dict) -> dict: ...
-
-
 class UserActionExecutorLike(Protocol):
     async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False) -> dict: ...
     async def download(self, hashes: list[str], *, task_name: str = "download_selected") -> dict: ...
@@ -86,7 +82,6 @@ class AppContext:
     stats: StatsTracker | None = None
     bg_manager: BackgroundTaskSpawner | None = None
     broadcaster: BroadcasterLike | None = None
-    tool_executor: ToolExecutorLike | None = None
     action_executor: UserActionExecutorLike | None = None
     qbit_sync: QBitSyncLike | None = None
     qbit_runtime: QBitRuntimeLike | None = None

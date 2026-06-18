@@ -1,5 +1,5 @@
 """
-Test ToolExecutor — agent tool dispatch service.
+Test UserActionExecutor — agent tool operations (ToolExecutor collapsed in).
 """
 import sys
 import os
@@ -12,7 +12,8 @@ import pytest
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
-from magnet_harvester.services.agent_tools import ToolExecutor
+from magnet_harvester.services.user_actions import UserActionExecutor
+from magnet_harvester.transitions import MagnetItemTransitions
 
 
 class FakePipeline:
@@ -46,13 +47,24 @@ class FakeTaskManager:
         return asyncio.create_task(coro, name=name)
 
 
+def _make_executor(store=None, pipeline=None, tasks=None, stats=None):
+    store = store or FakeStore()
+    pipeline = pipeline or FakePipeline()
+    tasks = tasks or FakeTaskManager()
+    transitions = MagnetItemTransitions(store=store, bus=NullBus())
+    return UserActionExecutor(
+        store=store, pipeline=pipeline,
+        task_manager=tasks, transitions=transitions, stats=stats,
+    )
+
+
 def test_get_stats():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="a", magnet="m:?xt=urn:btih:A", category="电影"))
     store.add(MagnetItem(hash="B", name="b", magnet="m:?xt=urn:btih:B", category="电视剧"))
 
-    executor = ToolExecutor(store=store, pipeline=None, bus=NullBus())
-    result = asyncio.run(executor.execute("get_stats", {}))
+    actions = _make_executor(store=store)
+    result = actions.get_stats()
 
     assert result["total"] == 2
     assert result["by_category"]["电影"] == 1
@@ -63,8 +75,8 @@ def test_list_items():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
 
-    executor = ToolExecutor(store=store, pipeline=None, bus=NullBus())
-    result = asyncio.run(executor.execute("list_items", {"category": "电影"}))
+    actions = _make_executor(store=store)
+    result = actions.list_items(category="电影")
 
     assert result["count"] == 1
     assert result["items"][0]["name"] == "Alpha"
@@ -75,8 +87,8 @@ def test_search_items():
     store.add(MagnetItem(hash="A", name="Alpha Movie", magnet="m:?xt=urn:btih:A"))
     store.add(MagnetItem(hash="B", name="Beta Show", magnet="m:?xt=urn:btih:B"))
 
-    executor = ToolExecutor(store=store, pipeline=None, bus=NullBus())
-    result = asyncio.run(executor.execute("search_items", {"query": "alpha"}))
+    actions = _make_executor(store=store)
+    result = actions.search_items(query="alpha")
 
     assert result["count"] == 1
     assert result["results"][0]["name"] == "Alpha Movie"
@@ -86,8 +98,8 @@ def test_search_items():
 async def test_start_crawl():
     pipeline = FakePipeline()
     tasks = FakeTaskManager()
-    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus(), task_manager=tasks)
-    result = await executor.execute("start_crawl", {"url": "https://example.com", "depth": 2})
+    actions = _make_executor(pipeline=pipeline, tasks=tasks)
+    result = await actions.start_crawl("https://example.com", depth=2)
     await asyncio.sleep(0)
 
     assert result["status"] == "started"
@@ -103,9 +115,9 @@ async def test_start_crawl_rejects_target_denied_by_pipeline():
         raise ValueError("URL resolves to a private address")
 
     pipeline.admit_crawl_target = reject
-    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus())
+    actions = _make_executor(pipeline=pipeline)
 
-    result = await executor.execute("start_crawl", {"url": "https://internal.example"})
+    result = await actions.start_crawl("https://internal.example")
 
     assert result == {"status": "error", "reason": "URL resolves to a private address"}
 
@@ -114,8 +126,8 @@ async def test_start_crawl_rejects_target_denied_by_pipeline():
 async def test_add_to_queue():
     pipeline = FakePipeline()
     tasks = FakeTaskManager()
-    executor = ToolExecutor(store=FakeStore(), pipeline=pipeline, bus=NullBus(), task_manager=tasks)
-    result = await executor.execute("add_to_queue", {"hashes": ["A", "B"]})
+    actions = _make_executor(pipeline=pipeline, tasks=tasks)
+    result = await actions.download(["A", "B"], task_name="download_batch")
     await asyncio.sleep(0)
 
     assert result["status"] == "started"
@@ -124,12 +136,12 @@ async def test_add_to_queue():
     assert tasks.calls == ["download_batch"]
 
 
-def test_reclassify_item():
+def test_manually_reclassify():
     store = FakeStore()
     store.add(MagnetItem(hash="ABCDEF123456", name="Test", magnet="m:?xt=urn:btih:ABCDEF123456", category="电影"))
 
-    executor = ToolExecutor(store=store, pipeline=None, bus=NullBus())
-    result = asyncio.run(executor.execute("reclassify_item", {"hash": "ABCDEF12", "category": "电视剧"}))
+    actions = _make_executor(store=store)
+    result = asyncio.run(actions.manually_reclassify("ABCDEF12", "电视剧"))
 
     assert result["status"] == "ok"
     assert store.get("ABCDEF123456").category == "电视剧"
@@ -139,29 +151,19 @@ def test_clear_all():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="a", magnet="m:?xt=urn:btih:A"))
 
-    executor = ToolExecutor(store=store, pipeline=None, bus=NullBus())
-    result = asyncio.run(executor.execute("clear_all", {"confirm": True}))
+    actions = _make_executor(store=store)
+    result = asyncio.run(actions.clear_items())
 
     assert result["status"] == "cleared"
     assert store.count == 0
 
 
-def test_unknown_tool():
-    executor = ToolExecutor(store=FakeStore(), pipeline=None, bus=NullBus())
-    result = asyncio.run(executor.execute("unknown_tool", {}))
-
-    assert "error" in result
-    assert "unknown_tool" in result["error"]
-
-
 if __name__ == "__main__":
-    import asyncio
     test_get_stats()
     test_list_items()
     test_search_items()
     test_start_crawl()
     test_add_to_queue()
-    test_reclassify_item()
+    test_manually_reclassify()
     test_clear_all()
-    test_unknown_tool()
-    print("=== tool executor tests passed! ===")
+    print("=== user_action_executor tests passed! ===")

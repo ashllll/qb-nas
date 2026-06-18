@@ -17,6 +17,8 @@ from magnet_harvester.context.app_context import AppContext
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
+from magnet_harvester.services.user_actions import UserActionExecutor
+from magnet_harvester.transitions import MagnetItemTransitions
 
 
 class FakeStats:
@@ -44,9 +46,19 @@ class FakeStats:
         }
 
 
-class FakeToolExecutor:
-    async def execute(self, name: str, inp: dict) -> dict:
-        return {"tool": name, "input": inp}
+class FakeActionExecutor:
+    async def start_crawl(self, url, *, depth=1, auto_download=False):
+        return {"status": "started", "url": url}
+    async def download(self, hashes, *, task_name=""):
+        return {"status": "started", "count": len(hashes)}
+    async def download_pending(self):
+        return {"status": "started"}
+    async def reclassify(self, hashes):
+        return {"status": "started"}
+    async def manually_reclassify(self, hash_prefix, category):
+        return {"status": "ok"}
+    async def clear_items(self):
+        return {"status": "cleared"}
 
 
 class FakeBGManager:
@@ -110,16 +122,27 @@ def _make_app():
         )
     )
     error_handler = ErrorHandler()
+    pipeline = FakePipeline()
+    bg_manager = FakeBGManager()
+    stats = FakeStats()
+    transitions = MagnetItemTransitions(store=store, bus=NullBus())
+    action_executor = UserActionExecutor(
+        store=store,
+        pipeline=pipeline,
+        task_manager=bg_manager,
+        transitions=transitions,
+        stats=stats,
+    )
     ctx = AppContext(
         store=store,
         bus=NullBus(),
-        pipeline=FakePipeline(),
+        pipeline=pipeline,
         crawler=None,
         classifier=None,
         qbit=FakeQbit(),
-        stats=FakeStats(),
-        bg_manager=FakeBGManager(),
-        tool_executor=FakeToolExecutor(),
+        stats=stats,
+        bg_manager=bg_manager,
+        action_executor=action_executor,
         error_handler=error_handler,
     )
 

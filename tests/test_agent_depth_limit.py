@@ -1,14 +1,12 @@
 """
-P2-25: Agent depth 限制测试
-
-缺陷: start_crawl 不经过 CrawlRequest 的 Pydantic validator，Agent 可能传入 depth=10
-修复: 在 ToolExecutor.start_crawl 中添加 depth = max(1, min(depth, 3))
+P2-25: Agent depth 限制测试 (UserActionExecutor)
 """
 import asyncio
 import pytest
-from magnet_harvester.services.agent_tools import ToolExecutor
+from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import InMemoryItemStore
 from magnet_harvester.bus import MessageBus
+from magnet_harvester.transitions import MagnetItemTransitions
 
 
 class FakePipeline:
@@ -32,34 +30,37 @@ class FakePipeline:
         pass
 
 
+def _make_executor(store, pipeline):
+    transitions = MagnetItemTransitions(store=store, bus=MessageBus())
+    return UserActionExecutor(
+        store=store, pipeline=pipeline,
+        task_manager=None, transitions=transitions,
+    )
+
+
 @pytest.mark.asyncio
 async def test_start_crawl_depth_clamped():
     """验证 depth 被限制在 1-min(3, max_crawl_depth) 范围内"""
     store = InMemoryItemStore()
-    bus = MessageBus()
     pipeline = FakePipeline()
-    executor = ToolExecutor(store, pipeline, bus)
+    executor = _make_executor(store, pipeline)
 
-    # depth = 0 → 限制为 1
-    result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 0})
+    result = await executor.start_crawl("http://example.com", depth=0)
     assert result["depth"] == 1
     await asyncio.sleep(0.1)
     assert pipeline.last_depth == 1
 
-    # depth = 5 → 限制为 pipeline max_depth (2)
-    result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 5})
+    result = await executor.start_crawl("http://example.com", depth=5)
     assert result["depth"] == 2
     await asyncio.sleep(0.1)
     assert pipeline.last_depth == 2
 
-    # depth = 10 → 限制为 pipeline max_depth (2)
-    result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 10})
+    result = await executor.start_crawl("http://example.com", depth=10)
     assert result["depth"] == 2
     await asyncio.sleep(0.1)
     assert pipeline.last_depth == 2
 
-    # depth = 2 → 保持不变
-    result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 2})
+    result = await executor.start_crawl("http://example.com", depth=2)
     assert result["depth"] == 2
     await asyncio.sleep(0.1)
     assert pipeline.last_depth == 2
@@ -69,11 +70,10 @@ async def test_start_crawl_depth_clamped():
 async def test_start_crawl_respects_pipeline_max_depth():
     """当 pipeline 允许更深时，硬上限 3 仍然生效"""
     store = InMemoryItemStore()
-    bus = MessageBus()
     pipeline = FakePipeline(max_depth=5)
-    executor = ToolExecutor(store, pipeline, bus)
+    executor = _make_executor(store, pipeline)
 
-    result = await executor.execute("start_crawl", {"url": "http://example.com", "depth": 10})
+    result = await executor.start_crawl("http://example.com", depth=10)
     assert result["depth"] == 3
     await asyncio.sleep(0.1)
     assert pipeline.last_depth == 3

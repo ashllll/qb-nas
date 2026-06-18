@@ -52,7 +52,7 @@ async def test_build_runtime_wires_all_components(monkeypatch):
     assert ctx.stats is not None, "stats missing"
     assert ctx.bg_manager is not None, "bg_manager missing"
     assert ctx.broadcaster is not None, "broadcaster missing"
-    assert ctx.tool_executor is not None, "tool_executor missing"
+    assert ctx.action_executor is not None, "action_executor missing"
     assert ctx.qbit_sync is not None, "qbit_sync missing"
     assert ctx.qbit_lock is not None, "qbit_lock missing"
     assert ctx.error_handler is not None, "error_handler missing"
