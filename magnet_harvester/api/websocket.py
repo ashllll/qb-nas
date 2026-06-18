@@ -87,7 +87,8 @@ class WSBroadcaster:
             except Exception:
                 dead.add(ws)
 
-        await asyncio.gather(*[_send(ws) for ws in self._active_ws], return_exceptions=True)
+        # 使用快照避免并发 remove() 修改 _active_ws 导致迭代不一致
+        await asyncio.gather(*[_send(ws) for ws in set(self._active_ws)], return_exceptions=True)
         self._active_ws.difference_update(dead)
 
 

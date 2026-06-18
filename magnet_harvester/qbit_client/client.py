@@ -101,7 +101,8 @@ class QBittorrentClient:
             if r.status_code == 200:
                 return r.json()
             return {}
-        except Exception:
+        except Exception as e:
+            log.warning("get_torrent_properties 异常 hash=%s: %s", hash, e)
             return {}
 
     async def get_categories(self) -> dict:
@@ -125,8 +126,8 @@ class QBittorrentClient:
             for t in torrents:
                 if t.get("hash", "").startswith(hash_prefix):
                     return t
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("按前缀查找 torrent 异常: %s", e)
         return None
 
     async def _get_torrents_list(self) -> list:
@@ -135,8 +136,8 @@ class QBittorrentClient:
             r = await self._req("GET", "/torrents/info")
             if r.status_code == 200:
                 return r.json()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("获取种子列表异常: %s", e)
         return []
 
     async def get_default_save_path(self) -> str | None:
@@ -268,7 +269,8 @@ class QBittorrentClient:
             if r.status_code == 200:
                 return r.json()
             return []
-        except Exception:
+        except Exception as e:
+            log.warning("获取 tracker 列表异常: %s", e)
             return []
 
     async def delete_torrent(self, hashes: List[str], delete_files: bool = False) -> bool:
@@ -288,7 +290,8 @@ class QBittorrentClient:
             data = {"hashes": "|".join(hashes)}
             r = await self._req("POST", "/torrents/recheck", data=data)
             return r.text.strip() == "Ok."
-        except Exception:
+        except Exception as e:
+            log.warning("recheck torrent 异常: %s", e)
             return False
 
     async def get_transfer_info(self) -> QBitApiObject:
@@ -297,7 +300,8 @@ class QBittorrentClient:
             if r.status_code == 200:
                 return r.json()
             return {}
-        except Exception:
+        except Exception as e:
+            log.warning("获取传输信息异常: %s", e)
             return {}
 
     def get_stats(self) -> dict:

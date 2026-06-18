@@ -28,7 +28,11 @@ def get_cookies_for_url(url: str, site_cookies: dict[str, str]) -> list[dict]:
 
     try:
         domain = urlparse(url).hostname or ""
-    except Exception:
+    except ValueError as e:
+        log.debug("URL 解析失败 domain=%s: %s", url, e)
+        return []
+    except Exception as e:
+        log.warning("get_cookies_for_url 非预期异常: %s", e)
         return []
 
     for site_domain, cookie_str in site_cookies.items():

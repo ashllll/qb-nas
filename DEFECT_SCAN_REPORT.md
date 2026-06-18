@@ -2,10 +2,121 @@
 
 > 扫描范围：`magnet_harvester/` 全量 Python 源码 + 配置 + 测试
 > 扫描维度：Bug / 安全 / 性能 / 并发 / 架构 / 测试 / 部署
+> 版本：v3.0.0 | 日期：2026-06-19 | 方法：codebase-memory-mcp 知识图谱查询 + Grep + 人工审查
+
+---
+
+## ✅ 已修复缺陷（此版本不再适用）
+
+| 原编号 | 原问题 | 修复状态 |
+|---|---|---|
+| P0-1 | InMemoryItemStore 字典迭代崩溃 | ✅ 已使用 `list(self._items.values())` 快照 |
+| P0-2 | crawler.py 共享 Set 竞态 | ✅ 已改用 crawl4ai BFSDeepCrawlStrategy |
+| P0-3 | SSRF — 任意 URL 爬取 | ✅ 已实现 `utils/url_validator.py` 全量验证 |
+| P0-4 | API 无认证保护 | ✅ 已实现 `utils/auth.py` require_api_key + 安全态势检查 |
+| P1-5 | qB 配置明文回传 | ✅ PUT /api/config 不再返回密码 |
+| P1-6 | WebSocket 无心跳 | ✅ 已添加心跳和重连机制 |
+
+---
+
+## 🟡 当前有效缺陷
+
+### 结构性缺陷
+
+#### S-1: `try_decode_base64` 复杂度过高 (C=11)
+- **位置**: `magnet_harvester/magnet_parser.py` `try_decode_base64()`
+- **严重度**: 🟡 MEDIUM
+- **度量**: 复杂度 11 | 认知复杂度 30 | 38 行 | linear_scan_in_loop=1
+- **问题**: 函数职责过多（Base64 解码 + 多编码尝试 + 磁力验证），循环内执行字符串搜索导致二次复杂度
+- **建议**: 拆分为独立函数：`_decode_base64_variants()` + `_is_valid_magnet()`
+
+#### S-2: `extract_from_text` 循环嵌套过深 (C=10)
+- **位置**: `magnet_harvester/magnet_parser.py` `extract_from_text()`
+- **严重度**: 🟡 MEDIUM
+- **度量**: 复杂度 10 | 认知复杂度 22 | 40 行 | loop_count=6
+- **问题**: 6 层循环嵌套使测试和维护困难，单一失败点影响所有提取路径
+- **建议**: 提取内部解析逻辑到独立生成器函数
+
+#### S-3: `validate_crawl_url` 安全关键函数复杂度偏高 (C=10)
+- **位置**: `magnet_harvester/utils/url_validator.py` `validate_crawl_url()`
+- **严重度**: 🟡 MEDIUM
+- **度量**: 复杂度 10 | 25 行
+- **问题**: 安全关键函数不应有高复杂度——每个分支都是潜在攻击面
+- **建议**: 拆分为 `_validate_protocol()` + `_validate_hostname()` + `_validate_ip()`
+
+#### S-4: `classify_local` 循环内线性扫描
+- **位置**: `magnet_harvester/classifier/fallback.py` `classify_local()`
+- **严重度**: 🟢 LOW
+- **度量**: linear_scan_in_loop=1 | 复杂度 2
+- **问题**: 规则匹配循环内执行 `in` 操作，规则数量目前很少，但会随规则增长而恶化
+- **建议**: 对于大量规则场景，考虑编译正则或使用 trie 结构
+
+#### S-5: `_json_serializer` 疑似死代码
+- **位置**: `magnet_harvester/api/websocket.py` `_json_serializer()`
+- **严重度**: 🟢 LOW
+- **度量**: in_degree=0 | out_degree=0 | 4 行
+- **问题**: 知识图谱显示零调用方，仅在 `json.dumps(default=...)` 中作为回调传递，图不追踪此模式
+- **建议**: 如确实未使用则删除；如使用则保留（可能是 CBM 假阳性）
+
+---
+
+### 运行时缺陷
+
+#### R-1: 裸 `asyncio.create_task` 违反项目规范 (4 处)
+- **位置**:
+  - `magnet_harvester/crawler.py:237`
+  - `magnet_harvester/bus.py:62`
+  - `magnet_harvester/services/qbit_sync.py:55`
+  - `magnet_harvester/services/clipboard_monitor.py:67`
+- **严重度**: 🟡 MEDIUM
+- **问题**: 项目 AGENTS.md 明确要求"使用 `BGTaskManager.create()`，禁止裸 `asyncio.create_task`"。这些任务未注册到统一的异常监控和关闭生命周期中。
+- **建议**:
+  - `crawler.py:237` — 爬虫 session 任务应通过 BGTaskManager 创建
+  - `bus.py:62` — 可接受（fire-and-forget + `_safe_call` 内置错误处理），但建议加注释说明
+  - `qbit_sync.py:55` — 应通过 BGTaskManager 创建以获取关闭时的自动取消
+  - `clipboard_monitor.py:67` — 同上
+
+#### R-2: 静默异常吞没 (3 处)
+- **位置**:
+  - `magnet_harvester/magnet_parser.py:131` — `except Exception:` 无日志变量
+  - `magnet_harvester/services/site_auth.py:31` — `except Exception:` 返回空列表
+  - `magnet_harvester/qbit_client/client.py:104` — `except Exception:` 返回空 dict
+- **严重度**: 🟡 MEDIUM
+- **问题**: 吞没所有异常类型（包括 KeyboardInterrupt、SystemExit 等 BaseException 子类应避免捕获），且不记录异常细节，导致运行时故障难以排查
+- **建议**:
+  - 使用 `except Exception as e:` 并至少 `log.warning(f"... {e}")` 
+  - 考虑使用 `logger.exception()` 记录完整 traceback
+  - 对预期内的异常使用更具体的类型（如 `ValueError`）
+
+#### R-3: WebSocket 死连接清理边界案例
+- **位置**: `magnet_harvester/api/websocket.py:84-88`
+- **严重度**: 🟢 LOW
+- **问题**: 使用 `asyncio.gather(..., return_exceptions=True)` 并发发送，死连接收集到 `dead` 集合后统一移除。但 `_on_event` 通过异步回调被 MessageBus 触发，可能导致同一连接在清理中被重复尝试发送
+- **建议**: 在 `_on_event` 入口处检查 `ws.client_state` 状态
+
+---
+
+### 安全态势评估
+
+| 维度 | 状态 | 说明 |
+|---|---|---|
+| API 写保护 | ✅ 强 | 所有写端点有 `Depends(require_api_key)` |
+| SSRF 防护 | ✅ 强 | url_validator 阻断 loopback/link-local/multicast/RFC1918 |
+| CORS | ✅ 正确 | 默认禁用，仅在配置后启用 |
+| 非 loopback 启动 | ✅ 正确 | `validate_security_posture()` 在无 API_KEY 时拒绝启动 |
+| 密码存储 | ✅ 合理 | qB 密码在 .env 明文存储（此为 pydantic-settings 标准做法） |
+| 默认密码 | 🟢 提示 | `admin:adminadmin` 为代码默认值，用户应在 .env 中覆盖 |
+| Cookie 注入 | ✅ 安全 | 仅注入配置中显式指定的域名 |
+
+**安全总评**: 项目安全态势良好，无不安全实践。
 
 ---
 
 ## 🔴 P0 — Critical（必须立即修复）
+
+> ⚠️ 以下为旧报告内容，保留供历史参考。当前版本中这些问题已修复。
+
+### 1. `InMemoryItemStore` 并发字典迭代崩溃风险
 
 ### 1. `InMemoryItemStore` 并发字典迭代崩溃风险
 

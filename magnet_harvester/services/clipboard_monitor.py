@@ -65,6 +65,7 @@ class ClipboardMonitor:
         self._running = True
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run(), name="clipboard-monitor")
+        self._task.add_done_callback(self._on_task_done)
         await self._bus.emit(Event(EventType.CLIPBOARD_STATUS, {
             "running": True,
             "magnet_count": self._magnet_count,
@@ -94,6 +95,12 @@ class ClipboardMonitor:
         """服务关闭时清理。"""
         if self._running:
             await self.stop()
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        if not task.cancelled():
+            exc = task.exception()
+            if exc is not None:
+                log.error("ClipboardMonitor 后台任务异常退出: %s", exc, exc_info=exc)
 
     async def _run(self):
         """主循环：轮询剪贴板内容。"""

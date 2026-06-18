@@ -53,6 +53,7 @@ class QBitSyncLoop:
             return
 
         self._task = asyncio.create_task(self._run(), name="qbit-sync-loop")
+        self._task.add_done_callback(self._on_task_done)
 
     async def stop(self):
         self._stop_event.set()
@@ -63,6 +64,12 @@ class QBitSyncLoop:
         """Align future sync polls with a newly committed qB adapter."""
         async with self._lock:
             self._qbit = new_qbit
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        if not task.cancelled():
+            exc = task.exception()
+            if exc is not None:
+                log.error("QBitSyncLoop 后台任务异常退出: %s", exc, exc_info=exc)
 
     async def _run(self):
         while not self._stop_event.is_set():

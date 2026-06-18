@@ -80,8 +80,8 @@ class QBitPathResolver:
                 if base:
                     log.info(f"基础路径（从分类 [{name}]）: {base}")
                     return base
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("从分类获取基础路径异常: %s", e)
         return None
 
     async def _from_torrents(self) -> Optional[str]:
@@ -92,6 +92,6 @@ class QBitPathResolver:
                 if base:
                     log.info(f"基础路径（从种子 [{t.get('name', '')[:20]}…]）: {base}")
                     return base
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("从种子获取基础路径异常: %s", e)
         return None

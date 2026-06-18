@@ -94,43 +94,51 @@ def parse_magnet(raw: str) -> Optional[dict]:
     }
 
 
-def try_decode_base64(text: str) -> List[str]:
-    """尝试从文本中解码 Base64 编码的磁力链接"""
-    results: List[str] = []
+def _collect_base64_candidates(text: str) -> Set[str]:
+    """扫描文本，收集可能的 Base64 编码候选字符串。"""
     candidates: Set[str] = set()
-
     for match in BASE64_MAGNET_RE.finditer(text):
         candidate = match.group()
         if BASE64_MIN_LENGTH <= len(candidate) <= BASE64_MAX_LENGTH:
             candidates.add(candidate)
+    return candidates
 
+
+def _decode_candidate(candidate: str) -> str | None:
+    """尝试解码单个 Base64 候选，返回其中的磁力链接或 None。"""
+    if not BASE64_VALID_RE.match(candidate):
+        return None
+    try:
+        decoded_bytes = base64.b64decode(candidate)
+    except (binascii.Error, ValueError):
+        log.debug("Base64 解码失败 (非磁力内容)")
+        return None
+    decoded = decoded_bytes.decode('utf-8', errors='ignore')
+    if not decoded or len(decoded) < 10:
+        return None
+    decoded_lower = decoded.lower()
+    if 'magnet:' not in decoded_lower and 'btih:' not in decoded_lower:
+        return None
+    magnets = MAGNET_RE.findall(decoded)
+    if magnets:
+        return magnets[0]
+    hash_match = BTIH_PATTERN_RE.search(decoded)
+    if hash_match:
+        return f"magnet:?xt=urn:btih:{hash_match.group(1).upper()}"
+    return None
+
+
+def try_decode_base64(text: str) -> List[str]:
+    """尝试从文本中解码 Base64 编码的磁力链接。"""
+    results: List[str] = []
+    candidates = _collect_base64_candidates(text)
     for candidate in candidates:
         try:
-            if not BASE64_VALID_RE.match(candidate):
-                continue
-
-            decoded_bytes = base64.b64decode(candidate)
-            decoded = decoded_bytes.decode('utf-8', errors='ignore')
-
-            if not decoded or len(decoded) < 10:
-                continue
-
-            decoded_lower = decoded.lower()
-            if 'magnet:' in decoded_lower or 'btih:' in decoded_lower:
-                magnets = MAGNET_RE.findall(decoded)
-                if magnets:
-                    results.extend(magnets)
-                else:
-                    hash_match = BTIH_PATTERN_RE.search(decoded)
-                    if hash_match:
-                        magnet = f"magnet:?xt=urn:btih:{hash_match.group(1).upper()}"
-                        results.append(magnet)
-
-        except (binascii.Error, ValueError, UnicodeDecodeError):
-            log.debug("Base64 解码失败 (非磁力内容)")
-        except Exception:
-            log.debug("Base64 解码未知错误")
-
+            decoded = _decode_candidate(candidate)
+            if decoded:
+                results.append(decoded)
+        except (UnicodeDecodeError, Exception) as e:
+            log.debug("Base64 解码未知错误: %s", e)
     return list(set(results))
 
 

@@ -39,30 +39,36 @@ def _is_unsafe_address(value: str) -> bool:
     return False
 
 
-def validate_crawl_url(url: str) -> bool:
-    """Validate the literal URL shape before network resolution."""
-    if not url or not url.strip():
-        raise URLValidationError("URL is empty")
-
-    parsed = urlparse(url.strip())
-    if parsed.scheme not in ("http", "https"):
-        if not parsed.scheme:
-            raise URLValidationError("URL must start with http:// or https://")
-        raise URLValidationError(f"Unsupported protocol: {parsed.scheme}")
-    if _INVALID_URL_CHARS_RE.search(url):
-        raise URLValidationError("URL contains invalid characters (@ or \\)")
-    if not parsed.hostname:
+def _validate_hostname(hostname: str | None) -> None:
+    if not hostname:
         raise URLValidationError("URL has no hostname")
-    if parsed.hostname.lower() == "localhost":
+    if hostname.lower() == "localhost":
         raise URLValidationError("URL resolves to a private address")
-
     try:
-        if _is_unsafe_address(parsed.hostname):
+        if _is_unsafe_address(hostname):
             raise URLValidationError("URL resolves to a private address")
     except URLValidationError:
         raise
     except ValueError:
         pass
+
+
+def _validate_protocol(parsed) -> None:
+    if parsed.scheme not in ("http", "https"):
+        if not parsed.scheme:
+            raise URLValidationError("URL must start with http:// or https://")
+        raise URLValidationError(f"Unsupported protocol: {parsed.scheme}")
+
+
+def validate_crawl_url(url: str) -> bool:
+    """Validate the literal URL shape before network resolution."""
+    if not url or not url.strip():
+        raise URLValidationError("URL is empty")
+    parsed = urlparse(url.strip())
+    _validate_protocol(parsed)
+    if _INVALID_URL_CHARS_RE.search(url):
+        raise URLValidationError("URL contains invalid characters (@ or \\)")
+    _validate_hostname(parsed.hostname)
     return True
 
 
