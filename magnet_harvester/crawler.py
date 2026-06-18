@@ -26,6 +26,7 @@ from crawl4ai import (
 )
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import FilterChain, URLFilter, URLPatternFilter
+from crawl4ai.deep_crawling.scorers import PathDepthScorer
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_parser import extract_from_text
@@ -127,6 +128,11 @@ class MagnetCrawler:
                 flatten_shadow_dom=settings.CRAWLER_FLATTEN_SHADOW_DOM,
                 remove_overlay_elements=settings.CRAWLER_REMOVE_OVERLAYS,
                 remove_consent_popups=settings.CRAWLER_REMOVE_CONSENT_POPUPS,
+                max_retries=settings.CRAWLER_MAX_RETRIES,
+                check_robots_txt=settings.CRAWLER_CHECK_ROBOTS_TXT,
+                simulate_user=settings.CRAWLER_SIMULATE_USER,
+                magics=settings.CRAWLER_MAGICS,
+                url_score_depth_bias=settings.CRAWLER_URL_SCORE_DEPTH_BIAS,
             )
         else:
             self._config = config
@@ -341,12 +347,14 @@ class MagnetCrawler:
             yield result
 
     def _build_deep_crawl_strategy(self, depth: int) -> BFSDeepCrawlStrategy:
+        url_scorer = PathDepthScorer() if self._config.url_score_depth_bias else None
         return BFSDeepCrawlStrategy(
             max_depth=max(0, depth - 1),
             filter_chain=FilterChain([
                 URLPatternFilter(DETAIL_URL_RE, use_glob=False),
                 CrawlAdmissionFilter(self._target_admission),
             ]),
+            url_scorer=url_scorer,
             include_external=False,
             max_pages=max(1, self._config.max_detail_links + 1),
             logger=log,
@@ -374,6 +382,10 @@ class MagnetCrawler:
             remove_consent_popups=self._config.remove_consent_popups,
             deep_crawl_strategy=deep_crawl_strategy,
             semaphore_count=self._worker_count,
+            max_retries=self._config.max_retries,
+            check_robots_txt=self._config.check_robots_txt,
+            simulate_user=self._config.simulate_user,
+            magic=self._config.magics,
         )
 
     def _extract_page_items(self, result, source_url: str) -> List[dict]:

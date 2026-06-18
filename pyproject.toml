@@ -11,7 +11,7 @@ readme = "README.md"
 license = {text = "MIT"}
 
 dependencies = [
-    "crawl4ai>=0.8.0",
+    "crawl4ai>=0.9.0",
     "playwright>=1.40",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",

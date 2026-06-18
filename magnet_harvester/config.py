@@ -30,6 +30,12 @@ class CrawlerConfig:
     flatten_shadow_dom: bool = True
     remove_overlay_elements: bool = True
     remove_consent_popups: bool = True
+    # — v0.9.0 新增 —
+    max_retries: int = 1
+    check_robots_txt: bool = False
+    simulate_user: bool = False
+    magics: bool = False
+    url_score_depth_bias: bool = True  # BFS 时优先短路径详情页
 
 
 @dataclass
@@ -71,6 +77,11 @@ class Settings(BaseSettings):
     CRAWLER_FLATTEN_SHADOW_DOM: bool = True
     CRAWLER_REMOVE_OVERLAYS: bool = True
     CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
+    CRAWLER_MAX_RETRIES: int = 1
+    CRAWLER_CHECK_ROBOTS_TXT: bool = False
+    CRAWLER_SIMULATE_USER: bool = False
+    CRAWLER_MAGICS: bool = False
+    CRAWLER_URL_SCORE_DEPTH_BIAS: bool = True
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
 
@@ -121,6 +132,11 @@ class Settings(BaseSettings):
                 flatten_shadow_dom=self.CRAWLER_FLATTEN_SHADOW_DOM,
                 remove_overlay_elements=self.CRAWLER_REMOVE_OVERLAYS,
                 remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
+                max_retries=self.CRAWLER_MAX_RETRIES,
+                check_robots_txt=self.CRAWLER_CHECK_ROBOTS_TXT,
+                simulate_user=self.CRAWLER_SIMULATE_USER,
+                magics=self.CRAWLER_MAGICS,
+                url_score_depth_bias=self.CRAWLER_URL_SCORE_DEPTH_BIAS,
             )
         return self._crawler_config
 
