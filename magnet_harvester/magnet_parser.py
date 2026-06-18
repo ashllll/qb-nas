@@ -61,35 +61,25 @@ BASE64_VALID_RE = re.compile(r'^[a-zA-Z0-9+/]+={0,2}$')
 # ── 核心解析函数 ──────────────────────────
 
 
-def parse_magnet(raw: str) -> Optional[dict]:
-    """将单个磁力链接字符串解析为结构化数据
-
-    返回:
-        {
-            "hash": "infohash (大写)",
-            "name": "文件名 (URL解码后)",
-            "magnet": "原始磁力链接",
-            "size": "文件大小 (如果存在)",
-        }
-        或 None (如果无法解析)
-    """
-    raw = html.unescape(raw.strip().rstrip("'\"")).split()[0]
-    raw = urllib.parse.unquote(raw)
-    m = HASH_RE.search(raw)
+def parse_magnet(raw_raw: str) -> Optional[dict]:
+    """将单个磁力链接字符串解析为结构化数据"""
+    raw = html.unescape(raw_raw.strip().rstrip("'\"")).split()[0]
+    decoded = urllib.parse.unquote(raw)
+    m = HASH_RE.search(decoded)
     if not m:
         return None
     btih = m.group(1).upper()
 
-    dn_match = re.search(r'[?&]dn=([^&]+)', raw)
+    dn_match = re.search(r'[?&]dn=([^&]+)', decoded)
     name = urllib.parse.unquote_plus(dn_match.group(1)) if dn_match else f"Unknown_{btih[:8]}"
 
-    xl_match = SIZE_RE.search(raw)
+    xl_match = SIZE_RE.search(decoded)
     size = xl_match.group(1) if xl_match else None
 
     return {
         "hash": btih,
         "name": name,
-        "magnet": raw,
+        "magnet": raw,  # keep original encoding
         "size": size,
     }
 

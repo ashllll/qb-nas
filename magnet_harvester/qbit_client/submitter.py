@@ -55,6 +55,7 @@ class MagnetSubmitter:
         self._record_attempt = record_attempt
         self._record_success = record_success
         self._record_failure = record_failure
+        self._recently_rejected: set[str] = set()
 
     def _set_error(self, message: Optional[str]) -> None:
         if self._set_last_error:
@@ -91,7 +92,14 @@ class MagnetSubmitter:
             self._set_error("磁力链接格式无效（缺少 btih）")
             self._mark_failure()
             return False
-        btih_prefix = btih_match.group(1)[:8]
+        btih_full = btih_match.group(1).upper()
+        btih_prefix = btih_full[:8]
+
+        # 短期记忆：已被 qB 明确拒绝的 hash 不再重复提交
+        if btih_full in self._recently_rejected:
+            self._set_error(f"该磁力近期已被 qB 拒绝 (btih:{btih_prefix}…)，跳过重复提交")
+            self._mark_failure()
+            return False
 
         category_save_path = save_path
         if category_save_path and not category_save_path.startswith("/"):
@@ -136,6 +144,7 @@ class MagnetSubmitter:
                 error_msg = f"qB 拒绝 (btih:{btih_prefix}…) — {r.text.strip()[:100]}"
                 self._set_error(error_msg)
                 self._mark_failure()
+                self._recently_rejected.add(btih_full)
                 log.warning(f"add_magnet 失败: {error_msg}")
 
             return ok

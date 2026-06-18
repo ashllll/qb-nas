@@ -9,6 +9,8 @@ class TorrentStatusMapper:
     def map(torrent: dict) -> dict:
         state = str(torrent.get("state", "") or "")
         progress = float(torrent.get("progress") or 0.0)
+        downloaded = float(torrent.get("downloaded") or 0)
+        total_size = float(torrent.get("total_size") or 0)
 
         downloading_states = {
             "downloading",
@@ -18,8 +20,8 @@ class TorrentStatusMapper:
             "checkingDL",
             "checkingResumeData",
             "moving",
-            "pausedDL",  # qB queue management can temporarily pause active downloads.
-            "queuedDL",  # Treat queue wait as downloading to avoid UI status oscillation.
+            "pausedDL",
+            "queuedDL",
         }
         success_states = {
             "uploading",
@@ -33,12 +35,17 @@ class TorrentStatusMapper:
 
         if state in error_states:
             status = TaskStatus.error
-        elif progress >= 1.0 or state in success_states:
+        elif progress >= 1.0:
             status = TaskStatus.success
+        elif state in success_states and downloaded > 0 and total_size > 0 and downloaded >= total_size:
+            # stalledUP / forcedUP with complete data -> success
+            status = TaskStatus.success
+        elif state in success_states:
+            # stalledUP / pausedUP with zero progress -> no seeders; treat as stalled, not success
+            status = TaskStatus.downloading
         elif state in downloading_states or 0.0 < progress < 1.0:
             status = TaskStatus.downloading
         else:
-            # Unknown qB state — map to error to surface anomalies
             status = TaskStatus.error
 
         return {
