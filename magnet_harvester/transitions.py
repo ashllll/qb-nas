@@ -20,7 +20,7 @@ class MagnetItemTransitions:
     """Applies Magnet item state changes and publishes matching events.
 
     Each method performs a store update + event emission as an atomic
-    conceptual transition. The event rules are delegated to ItemEventEmitter.
+    conceptual transition.
     """
 
     def __init__(self, store: ItemStore, bus: MessageBus):
@@ -120,7 +120,7 @@ class MagnetItemTransitions:
         await self._emit_item_changed(hash_key)
         await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
-    # ── 以下方法来自 item_transitions.py（移植版，使用 ItemEventEmitter 委托）──
+    # ── 以下方法来自 item_transitions.py（移植版）──
 
     async def clipboard_found(self, item: MagnetItem) -> bool:
         """found + emit_item_changed（剪贴板入口专用）"""
