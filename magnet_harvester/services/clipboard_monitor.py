@@ -22,6 +22,7 @@ from magnet_harvester.magnet_parser import extract_from_text
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.store import ItemStore
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
