@@ -123,8 +123,9 @@ class QBittorrentClient:
             if r.status_code != 200:
                 return None
             torrents = r.json()
+            prefix_lower = hash_prefix.lower()
             for t in torrents:
-                if t.get("hash", "").startswith(hash_prefix):
+                if t.get("hash", "").lower().startswith(prefix_lower):
                     return t
         except Exception as e:
             log.debug("按前缀查找 torrent 异常: %s", e)
