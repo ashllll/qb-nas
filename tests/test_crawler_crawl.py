@@ -1,6 +1,7 @@
 """
 集成测试：MagnetCrawler.crawl() 生成器协议
 """
+
 import sys
 import os
 

@@ -1,4 +1,5 @@
 """API Key authentication dependency for sensitive endpoints."""
+
 from __future__ import annotations
 
 from fastapi import Header, HTTPException, Request, status

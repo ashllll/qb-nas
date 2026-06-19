@@ -5,6 +5,7 @@ LocalClassifier — 本地规则分类器
 - fallback: 本地分类规则（LOCAL_RULES + 辅助函数）
 - local_classifier: LocalClassifier（主要分类器实现）
 """
+
 from __future__ import annotations
 
 from magnet_harvester.classifier.fallback import (

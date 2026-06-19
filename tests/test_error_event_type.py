@@ -4,6 +4,7 @@ P2-13: 错误事件类型测试
 缺陷: clear_all 使用 EventType.ERROR 广播 items_cleared，语义错误
 修复: 添加 EventType.ITEMS_CLEARED 并使用它
 """
+
 from magnet_harvester.bus import EventType
 
 

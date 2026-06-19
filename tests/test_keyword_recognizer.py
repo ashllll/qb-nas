@@ -1,6 +1,7 @@
 """
 测试 KeywordCategoryRecognizer — 从文件名识别通用分类关键词
 """
+
 import json
 import sys
 import os

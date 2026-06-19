@@ -4,6 +4,7 @@ Internal helper that tracks the maindata `rid`, the current torrent snapshot,
 and recently removed torrent hashes.  Kept separate from `QBittorrentClient` so
 snapshot/removed logic can be unit tested without network I/O.
 """
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable

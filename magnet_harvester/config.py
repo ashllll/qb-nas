@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import ipaddress
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,7 @@ log = logging.getLogger(__name__)
 
 # ── 子配置 ──────────────────────────────
 
+
 @dataclass
 class CrawlerConfig:
     timeout: int = 30
@@ -23,6 +25,7 @@ class CrawlerConfig:
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
     wait_until: str = "load"
     delay_before_return_html: float = 1.0
+    word_count_threshold: int = 10
     scan_full_page: bool = True
     scroll_delay: float = 0.2
     max_scroll_steps: int = 8
@@ -54,10 +57,12 @@ class ServiceConfig:
 
 # ── 主配置 ──────────────────────────────
 
+
 class Settings(BaseSettings):
     QBIT_HOST: str = "http://192.168.1.100:8080"
     QBIT_USERNAME: str = "admin"
     QBIT_PASSWORD: str = "adminadmin"
+    QBIT_SYNC_INTERVAL: float = 2.0
 
     SERVICE_HOST: str = "127.0.0.1"
     SERVICE_PORT: int = 8899
@@ -70,6 +75,7 @@ class Settings(BaseSettings):
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
     CRAWLER_WAIT_UNTIL: str = "load"
     CRAWLER_DELAY_BEFORE_HTML: float = 1.0
+    CRAWLER_WORD_COUNT_THRESHOLD: int = 10
     CRAWLER_SCAN_FULL_PAGE: bool = True
     CRAWLER_SCROLL_DELAY: float = 0.2
     CRAWLER_MAX_SCROLL_STEPS: int = 8
@@ -125,6 +131,7 @@ class Settings(BaseSettings):
                 allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
                 wait_until=self.CRAWLER_WAIT_UNTIL,
                 delay_before_return_html=self.CRAWLER_DELAY_BEFORE_HTML,
+                word_count_threshold=self.CRAWLER_WORD_COUNT_THRESHOLD,
                 scan_full_page=self.CRAWLER_SCAN_FULL_PAGE,
                 scroll_delay=self.CRAWLER_SCROLL_DELAY,
                 max_scroll_steps=self.CRAWLER_MAX_SCROLL_STEPS,
@@ -149,7 +156,9 @@ class Settings(BaseSettings):
             )
         return self._service_config
 
-    def update_qbit(self, host: str | None = None, username: str | None = None, password: str | None = None):
+    def update_qbit(
+        self, host: str | None = None, username: str | None = None, password: str | None = None
+    ):
         """动态更新 qB 配置（由前端配置面板调用）
 
         返回:
@@ -225,10 +234,38 @@ class Settings(BaseSettings):
             "Configure API_KEY or set ALLOW_INSECURE_WRITE_API=true for deliberate development use."
         )
 
+    def check_disk_space(self) -> dict[str, object]:
+        """Return disk usage for the configured download filesystem path."""
+        path = self.FS_BASE_PATH.strip() or "."
+        try:
+            usage = shutil.disk_usage(path)
+        except OSError as exc:
+            log.warning("磁盘空间检查失败: %s", exc)
+            return {
+                "path": path,
+                "error": str(exc),
+                "min_free_gb": self.MIN_DISK_SPACE_GB,
+                "low_space": False,
+            }
+
+        free_gb = self._bytes_to_gb(usage.free)
+        return {
+            "path": path,
+            "total_gb": self._bytes_to_gb(usage.total),
+            "used_gb": self._bytes_to_gb(usage.used),
+            "free_gb": free_gb,
+            "min_free_gb": self.MIN_DISK_SPACE_GB,
+            "low_space": free_gb < self.MIN_DISK_SPACE_GB,
+        }
+
     @staticmethod
     def _parse_csv_tuple(value: str) -> tuple[str, ...]:
         values = tuple(item.strip() for item in value.split(",") if item.strip())
         return values or ("2160p", "4k")
+
+    @staticmethod
+    def _bytes_to_gb(value: int) -> float:
+        return round(value / 1024**3, 2)
 
     @classmethod
     def _write_env_values(cls, path: Path, updates: dict[str, str]) -> None:

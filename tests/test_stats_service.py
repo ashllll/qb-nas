@@ -1,6 +1,7 @@
 """
 Test services/stats.py — SystemStats as a pure dataclass.
 """
+
 import sys
 import os
 import time

@@ -2,6 +2,7 @@
 TDD 循环 5: 配置验证与动态更新的原子性
 验证 Settings.update_qbit() 的输入校验和 RuntimeContext.replace_qbit() 的资源清理
 """
+
 import sys
 import os
 
@@ -15,6 +16,7 @@ from magnet_harvester.config import Settings
 # ═══════════════════════════════════════════════════
 # 示踪弹: update_qbit() 应拒绝非法 URL
 # ═══════════════════════════════════════════════════
+
 
 def test_update_qbit_rejects_invalid_url():
     """传入非法 URL 时，update_qbit() 应返回错误且不修改配置"""
@@ -34,6 +36,7 @@ def test_update_qbit_rejects_invalid_url():
 # 增量测试 2: update_qbit() 应接受合法 URL
 # ═══════════════════════════════════════════════════
 
+
 def test_update_qbit_accepts_valid_url():
     """传入合法 URL 时，update_qbit() 应成功更新"""
     settings = Settings()
@@ -49,6 +52,7 @@ def test_update_qbit_accepts_valid_url():
 # ═══════════════════════════════════════════════════
 # 增量测试 3: update_qbit() 应拒绝空值
 # ═══════════════════════════════════════════════════
+
 
 def test_update_qbit_rejects_empty_values():
     """传入空字符串时，update_qbit() 应拒绝"""
@@ -109,6 +113,7 @@ def test_security_posture_allows_explicit_insecure_development_override():
 # 增量测试 4: RuntimeContext.replace_qbit() 应关闭旧客户端
 # ═══════════════════════════════════════════════════
 
+
 async def test_replace_qbit_closes_old_client():
     """替换 qBittorrent 客户端时，旧客户端应被关闭"""
     from magnet_harvester.context.app_context import AppContext, RuntimeContext
@@ -121,8 +126,13 @@ async def test_replace_qbit_closes_old_client():
 
     # 创建最小 AppContext
     ctx = AppContext(
-        store=None, bus=None, pipeline=None, crawler=None,
-        classifier=None, qbit=old_qbit, stats=None,
+        store=None,
+        bus=None,
+        pipeline=None,
+        crawler=None,
+        classifier=None,
+        qbit=old_qbit,
+        stats=None,
     )
     runtime = RuntimeContext(ctx)
 
@@ -181,6 +191,7 @@ if __name__ == "__main__":
     print("[PASS] test_update_qbit_rejects_empty_values")
 
     import asyncio
+
     asyncio.run(test_replace_qbit_closes_old_client())
     print("[PASS] test_replace_qbit_closes_old_client")
 

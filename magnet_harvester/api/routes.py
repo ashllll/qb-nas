@@ -1,6 +1,7 @@
 """
 REST routes backed by AppContext dependency injection.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -8,62 +9,71 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from magnet_harvester.config import settings
-from magnet_harvester.context.app_context import AppContext, QBitRuntime, get_context
+from magnet_harvester.context.app_context import (
+    AppContext,
+    ItemQueryLike,
+    ObservabilityLike,
+    QBitRuntimeLike,
+    UserActionExecutorLike,
+    get_context,
+)
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity
-from magnet_harvester.transitions import MagnetItemTransitions
-from magnet_harvester.models import CrawlRequest, DownloadRequest, TaskStatus
-from magnet_harvester.services.user_actions import UserActionExecutor
+from magnet_harvester.models import CrawlRequest, DownloadRequest
 from magnet_harvester.utils.auth import require_api_key
-from magnet_harvester.utils.serializers import item_payload, item_summary
 
 router = APIRouter()
 
 
-def _actions(ctx: AppContext) -> UserActionExecutor:
-    return ctx.action_executor or UserActionExecutor(
-        store=ctx.store,
-        pipeline=ctx.pipeline,
-        task_manager=ctx.bg_manager,
-        transitions=ctx.item_transitions or MagnetItemTransitions(store=ctx.store, bus=ctx.bus),
-        stats=ctx.stats,
-    )
+def _actions(ctx: AppContext) -> UserActionExecutorLike:
+    if ctx.action_executor is None:
+        raise HTTPException(status_code=500, detail="Action executor not configured")
+    return ctx.action_executor
 
 
-def _qbit_runtime(ctx: AppContext) -> QBitRuntime:
-    return ctx.qbit_runtime or QBitRuntime(ctx=ctx)
+def _qbit_runtime(ctx: AppContext) -> QBitRuntimeLike:
+    if ctx.qbit_runtime is None:
+        raise HTTPException(status_code=500, detail="qBittorrent runtime not configured")
+    return ctx.qbit_runtime
+
+
+def _observability(ctx: AppContext) -> ObservabilityLike:
+    if ctx.observability is None:
+        raise HTTPException(status_code=500, detail="Observability snapshot not configured")
+    return ctx.observability
+
+
+def _item_queries(ctx: AppContext) -> ItemQueryLike:
+    if ctx.item_queries is None:
+        raise HTTPException(status_code=500, detail="Item queries not configured")
+    return ctx.item_queries
+
+
+def _task_snapshot(ctx: AppContext, task_id: str) -> dict:
+    task_manager = ctx.bg_manager
+    get_task = getattr(task_manager, "get_task", None)
+    if get_task is None:
+        raise HTTPException(status_code=500, detail="Background task manager not configured")
+    snapshot = get_task(task_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return snapshot
+
+
+def _classifier_reload(ctx: AppContext) -> dict:
+    reload_rules = getattr(ctx.classifier, "reload_rules", None)
+    if reload_rules is None:
+        raise HTTPException(status_code=500, detail="Classifier reload not configured")
+    return reload_rules()
 
 
 @router.get("/api/status")
 async def system_status(ctx: AppContext = Depends(get_context)):
-    qbit_ok = await ctx.qbit.ping()
-    # 用 stats.by_status 聚合计数，避免全量列表扫描
-    by_status = ctx.store.stats().by_status
-    tracked = sum(
-        by_status.get(s.value, 0)
-        for s in (TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading)
-    )
-    return {
-        "qbittorrent": "online" if qbit_ok else "offline",
-        "classifier": "local_rules",
-        "items_count": ctx.store.count,
-        "tracked_downloads": tracked,
-        "qbit_stats": ctx.qbit.get_stats(),
-        "disk_space": {},
-    }
+    return await _observability(ctx).system_status()
 
 
 @router.get("/api/stats")
 async def get_stats(ctx: AppContext = Depends(get_context)):
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
-        result = ctx.stats.as_dict()
-    else:
-        result = {"api_calls": 0}
-    result["active_items"] = ctx.store.count
-    result["websocket_clients"] = ctx.broadcaster.active_count if ctx.broadcaster else 0
-    if ctx.error_handler is not None:
-        result["error_stats"] = ctx.error_handler.get_error_stats()
-    return result
+    return _observability(ctx).api_stats()
 
 
 @router.get("/api/items")
@@ -76,14 +86,12 @@ async def get_items(
 ):
     if ctx.stats is not None:
         ctx.stats.record_api_call()
-    items = ctx.store.list(category=category, status=status or "all", limit=10000)
-    total = len(items)
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "items": [item_payload(i) for i in items[offset:offset + limit]],
-    }
+    return _item_queries(ctx).page_items(
+        category=category,
+        status=status or "all",
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/api/items/search")
@@ -94,14 +102,17 @@ async def search_items(
 ):
     if ctx.stats is not None:
         ctx.stats.record_api_call()
-    hits = ctx.store.search(q)
-    return {"count": len(hits), "results": [item_summary(i) for i in hits[:limit]]}
+    return _item_queries(ctx).search_items(query=q, limit=limit)
 
 
 @router.post("/api/crawl")
-async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+async def start_crawl(
+    req: CrawlRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
+):
     try:
-        result = await _actions(ctx).start_crawl(req.url, depth=req.depth, auto_download=req.auto_download)
+        result = await _actions(ctx).start_crawl(
+            req.url, depth=req.depth, auto_download=req.auto_download
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if result.get("status") == "error":
@@ -109,13 +120,34 @@ async def start_crawl(req: CrawlRequest, ctx: AppContext = Depends(get_context),
     return result
 
 
+@router.get("/api/tasks/{task_id}")
+async def get_task_status(
+    task_id: str,
+    ctx: AppContext = Depends(get_context),
+    _=Depends(require_api_key),
+):
+    return _task_snapshot(ctx, task_id)
+
+
+@router.post("/api/classifier/reload")
+async def reload_classifier(
+    ctx: AppContext = Depends(get_context),
+    _=Depends(require_api_key),
+):
+    return _classifier_reload(ctx)
+
+
 @router.post("/api/download")
-async def download_selected(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+async def download_selected(
+    req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
+):
     return await _actions(ctx).download(req.hashes)
 
 
 @router.post("/api/reclassify")
-async def reclassify(req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+async def reclassify(
+    req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
+):
     return await _actions(ctx).reclassify(req.hashes)
 
 
@@ -146,12 +178,11 @@ async def clear_resolved_errors(ctx: AppContext = Depends(get_context), _=Depend
 
 @router.get("/api/health")
 async def health_check(ctx: AppContext = Depends(get_context)):
-    qbit_ok = await ctx.qbit.ping()
-    return {"healthy": qbit_ok, "qbittorrent": qbit_ok, "classifier": True}
+    return await _observability(ctx).health()
 
 
 @router.get("/api/config")
-async def get_config():
+async def get_config(_=Depends(require_api_key)):
     return {
         "qbit_host": settings.QBIT_HOST,
         "qbit_username": settings.QBIT_USERNAME,
@@ -159,7 +190,9 @@ async def get_config():
 
 
 @router.put("/api/config")
-async def update_config(data: dict, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+async def update_config(
+    data: dict, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
+):
     try:
         return await _qbit_runtime(ctx).replace_qbit_config(
             host=data.get("qbit_host"),
@@ -179,7 +212,9 @@ async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_
 
 @router.get("/api/categories")
 async def get_categories():
-    return {"categories": ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"]}
+    return {
+        "categories": ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"]
+    }
 
 
 @router.get("/api/clipboard")

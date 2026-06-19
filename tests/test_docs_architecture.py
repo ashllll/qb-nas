@@ -1,4 +1,5 @@
 """Documentation should reflect the centralized lifespan architecture."""
+
 from pathlib import Path
 
 

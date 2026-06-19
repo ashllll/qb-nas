@@ -1,6 +1,7 @@
 """
 Test WSBroadcaster — WebSocket event broadcast service.
 """
+
 import sys
 import os
 import json
@@ -8,6 +9,7 @@ import json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
+from fastapi import WebSocketDisconnect
 
 from magnet_harvester.bus import MessageBus, Event, EventType
 from magnet_harvester.api.websocket import WSBroadcaster
@@ -23,6 +25,21 @@ class FakeWebSocket:
 
     async def close(self):
         self.closed = True
+
+
+class LifecycleWebSocket(FakeWebSocket):
+    def __init__(self, incoming: list[str]):
+        super().__init__()
+        self.incoming = list(incoming)
+        self.accepted = False
+
+    async def accept(self):
+        self.accepted = True
+
+    async def receive_text(self):
+        if self.incoming:
+            return self.incoming.pop(0)
+        raise WebSocketDisconnect()
 
 
 @pytest.mark.asyncio
@@ -93,6 +110,19 @@ async def test_send_init_sends_all_items():
     data = json.loads(ws.sent[0])
     assert data["type"] == "init"
     assert len(data["items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_handle_connection_replies_to_ping_message():
+    bus = MessageBus()
+    broadcaster = WSBroadcaster(bus=bus)
+    ws = LifecycleWebSocket(['{"type": "ping"}'])
+
+    await broadcaster.handle_connection(ws)
+
+    assert ws.accepted is True
+    assert broadcaster.active_count == 0
+    assert [json.loads(message)["type"] for message in ws.sent] == ["init", "pong"]
 
 
 @pytest.mark.asyncio

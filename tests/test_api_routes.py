@@ -13,10 +13,13 @@ from tests._client import asgi_client
 
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
-from magnet_harvester.context.app_context import AppContext
+from magnet_harvester.config import QBitConfig
+from magnet_harvester.context.app_context import AppContext, QBitRuntime
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
+from magnet_harvester.services.item_queries import ItemQueryExecutor
+from magnet_harvester.services.observability import ObservabilitySnapshot
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.transitions import MagnetItemTransitions
 
@@ -49,14 +52,19 @@ class FakeStats:
 class FakeActionExecutor:
     async def start_crawl(self, url, *, depth=1, auto_download=False):
         return {"status": "started", "url": url}
+
     async def download(self, hashes, *, task_name=""):
         return {"status": "started", "count": len(hashes)}
+
     async def download_pending(self):
         return {"status": "started"}
+
     async def reclassify(self, hashes):
         return {"status": "started"}
+
     async def manually_reclassify(self, hash_prefix, category):
         return {"status": "ok"}
+
     async def clear_items(self):
         return {"status": "cleared"}
 
@@ -64,16 +72,28 @@ class FakeActionExecutor:
 class FakeBGManager:
     def __init__(self):
         self.calls = []
+        self.snapshots = {
+            "task-123": {
+                "task_id": "task-123",
+                "name": "crawl:https://example.com",
+                "status": "running",
+                "error": None,
+            }
+        }
 
     def create(self, coro, name=None):
         self.calls.append(name)
         coro.close()
         return None
 
+    def get_task(self, task_id):
+        return self.snapshots.get(task_id)
+
 
 class FakePipeline:
     def __init__(self):
         self.replaced_qbit = None
+        self.crawl_calls = []
 
     def max_crawl_depth(self):
         return 2
@@ -81,7 +101,17 @@ class FakePipeline:
     async def admit_crawl_target(self, url):
         return url
 
+    async def start_crawl(self, url, *, depth=1, auto_download=False):
+        try:
+            url = await self.admit_crawl_target(url.strip())
+        except ValueError as exc:
+            return {"status": "error", "reason": str(exc)}
+        depth = max(1, min(int(depth), 3, self.max_crawl_depth()))
+        await self.execute(url, depth=depth, auto_download=auto_download)
+        return {"status": "started", "url": url, "depth": depth}
+
     async def execute(self, url, depth=1, auto_download=False):
+        self.crawl_calls.append((url, depth, auto_download))
         return None
 
     async def download(self, hashes):
@@ -110,6 +140,15 @@ class FakeQbit:
         self.closed = True
 
 
+class FakeClassifier:
+    def __init__(self):
+        self.reload_calls = 0
+
+    def reload_rules(self):
+        self.reload_calls += 1
+        return {"status": "reloaded", "rules_reloaded": 1}
+
+
 def _make_app():
     store = FakeStore()
     store.add(
@@ -133,17 +172,56 @@ def _make_app():
         transitions=transitions,
         stats=stats,
     )
+    qbit = FakeQbit()
+    classifier = FakeClassifier()
+    observability = ObservabilitySnapshot(
+        store=store,
+        qbit=qbit,
+        stats=stats,
+        error_handler=error_handler,
+    )
+    item_queries = ItemQueryExecutor(store=store)
+
+    class RuntimeSettings:
+        def build_qbit_config(self, host, username, password):
+            if not host or not host.startswith(("http://", "https://")):
+                raise ValueError("非法的 qBittorrent 主机地址")
+            if not username:
+                raise ValueError("用户名不能为空")
+            if not password:
+                raise ValueError("密码不能为空")
+            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+
+        def persist_qbit_config(self, config, env_path=None):
+            return None
+
+        def commit_qbit_config(self, config):
+            return None
+
+    class RuntimeQbit(FakeQbit):
+        def __init__(self, config):
+            super().__init__()
+            self.config = config
+
     ctx = AppContext(
         store=store,
         bus=NullBus(),
         pipeline=pipeline,
         crawler=None,
-        classifier=None,
-        qbit=FakeQbit(),
+        classifier=classifier,
+        qbit=qbit,
         stats=stats,
         bg_manager=bg_manager,
         action_executor=action_executor,
         error_handler=error_handler,
+        item_transitions=transitions,
+        observability=observability,
+        item_queries=item_queries,
+    )
+    ctx.qbit_runtime = QBitRuntime(
+        ctx=ctx,
+        settings=RuntimeSettings(),
+        client_factory=RuntimeQbit,
     )
 
     app = FastAPI()
@@ -162,6 +240,17 @@ def test_items_route_uses_context_store():
     payload = resp.json()
     assert payload["total"] == 1
     assert payload["items"][0]["status"] == "pending"
+
+
+def test_items_route_requires_assembled_item_queries():
+    app, ctx = _make_app()
+    ctx.item_queries = None
+
+    with asgi_client(app) as client:
+        resp = client.get("/api/items")
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Item queries not configured"
 
 
 def test_stats_route_uses_context_stats():
@@ -190,6 +279,17 @@ def test_status_route_uses_context_qbit():
     assert payload["items_count"] == 1
 
 
+def test_status_route_requires_assembled_observability():
+    app, ctx = _make_app()
+    ctx.observability = None
+
+    with asgi_client(app) as client:
+        resp = client.get("/api/status")
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Observability snapshot not configured"
+
+
 def test_crawl_route_schedules_pipeline_work():
     app, ctx = _make_app()
 
@@ -199,7 +299,40 @@ def test_crawl_route_schedules_pipeline_work():
     assert resp.status_code == 200
     assert resp.json()["status"] == "started"
     assert ctx.stats.as_dict()["crawl_requests"] == 1
-    assert ctx.bg_manager.calls == ["crawl:https://example.com"]
+    assert ctx.pipeline.crawl_calls == [("https://example.com", 2, False)]
+
+
+def test_crawl_route_requires_assembled_action_executor():
+    app, ctx = _make_app()
+    ctx.action_executor = None
+
+    with asgi_client(app) as client:
+        resp = client.post("/api/crawl", json={"url": "https://example.com", "depth": 2})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Action executor not configured"
+
+
+def test_task_status_route_uses_background_task_manager():
+    app, _ctx = _make_app()
+
+    with asgi_client(app) as client:
+        resp = client.get("/api/tasks/task-123")
+
+    assert resp.status_code == 200
+    assert resp.json()["task_id"] == "task-123"
+    assert resp.json()["status"] == "running"
+
+
+def test_classifier_reload_route_uses_context_classifier():
+    app, ctx = _make_app()
+
+    with asgi_client(app) as client:
+        resp = client.post("/api/classifier/reload")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "reloaded", "rules_reloaded": 1}
+    assert ctx.classifier.reload_calls == 1
 
 
 def test_download_and_reclassify_routes_schedule_work():
@@ -314,6 +447,24 @@ def test_update_config_replaces_qbit_client():
     assert created[0].closed is False
     assert persisted == [created[0].config]
     assert committed == [created[0].config]
+
+
+def test_update_config_requires_assembled_qbit_runtime():
+    app, ctx = _make_app()
+    ctx.qbit_runtime = None
+
+    with asgi_client(app) as client:
+        resp = client.put(
+            "/api/config",
+            json={
+                "qbit_host": "http://localhost:8080",
+                "qbit_username": "tester",
+                "qbit_password": "secret",
+            },
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "qBittorrent runtime not configured"
 
 
 def test_update_config_keeps_current_client_when_candidate_cannot_connect():

@@ -5,6 +5,7 @@ P1-10: 哈希校验统一测试
       SHA-1 哈希应为 40 字符，{32,64} 太宽泛可能匹配无效哈希
 修复: 统一为 {32,40}
 """
+
 from magnet_harvester.magnet_parser import HASH_RE, MAGNET_RE, BTIH_PATTERN_RE, parse_magnet
 
 

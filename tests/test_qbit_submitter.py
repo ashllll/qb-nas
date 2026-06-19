@@ -1,4 +1,5 @@
 """Focused tests for the internal magnet submitter."""
+
 from unittest.mock import AsyncMock
 
 import httpx
@@ -23,28 +24,63 @@ def _fail_response(text: str = "Fails.") -> httpx.Response:
     )
 
 
+class FakeSubmissionGateway:
+    def __init__(
+        self,
+        *,
+        request=None,
+        ensure_category=None,
+        get_base_save_path=None,
+        find_torrent_by_prefix=None,
+    ):
+        self.request = request or AsyncMock(return_value=_ok_response())
+        self.ensure_category = ensure_category or AsyncMock(return_value=True)
+        self.get_base_save_path = get_base_save_path or AsyncMock(return_value="/downloads")
+        self.find_torrent_by_prefix = find_torrent_by_prefix or AsyncMock(return_value=None)
+
+
+class FakeSubmissionRecorder:
+    def __init__(self):
+        self.attempts = 0
+        self.successes = 0
+        self.failures = 0
+        self.errors = []
+
+    def attempted(self) -> None:
+        self.attempts += 1
+
+    def succeeded(self) -> None:
+        self.successes += 1
+
+    def failed(self) -> None:
+        self.failures += 1
+
+    def error(self, message: str | None) -> None:
+        self.errors.append(message)
+
+
 def _make_submitter(**overrides):
+    gateway = overrides.get("gateway") or FakeSubmissionGateway(
+        request=overrides.get("request"),
+        ensure_category=overrides.get("ensure_category"),
+        get_base_save_path=overrides.get("get_base_save_path"),
+        find_torrent_by_prefix=overrides.get("find_torrent_by_prefix"),
+    )
     return MagnetSubmitter(
-        request=overrides.get("request", AsyncMock(return_value=_ok_response())),
-        ensure_category=overrides.get("ensure_category", AsyncMock(return_value=True)),
-        get_base_save_path=overrides.get("get_base_save_path", AsyncMock(return_value="/downloads")),
-        find_torrent_by_prefix=overrides.get("find_torrent_by_prefix", AsyncMock(return_value=None)),
+        gateway=gateway,
         fs_base_path=overrides.get("fs_base_path", ""),
-        set_last_error=overrides.get("set_last_error"),
-        record_attempt=overrides.get("record_attempt"),
-        record_success=overrides.get("record_success"),
-        record_failure=overrides.get("record_failure"),
+        recorder=overrides.get("recorder"),
     )
 
 
 @pytest.mark.asyncio
 async def test_submitter_succeeds_on_ok_response():
     request = AsyncMock(return_value=_ok_response())
-    successes = []
+    recorder = FakeSubmissionRecorder()
 
     submitter = _make_submitter(
         request=request,
-        record_success=lambda: successes.append(True),
+        recorder=recorder,
     )
 
     assert await submitter.add_magnet(
@@ -59,34 +95,54 @@ async def test_submitter_succeeds_on_ok_response():
     assert kwargs["data"]["category"] == "电影"
     assert kwargs["data"]["use_auto_torrent_management"] == "true"
     assert "savepath" not in kwargs["data"]
-    assert len(successes) == 1
+    assert recorder.attempts == 1
+    assert recorder.successes == 1
 
 
 @pytest.mark.asyncio
 async def test_submitter_fails_on_invalid_magnet():
-    failures = []
-    errors = []
+    recorder = FakeSubmissionRecorder()
 
     submitter = _make_submitter(
-        record_failure=lambda: failures.append(True),
-        set_last_error=errors.append,
+        recorder=recorder,
     )
 
     assert not await submitter.add_magnet("not-a-magnet", "电影", "")
-    assert len(failures) == 1
-    assert errors and "btih" in errors[-1]
+    assert recorder.failures == 1
+    assert recorder.errors and "btih" in recorder.errors[-1]
+
+
+@pytest.mark.asyncio
+async def test_submitter_uses_parser_btih_validation_rules():
+    request = AsyncMock(return_value=_ok_response())
+    recorder = FakeSubmissionRecorder()
+    submitter = _make_submitter(
+        request=request,
+        recorder=recorder,
+    )
+
+    assert not await submitter.add_magnet("magnet:?xt=urn:btih:12345678", "电影", "")
+    assert await submitter.add_magnet(
+        "magnet:?xt=urn:btih:ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+        "电影",
+        "/downloads/电影",
+    )
+
+    assert request.await_count == 1
+    assert recorder.failures == 1
+    assert recorder.successes == 1
 
 
 @pytest.mark.asyncio
 async def test_submitter_treats_duplicate_as_success():
     request = AsyncMock(return_value=_fail_response())
     find = AsyncMock(return_value={"hash": "01234567", "name": "Existing Movie"})
-    successes = []
+    recorder = FakeSubmissionRecorder()
 
     submitter = _make_submitter(
         request=request,
         find_torrent_by_prefix=find,
-        record_success=lambda: successes.append(True),
+        recorder=recorder,
     )
 
     assert await submitter.add_magnet(
@@ -96,19 +152,17 @@ async def test_submitter_treats_duplicate_as_success():
     )
 
     find.assert_awaited_once_with("01234567")
-    assert len(successes) == 1
+    assert recorder.successes == 1
 
 
 @pytest.mark.asyncio
 async def test_submitter_fails_when_qb_rejects_and_no_duplicate():
     request = AsyncMock(return_value=_fail_response("Unknown error"))
-    failures = []
-    errors = []
+    recorder = FakeSubmissionRecorder()
 
     submitter = _make_submitter(
         request=request,
-        record_failure=lambda: failures.append(True),
-        set_last_error=errors.append,
+        recorder=recorder,
     )
 
     assert not await submitter.add_magnet(
@@ -117,8 +171,8 @@ async def test_submitter_fails_when_qb_rejects_and_no_duplicate():
         "/downloads/电影",
     )
 
-    assert len(failures) == 1
-    assert errors and "qB 拒绝" in errors[-1]
+    assert recorder.failures == 1
+    assert recorder.errors and "qB 拒绝" in recorder.errors[-1]
 
 
 @pytest.mark.asyncio

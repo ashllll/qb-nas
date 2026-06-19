@@ -1,6 +1,7 @@
 """
 P2-24: Agent 工具路径测试 (UserActionExecutor)
 """
+
 import pytest
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.services.user_actions import UserActionExecutor
@@ -27,8 +28,10 @@ async def test_reclassify_item_updates_category_and_save_path():
     bus = MessageBus()
     transitions = MagnetItemTransitions(store=store, bus=bus)
     executor = UserActionExecutor(
-        store=store, pipeline=None,
-        task_manager=None, transitions=transitions,
+        store=store,
+        pipeline=None,
+        task_manager=None,
+        transitions=transitions,
     )
 
     store.add(make_item("abc123def"))

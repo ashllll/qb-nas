@@ -124,10 +124,11 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
     import magnet_harvester.assembly as assembly_module
 
     class FakeCrawler:
-        def __init__(self, config):
+        def __init__(self, config, site_auth=None):
             self.started = False
             self.stopped = False
             self.max_depth = 3
+            self.site_auth = site_auth
 
         async def start(self):
             self.started = True
@@ -149,11 +150,20 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
         pass
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None):
+        def __init__(
+            self,
+            qbit_client,
+            store,
+            bus,
+            task_manager=None,
+            transitions=None,
+            poll_interval=2.0,
+        ):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
             self.transitions = transitions
+            self.poll_interval = poll_interval
 
         async def start(self):
             self.started = True
@@ -192,10 +202,11 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
     created = {}
 
     class FakeCrawler:
-        def __init__(self, config):
+        def __init__(self, config, site_auth=None):
             self.started = False
             self.stopped = False
             self.max_depth = 3
+            self.site_auth = site_auth
             created["crawler"] = self
 
         async def start(self):
@@ -248,11 +259,20 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
             return {}
 
     class FakeSyncLoop:
-        def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None):
+        def __init__(
+            self,
+            qbit_client,
+            store,
+            bus,
+            task_manager=None,
+            transitions=None,
+            poll_interval=2.0,
+        ):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
             self.transitions = transitions
+            self.poll_interval = poll_interval
             created["sync_loop"] = self
 
         async def start(self):
@@ -283,6 +303,7 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
     assert created["crawler"].stopped is True
     assert created["sync_loop"].started is True
     assert created["sync_loop"].stopped is True
+    assert created["sync_loop"].poll_interval == assembly_module.settings.QBIT_SYNC_INTERVAL
     assert created["qbit"].closed is True
 
 
@@ -358,7 +379,9 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     assert "Any" not in str(pipeline_hints["store"]), "HarvestPipeline.store"
 
     for field_name in ("store", "pipeline", "task_manager"):
-        assert "Any" not in str(action_executor_hints[field_name]), f"UserActionExecutor.{field_name}"
+        assert "Any" not in str(action_executor_hints[field_name]), (
+            f"UserActionExecutor.{field_name}"
+        )
 
     for field_name in ("qbit_client", "store"):
         assert "Any" not in str(qbit_sync_hints[field_name]), f"QBitSyncLoop.{field_name}"

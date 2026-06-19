@@ -1,6 +1,7 @@
 """
 测试 Phase Protocols — 验证 Pipeline 编排与阶段解耦
 """
+
 import sys
 import os
 import asyncio
@@ -19,6 +20,7 @@ from magnet_harvester.crawler import CrawlPhase
 from magnet_harvester.pipeline import (
     HarvestPipeline,
 )
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 
 class FakeCrawlPhase:
@@ -123,10 +125,12 @@ def test_pipeline_with_fake_phases():
     # 添加一些已有条目
     store.add(MagnetItem(hash="ZZZZ", name="Existing", magnet="magnet:?xt=urn:btih:ZZZZ"))
 
-    crawl_phase = FakeCrawlPhase(items=[
-        MagnetItem(hash="AAAA", name="Movie 1", magnet="magnet:?xt=urn:btih:AAAA"),
-        MagnetItem(hash="BBBB", name="Movie 2", magnet="magnet:?xt=urn:btih:BBBB"),
-    ])
+    crawl_phase = FakeCrawlPhase(
+        items=[
+            MagnetItem(hash="AAAA", name="Movie 1", magnet="magnet:?xt=urn:btih:AAAA"),
+            MagnetItem(hash="BBBB", name="Movie 2", magnet="magnet:?xt=urn:btih:BBBB"),
+        ]
+    )
     classify_phase = FakeClassifyPhase(category="电影")
     download_phase = FakeDownloadPhase(success=True)
 
@@ -140,6 +144,7 @@ def test_pipeline_with_fake_phases():
 
     # 执行管道（auto_download=True 触发第三阶段）
     import asyncio
+
     asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=True))
 
     # 验证 crawl phase 被调用
@@ -161,14 +166,42 @@ def test_pipeline_with_fake_phases():
     assert item_a.torrent_state == "submitted"
 
 
+def test_start_crawl_returns_trackable_task_id():
+    async def run():
+        store = FakeStore()
+        bus = NullBus()
+        task_manager = BGTaskManager()
+        pipeline = HarvestPipeline(
+            crawler=FakeCrawlPhase(),
+            classifier=FakeClassifyPhase(),
+            qbit=FakeDownloadPhase(),
+            store=store,
+            bus=bus,
+            task_manager=task_manager,
+        )
+
+        result = await pipeline.start_crawl("https://example.com", depth=1)
+        task_id = result.get("task_id")
+
+        assert result["status"] == "started"
+        assert isinstance(task_id, str)
+        assert task_manager.get_task(task_id)["name"].startswith("crawl:")
+
+        await task_manager.shutdown()
+
+    asyncio.run(run())
+
+
 def test_pipeline_skip_download():
     """auto_download=False 时不触发下载"""
     store = FakeStore()
     bus = NullBus()
 
-    crawl_phase = FakeCrawlPhase(items=[
-        MagnetItem(hash="CCCC", name="SkipDL", magnet="magnet:?xt=urn:btih:CCCC"),
-    ])
+    crawl_phase = FakeCrawlPhase(
+        items=[
+            MagnetItem(hash="CCCC", name="SkipDL", magnet="magnet:?xt=urn:btih:CCCC"),
+        ]
+    )
     classify_phase = FakeClassifyPhase(category="电视剧")
     download_phase = FakeDownloadPhase()
 
@@ -181,6 +214,7 @@ def test_pipeline_skip_download():
     )
 
     import asyncio
+
     asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=False))
 
     assert len(download_phase.called_with) == 0, "auto_download=False 不应触发下载"
@@ -191,9 +225,11 @@ def test_classify_item_events_are_observable_before_all_done():
     store = FakeStore()
     bus = RecordingBus()
 
-    crawl_phase = FakeCrawlPhase(items=[
-        MagnetItem(hash="DDDD", name="Ordered", magnet="magnet:?xt=urn:btih:DDDD"),
-    ])
+    crawl_phase = FakeCrawlPhase(
+        items=[
+            MagnetItem(hash="DDDD", name="Ordered", magnet="magnet:?xt=urn:btih:DDDD"),
+        ]
+    )
     classify_phase = FakeClassifyPhase(category="电影")
     download_phase = FakeDownloadPhase()
 
@@ -206,11 +242,16 @@ def test_classify_item_events_are_observable_before_all_done():
     )
 
     import asyncio
+
     asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=False))
 
     event_types = [event.type for event in bus.events]
-    assert event_types.index(EventType.CLASSIFY_DONE) < event_types.index(EventType.CLASSIFY_ALL_DONE)
-    assert event_types.index(EventType.STORE_CHANGED) < event_types.index(EventType.CLASSIFY_ALL_DONE)
+    assert event_types.index(EventType.CLASSIFY_DONE) < event_types.index(
+        EventType.CLASSIFY_ALL_DONE
+    )
+    assert event_types.index(EventType.STORE_CHANGED) < event_types.index(
+        EventType.CLASSIFY_ALL_DONE
+    )
 
 
 def test_download_result_is_observable_after_queued_store_change():
@@ -218,9 +259,11 @@ def test_download_result_is_observable_after_queued_store_change():
     store = FakeStore()
     bus = RecordingBus()
 
-    crawl_phase = FakeCrawlPhase(items=[
-        MagnetItem(hash="EEEE", name="Download", magnet="magnet:?xt=urn:btih:EEEE"),
-    ])
+    crawl_phase = FakeCrawlPhase(
+        items=[
+            MagnetItem(hash="EEEE", name="Download", magnet="magnet:?xt=urn:btih:EEEE"),
+        ]
+    )
     classify_phase = FakeClassifyPhase(category="电影")
     download_phase = FakeDownloadPhase(success=True)
 
@@ -233,17 +276,20 @@ def test_download_result_is_observable_after_queued_store_change():
     )
 
     import asyncio
+
     asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=True))
 
     queued_store_index = next(
-        idx for idx, event in enumerate(bus.events)
+        idx
+        for idx, event in enumerate(bus.events)
         if event.type == EventType.STORE_CHANGED
         and event.data["item"]["hash"] == "EEEE"
         and event.data["item"]["status"] == TaskStatus.queued
         and event.data["item"]["torrent_state"] == "submitted"
     )
     download_result_index = next(
-        idx for idx, event in enumerate(bus.events)
+        idx
+        for idx, event in enumerate(bus.events)
         if event.type == EventType.DOWNLOAD_RESULT and event.data["hash"] == "EEEE"
     )
 
@@ -268,6 +314,7 @@ def test_no_new_items_skips_classify():
     )
 
     import asyncio
+
     asyncio.run(pipeline.execute("https://example.com", depth=1, auto_download=True))
 
     assert len(classify_phase.called_with) == 0, "无新条目时不应分类"

@@ -2,6 +2,7 @@
 TDD 循环 2: qBittorrent 客户端模块化拆分
 验证提取后的子模块保持原有行为
 """
+
 import sys
 import os
 
@@ -13,6 +14,7 @@ from magnet_harvester.models import TaskStatus
 # ═══════════════════════════════════════════════════
 # 示踪弹 1: TorrentStatusMapper 可独立测试
 # ═══════════════════════════════════════════════════
+
 
 def test_status_mapper_maps_error_states():
     """错误状态应映射为 TaskStatus.error"""
@@ -39,7 +41,15 @@ def test_status_mapper_maps_downloading_states():
     from magnet_harvester.qbit_client import TorrentStatusMapper
 
     mapper = TorrentStatusMapper()
-    for state in ["downloading", "forcedDL", "metaDL", "stalledDL", "checkingDL", "checkingResumeData", "moving"]:
+    for state in [
+        "downloading",
+        "forcedDL",
+        "metaDL",
+        "stalledDL",
+        "checkingDL",
+        "checkingResumeData",
+        "moving",
+    ]:
         result = mapper.map({"state": state, "progress": 0.5})
         assert result["status"] == TaskStatus.downloading
 
@@ -68,6 +78,7 @@ def test_status_mapper_progress_rounding():
 # 增量测试 2: _safe_fs_segment 可独立测试
 # ═══════════════════════════════════════════════════
 
+
 def test_safe_fs_segment_sanitizes_path_traversal():
     """_safe_fs_segment 应移除路径穿越字符"""
     from magnet_harvester.qbit_client import _safe_fs_segment
@@ -90,6 +101,7 @@ def test_safe_fs_segment_trims_dots_and_spaces():
 # ═══════════════════════════════════════════════════
 # 增量测试 3: QBittorrentStats 可独立测试
 # ═══════════════════════════════════════════════════
+
 
 def test_stats_tracks_success_and_failure():
     """QBittorrentStats 应正确追踪成功/失败计数"""
@@ -146,6 +158,7 @@ def test_qbit_ping_uses_short_cache():
 # ═══════════════════════════════════════════════════
 # 增量测试 4: 路径解析逻辑可独立测试（提取后）
 # ═══════════════════════════════════════════════════
+
 
 def test_extract_base_path_from_category():
     """从分类 savePath 提取基础路径"""

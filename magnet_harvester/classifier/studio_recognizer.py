@@ -7,6 +7,7 @@ StudioRecognizer — 从标题中提取工作室/厂牌名作为分类。
   [Tag] StudioName 24 05 20 PerformerNames ...
   X-Art 24 01 10 Title XXX 2160p ...
 """
+
 from __future__ import annotations
 
 import re
@@ -52,11 +53,11 @@ KNOWN_STUDIOS: dict[str, str] = {
 ## 只有 "StudioName + 日期 (YY MM DD)" 格式才触发
 ## 例如: SexArt 24 05 20  /  SexArt.24.05.20.  /  X-Art 24-05-20
 _STUDIO_WITH_DATE = re.compile(
-    r"(?:^\[[^\]]+\]\s*)?"                       ## 可选: [Tag] 前缀
-    r"([A-Za-z0-9]+(?:[\s.\-][A-Za-z0-9]+)*?)"   ## 工作室名 (含连字符/点)
-    r"[\s.]"                                      ## 分隔符
-    r"\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"         ## 日期 YY MM DD（\b 防止匹配 2022.2160p 中的 20.22.21）
-    r"(?:[\s.]|$)",                               ## 日期后边界
+    r"(?:^\[[^\]]+\]\s*)?"  ## 可选: [Tag] 前缀
+    r"([A-Za-z0-9]+(?:[\s.\-][A-Za-z0-9]+)*?)"  ## 工作室名 (含连字符/点)
+    r"[\s.]"  ## 分隔符
+    r"\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"  ## 日期 YY MM DD（\b 防止匹配 2022.2160p 中的 20.22.21）
+    r"(?:[\s.]|$)",  ## 日期后边界
     re.IGNORECASE,
 )
 

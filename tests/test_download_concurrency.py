@@ -4,6 +4,7 @@ P1-7: 下载并发化测试
 缺陷: _download_items 是顺序循环，每次下载后 sleep(0.3)，大量 item 时效率低
 修复: 使用 asyncio.Semaphore 限制并发，asyncio.gather 并行下载
 """
+
 import asyncio
 import pytest
 from magnet_harvester.pipeline import HarvestPipeline
@@ -37,7 +38,10 @@ class FakeClassifier:
     async def classify_stream_batch(self, items, on_result=None):
         for item in items:
             if on_result:
-                on_result(item["index"], {"category": "电影", "save_path": "/movies", "confidence": "high"})
+                on_result(
+                    item["index"],
+                    {"category": "电影", "save_path": "/movies", "confidence": "high"},
+                )
 
     @property
     def usage(self):

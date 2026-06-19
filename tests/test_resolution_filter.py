@@ -1,6 +1,7 @@
 """
 测试爬虫分辨率过滤 — 爬取结果必须只保留 2160p / 4k
 """
+
 import sys
 import os
 
@@ -12,10 +13,15 @@ from magnet_harvester.magnet_parser import parse_magnet
 
 # ── 测试过滤函数 ──
 
+
 def test_keep_2160p():
     items = [
-        parse_magnet("magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&dn=Test+Movie+2160p+BluRay"),
-        parse_magnet("magnet:?xt=urn:btih:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB&dn=Test+Movie+1080p+BluRay"),
+        parse_magnet(
+            "magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&dn=Test+Movie+2160p+BluRay"
+        ),
+        parse_magnet(
+            "magnet:?xt=urn:btih:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB&dn=Test+Movie+1080p+BluRay"
+        ),
     ]
     filtered = filter_resolution_items(items)
     assert len(filtered) == 1
@@ -24,7 +30,9 @@ def test_keep_2160p():
 
 def test_keep_4k():
     items = [
-        parse_magnet("magnet:?xt=urn:btih:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC&dn=Test+Movie+4K+BluRay"),
+        parse_magnet(
+            "magnet:?xt=urn:btih:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC&dn=Test+Movie+4K+BluRay"
+        ),
     ]
     filtered = filter_resolution_items(items)
     assert len(filtered) == 1
@@ -32,8 +40,12 @@ def test_keep_4k():
 
 def test_drop_non_preferred_resolutions():
     items = [
-        parse_magnet("magnet:?xt=urn:btih:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD&dn=Test+Movie+1080p+BluRay"),
-        parse_magnet("magnet:?xt=urn:btih:EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE&dn=Test+Movie+720p+WEB"),
+        parse_magnet(
+            "magnet:?xt=urn:btih:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD&dn=Test+Movie+1080p+BluRay"
+        ),
+        parse_magnet(
+            "magnet:?xt=urn:btih:EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE&dn=Test+Movie+720p+WEB"
+        ),
     ]
     filtered = filter_resolution_items(items)
     assert len(filtered) == 0
@@ -41,10 +53,18 @@ def test_drop_non_preferred_resolutions():
 
 def test_mixed():
     items = [
-        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF11111111111111111111111111111&dn=Example.Movie.2160p.WEB-DL"),
-        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF22222222222222222222222222222&dn=Example.Movie.1080p.x264"),
-        parse_magnet("magnet:?xt=urn:btih:FFFFFFFFFFF33333333333333333333333333333&dn=Example.Movie.480p.XviD"),
-        parse_magnet("magnet:?xt=urn:btih:4444444444444444444444444444444444444444&dn=Some.Movie.4K.UHD"),
+        parse_magnet(
+            "magnet:?xt=urn:btih:FFFFFFFFFFF11111111111111111111111111111&dn=Example.Movie.2160p.WEB-DL"
+        ),
+        parse_magnet(
+            "magnet:?xt=urn:btih:FFFFFFFFFFF22222222222222222222222222222&dn=Example.Movie.1080p.x264"
+        ),
+        parse_magnet(
+            "magnet:?xt=urn:btih:FFFFFFFFFFF33333333333333333333333333333&dn=Example.Movie.480p.XviD"
+        ),
+        parse_magnet(
+            "magnet:?xt=urn:btih:4444444444444444444444444444444444444444&dn=Some.Movie.4K.UHD"
+        ),
     ]
     filtered = filter_resolution_items(items)
     assert len(filtered) == 2

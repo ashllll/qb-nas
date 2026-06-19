@@ -1,6 +1,7 @@
 """
 P2-25: Agent depth 限制测试 (UserActionExecutor)
 """
+
 import asyncio
 import pytest
 from magnet_harvester.services.user_actions import UserActionExecutor
@@ -20,6 +21,12 @@ class FakePipeline:
     async def admit_crawl_target(self, url):
         return url
 
+    async def start_crawl(self, url, *, depth=1, auto_download=False):
+        url = await self.admit_crawl_target(url.strip())
+        depth = max(1, min(int(depth), 3, self.max_crawl_depth()))
+        await self.execute(url, depth=depth, auto_download=auto_download)
+        return {"status": "started", "url": url, "depth": depth}
+
     async def execute(self, url, depth=1, auto_download=False):
         self.last_depth = depth
 
@@ -33,8 +40,10 @@ class FakePipeline:
 def _make_executor(store, pipeline):
     transitions = MagnetItemTransitions(store=store, bus=MessageBus())
     return UserActionExecutor(
-        store=store, pipeline=pipeline,
-        task_manager=None, transitions=transitions,
+        store=store,
+        pipeline=pipeline,
+        task_manager=None,
+        transitions=transitions,
     )
 
 

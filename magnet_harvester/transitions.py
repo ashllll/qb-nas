@@ -6,11 +6,11 @@ Magnet item and which events each transition should publish.
 
 Used by HarvestPipeline during crawl→classify→download orchestration.
 """
+
 from __future__ import annotations
 
-from typing import Callable
-
 from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
 from magnet_harvester.utils.serializers import item_payload
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
@@ -32,9 +32,7 @@ class MagnetItemTransitions:
     async def _emit_item_changed(self, hash_key: str) -> None:
         item = self._store.get(hash_key)
         if item is not None:
-            await self._bus.emit(
-                Event(EventType.STORE_CHANGED, {"item": item_payload(item)})
-            )
+            await self._bus.emit(Event(EventType.STORE_CHANGED, {"item": item_payload(item)}))
 
     async def _emit_download_result(
         self, hash_key: str, previous_status: TaskStatus | None = None
@@ -44,7 +42,10 @@ class MagnetItemTransitions:
             return
         is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
         is_new_phase = previous_status in {
-            TaskStatus.pending, TaskStatus.adding, TaskStatus.classifying, None,
+            TaskStatus.pending,
+            TaskStatus.adding,
+            TaskStatus.classifying,
+            None,
         }
         if is_terminal or is_new_phase:
             await self._bus.emit(
@@ -82,12 +83,17 @@ class MagnetItemTransitions:
             torrent_state=None,
             error_msg=None,
         )
-        await self._bus.emit(Event(EventType.CLASSIFY_DONE, {
-            "hash": hash_key,
-            "category": result["category"],
-            "confidence": result.get("confidence", ""),
-            "reason": result.get("reason", ""),
-        }))
+        await self._bus.emit(
+            Event(
+                EventType.CLASSIFY_DONE,
+                {
+                    "hash": hash_key,
+                    "category": result["category"],
+                    "confidence": result.get("confidence", ""),
+                    "reason": result.get("reason", ""),
+                },
+            )
+        )
         await self._emit_item_changed(hash_key)
 
     async def download_submitting(self, hash_key: str):
@@ -133,12 +139,17 @@ class MagnetItemTransitions:
         """手动分类：更新 + CLASSIFY_DONE + emit_item_changed"""
         if not self._store.update(hash_key, category=category, save_path=""):
             return False
-        await self._bus.emit(Event(EventType.CLASSIFY_DONE, {
-            "hash": hash_key,
-            "category": category,
-            "confidence": "manual",
-            "reason": "手动修改",
-        }))
+        await self._bus.emit(
+            Event(
+                EventType.CLASSIFY_DONE,
+                {
+                    "hash": hash_key,
+                    "category": category,
+                    "confidence": "manual",
+                    "reason": "手动修改",
+                },
+            )
+        )
         await self._emit_item_changed(hash_key)
         return True
 
@@ -180,7 +191,6 @@ class MagnetItemTransitions:
         hash_key: str,
         item: MagnetItem,
         torrent: dict | None,
-        mapper: Callable[[dict], dict],
         *,
         was_removed: bool = False,
     ) -> bool:
@@ -199,7 +209,7 @@ class MagnetItemTransitions:
                 return True
             return False
 
-        mapped = mapper(torrent)
+        mapped = TorrentStatusMapper.map(torrent)
         fields: dict = {}
 
         if item.status != mapped["status"]:

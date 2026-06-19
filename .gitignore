@@ -65,3 +65,6 @@ test-results/
 
 # Agent 配置
 .reasonix/
+reasonix.toml
+.planning/
+architecture-review-*.html

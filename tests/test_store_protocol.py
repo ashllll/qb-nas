@@ -1,6 +1,7 @@
 """
 测试 ItemStore 协议 — 验证 InMemoryItemStore 和 FakeStore 都符合协议
 """
+
 import sys
 import os
 
@@ -38,11 +39,13 @@ def test_inmemory_conforms_to_protocol():
 def test_fake_store_conforms_to_protocol():
     """FakeStore 是 ItemStore 的实例"""
     from magnet_harvester.store import FakeStore
+
     store = FakeStore()
     assert isinstance(store, ItemStore)
 
 
 # ── 行为测试（在协议上运行，任何实现都应通过） ──
+
 
 def run_store_tests(store_factory):
     """针对 ItemStore 协议的通用测试套件"""
@@ -120,8 +123,46 @@ def test_inmemory_behaviors():
     run_store_tests(InMemoryItemStore)
 
 
+def test_list_uses_limited_top_n_selection(monkeypatch):
+    """小 limit 查询不应为了取前 N 条而全量排序。"""
+    import magnet_harvester.store as store_module
+
+    calls = []
+
+    def fake_nsmallest(limit, items, key):
+        calls.append(limit)
+        return sorted(list(items), key=key)[:limit]
+
+    monkeypatch.setattr(store_module.heapq, "nsmallest", fake_nsmallest)
+
+    store = InMemoryItemStore()
+    store.add(_make_item("CCCC", name="Charlie"))
+    store.add(_make_item("AAAA", name="Alpha"))
+    store.add(_make_item("BBBB", name="Bravo"))
+
+    results = store.list(limit=2)
+
+    assert [item.name for item in results] == ["Alpha", "Bravo"]
+    assert calls == [2]
+
+
+def test_add_batch_does_not_partially_commit_when_batch_is_invalid():
+    store = InMemoryItemStore()
+
+    try:
+        store.add_batch([_make_item("AAAA"), object()])
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError("invalid batch item should fail before commit")
+
+    assert store.get("AAAA") is None
+    assert store.count == 0
+
+
 def test_fakestore_behaviors():
     from magnet_harvester.store import FakeStore
+
     run_store_tests(FakeStore)
 
 

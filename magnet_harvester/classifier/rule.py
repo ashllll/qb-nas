@@ -4,9 +4,11 @@ ClassificationRule — unified protocol for classifier priority chain.
 Every classification rule returns Optional[ClassificationResult] with
 a consistent shape: category, confidence, reason, save_path.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from magnet_harvester.classifier.fallback import make_fallback
@@ -17,6 +19,7 @@ from magnet_harvester.classifier.studio_recognizer import recognize as studio_re
 @dataclass
 class ClassificationResult:
     """Consistent result shape across all classification rules."""
+
     category: str
     confidence: str
     reason: str
@@ -36,11 +39,16 @@ class ClassificationRule(Protocol):
 class KeywordRule:
     """Adapter: KeywordCategoryRecognizer → ClassificationRule."""
 
-    def __init__(self, keywords: list[dict] | None = None):
+    def __init__(self, keywords: list[dict] | None = None, rules_file: Path | None = None):
         if keywords is not None:
             self._recognizer = KeywordCategoryRecognizer.from_keywords(keywords)
+            self._reloadable = False
+        elif rules_file is not None:
+            self._recognizer = KeywordCategoryRecognizer(rules_file=rules_file)
+            self._reloadable = True
         else:
             self._recognizer = KeywordCategoryRecognizer()
+            self._reloadable = True
 
     def apply(self, name: str) -> ClassificationResult | None:
         result = self._recognizer.recognize(name)
@@ -52,6 +60,12 @@ class KeywordRule:
             reason="keyword_rule",
             save_path=result.get("save_path", result["category"]),
         )
+
+    def reload(self) -> bool:
+        if not self._reloadable:
+            return False
+        self._recognizer.reload()
+        return True
 
 
 class StudioRule:
@@ -83,5 +97,3 @@ class FallbackRule:
             reason=result["reason"],
             save_path=result["save_path"],
         )
-
-

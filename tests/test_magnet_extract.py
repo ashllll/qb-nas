@@ -2,6 +2,7 @@
 测试磁力链接提取逻辑 — 从 crawl4ai 的 markdown/html 输出中提取磁力链接
 这是独立于爬虫引擎的业务逻辑测试，不依赖网络或浏览器
 """
+
 import sys
 import os
 
@@ -11,10 +12,13 @@ from magnet_harvester.magnet_parser import (
     HASH_RE,
     JSON_MAGNET_RE,
     extract_from_text,
+    parse_magnet,
+    try_decode_base64,
 )
 
 
 # ---- 测试代码 ----
+
 
 def test_extract_standard_magnet():
     """从普通文本中提取标准磁力链接"""
@@ -77,10 +81,7 @@ def test_extract_url_encoded_magnet():
 
 def test_extract_base32_btih_magnet():
     """BTIH 也可能是 32 位 Base32，不只 40 位 hex。"""
-    text = (
-        "magnet:?xt=urn:btih:ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-        "&dn=Base32.Movie.2160p"
-    )
+    text = "magnet:?xt=urn:btih:ABCDEFGHIJKLMNOPQRSTUVWXYZ234567&dn=Base32.Movie.2160p"
 
     items = extract_from_text(text)
 
@@ -109,6 +110,7 @@ def test_invalid_hash_too_short():
 def test_base64_encoded_magnet():
     """Base64 编码的磁力链接"""
     import base64
+
     magnet = "magnet:?xt=urn:btih:FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE&dn=Base64+Test"
     encoded = base64.b64encode(magnet.encode()).decode()
     text = f"隐藏链接: {encoded}"
@@ -117,9 +119,36 @@ def test_base64_encoded_magnet():
     assert items[0]["hash"] == "FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE"
 
 
+def test_base64_decoding_preserves_first_seen_order_and_deduplicates():
+    """Base64 批量解码应稳定返回首次出现的磁力链接。"""
+    import base64
+
+    first = "magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&dn=First"
+    second = "magnet:?xt=urn:btih:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB&dn=Second"
+    first_encoded = base64.b64encode(first.encode()).decode()
+    second_encoded = base64.b64encode(second.encode()).decode()
+
+    decoded = try_decode_base64(f"{first_encoded} {second_encoded} {first_encoded}")
+
+    assert decoded == [first, second]
+
+
+def test_base64_decoding_replaces_invalid_utf8_bytes_instead_of_dropping_them():
+    """非法 UTF-8 字节应显式保留为替换符，不能静默丢失标题字符。"""
+    import base64
+
+    raw = b"magnet:?xt=urn:btih:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC&dn=Bad\xffName"
+    encoded = base64.b64encode(raw).decode()
+
+    items = extract_from_text(f"隐藏链接: {encoded}")
+
+    assert len(items) == 1
+    assert items[0]["name"] == "Bad\ufffdName"
+
+
 def test_magnet_in_json():
     """在 JSON 字符串中的磁力链接
-    
+
     JSON_MAGNET_RE 捕获引号内的完整磁力URL（含 &dn=），
     但也可能被 MAGNET_RE 先捕获（不含 &dn=）。
     只要有1个条目且 hash 正确即可。
@@ -138,19 +167,21 @@ def test_extract_name_with_chinese():
     import urllib.parse
 
     # 直接测试 parse_magnet：传入含 &dn= 的完整磁力链接字符串
-    magnet_url = "magnet:?xt=urn:btih:8888888888888888888888888888888888888888&dn=%E7%94%B5%E5%BD%B1+2024"
-    
+    magnet_url = (
+        "magnet:?xt=urn:btih:8888888888888888888888888888888888888888&dn=%E7%94%B5%E5%BD%B1+2024"
+    )
+
     # 验证 HASH 解析
     m = HASH_RE.search(magnet_url)
     assert m is not None
     assert m.group(1).upper() == "8888888888888888888888888888888888888888"
-    
+
     # 验证 dn 解析
-    dn_match = re.search(r'[?&]dn=([^&]+)', magnet_url)
+    dn_match = re.search(r"[?&]dn=([^&]+)", magnet_url)
     assert dn_match is not None
     name = urllib.parse.unquote_plus(dn_match.group(1))
-    expected_bytes = b'\xe7\x94\xb5\xe5\xbd\xb1'  # "电影" 的 UTF-8
-    assert expected_bytes in name.encode('utf-8'), f"文件名应包含'电影'，实际为: {repr(name)}"
+    expected_bytes = b"\xe7\x94\xb5\xe5\xbd\xb1"  # "电影" 的 UTF-8
+    assert expected_bytes in name.encode("utf-8"), f"文件名应包含'电影'，实际为: {repr(name)}"
     quoted = f'"{magnet_url}"'
     json_matches = JSON_MAGNET_RE.findall(quoted)
     assert len(json_matches) >= 1
@@ -158,9 +189,19 @@ def test_extract_name_with_chinese():
     assert "dn=" in raw_magnet
 
 
+def test_parse_magnet_preserves_literal_spaces_in_dn():
+    """部分站点会在 dn 中直接放空格，解析时不应截断文件名。"""
+    item = parse_magnet(
+        "magnet:?xt=urn:btih:1234567890ABCDEF1234567890ABCDEF12345678&dn=Example Movie 2160p WEB-DL"
+    )
+
+    assert item is not None
+    assert item["name"] == "Example Movie 2160p WEB-DL"
+
+
 def test_extract_from_crawl4ai_markdown():
     """模拟 crawl4ai 的 markdown 输出格式
-    
+
     注意：MAGNET_RE 匹配磁力链接，& 及之后的参数被截断（dn 丢失），
     但只要 hash 正确即可。
     """

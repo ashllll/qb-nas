@@ -36,7 +36,9 @@ Specifically:
 3. **All split-out services receive dependencies via constructor injection**:
    - `QBitSyncLoop(qbit_client, store, bus)`
    - `WSBroadcaster(bus)`
-   - `ToolExecutor(store, pipeline, bus)`
+   - `UserActionExecutor(store, pipeline, task_manager, transitions, stats)`
+   - `ItemQueryExecutor(store)` for read-only item query formatting
+   - `ObservabilitySnapshot(store, qbit, stats, broadcaster, error_handler)`
    - `BGTaskManager()`
 4. **`AppContext` remains the single dependency container** — routed through `app.state.ctx`, retrieved via `Depends(get_context)`.
 5. **`HarvestPipeline` gains a public `replace_download_phase()` method** — eliminating the private-field mutation from `RuntimeContext`.
@@ -53,7 +55,9 @@ magnet_harvester/
 │   └── websocket.py     # WebSocket handler + WSBroadcaster
 ├── services/
 │   ├── qbit_sync.py     # QBitSyncLoop
-│   ├── agent_tools.py   # ToolExecutor
+│   ├── user_actions.py  # UserActionExecutor
+│   ├── item_queries.py  # ItemQueryExecutor
+│   ├── observability.py # ObservabilitySnapshot
 │   └── stats.py         # SystemStats
 └── utils/
     ├── bg_tasks.py      # BGTaskManager
@@ -94,5 +98,5 @@ Split `main.py` into multiple files but keep `_store`, `_bus`, etc. as module-le
 
 ## Related
 
-- `CONTEXT.md` — glossary terms `WSBroadcaster`, `QBitSyncLoop`, `ToolExecutor`, `BGTaskManager` added.
+- `CONTEXT.md` — glossary terms `WSBroadcaster`, `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `BGTaskManager` added.
 - `pipeline.py` — `HarvestPipeline.replace_download_phase()` public method added.

@@ -1,6 +1,7 @@
 """
 WebSocket broadcaster — manages active connections and broadcasts events.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +11,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from magnet_harvester.bus import Event, MessageBus
 from magnet_harvester.utils.serializers import item_payload
@@ -48,7 +50,9 @@ class WSBroadcaster:
         return len(self._active_ws)
 
     async def send_init(self, ws: WebSocket, items: list):
-        data = json.dumps({"type": "init", "items": items}, ensure_ascii=False, default=_json_serializer)
+        data = json.dumps(
+            {"type": "init", "items": items}, ensure_ascii=False, default=_json_serializer
+        )
         await ws.send_text(data)
 
     async def send_init_from_store(self, ws: WebSocket):
@@ -65,11 +69,46 @@ class WSBroadcaster:
         try:
             await self.send_init_from_store(ws)
             while True:
-                await ws.receive_text()
+                await self.handle_client_message(ws, await ws.receive_text())
         except WebSocketDisconnect:
             pass
         finally:
             self.remove(ws)
+
+    async def handle_client_message(self, ws: WebSocket, raw: str) -> None:
+        """Handle lightweight client control messages."""
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            if raw.strip().lower() == "ping":
+                await self._send_control(ws, {"type": "pong"})
+                return
+            await self._send_control(ws, {"type": "error", "message": "invalid_json"})
+            return
+
+        if not isinstance(payload, dict):
+            await self._send_control(ws, {"type": "error", "message": "invalid_message"})
+            return
+
+        message_type = str(payload.get("type", "")).lower()
+        if message_type == "ping":
+            await self._send_control(ws, {"type": "pong"})
+            return
+        if message_type in {"pong", "ack"}:
+            return
+
+        await self._send_control(
+            ws,
+            {
+                "type": "error",
+                "message": "unsupported_message",
+                "received_type": message_type,
+            },
+        )
+
+    async def _send_control(self, ws: WebSocket, payload: dict[str, Any]) -> None:
+        data = json.dumps(payload, ensure_ascii=False, default=_json_serializer)
+        await ws.send_text(data)
 
     async def _on_event(self, event: Event):
         if not self._active_ws:
@@ -82,6 +121,13 @@ class WSBroadcaster:
         dead = set()
 
         async def _send(ws: WebSocket):
+            client_state = getattr(ws, "client_state", None)
+            if (
+                isinstance(client_state, WebSocketState)
+                and client_state != WebSocketState.CONNECTED
+            ):
+                dead.add(ws)
+                return
             try:
                 await ws.send_text(data)
             except Exception:

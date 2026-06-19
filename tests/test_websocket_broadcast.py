@@ -4,9 +4,11 @@ P2-14: WebSocket 并发广播测试
 缺陷: _on_event 中 await ws.send_text(data) 是串行执行的，慢客户端会阻塞其他客户端
 修复: 使用 asyncio.gather 并发发送
 """
+
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from starlette.websockets import WebSocketState
 from magnet_harvester.api.websocket import WSBroadcaster
 from magnet_harvester.bus import Event, EventType
 
@@ -63,3 +65,28 @@ async def test_broadcast_removes_dead_clients():
     assert broadcaster.active_count == 1
     assert ws_alive in broadcaster._active_ws
     assert ws_dead not in broadcaster._active_ws
+
+
+@pytest.mark.asyncio
+async def test_broadcast_skips_disconnected_clients():
+    """已断开的 WebSocket 不应再尝试 send_text。"""
+    bus = MagicMock()
+    bus.subscribe = MagicMock()
+    broadcaster = WSBroadcaster(bus)
+
+    ws_alive = MagicMock()
+    ws_alive.client_state = WebSocketState.CONNECTED
+    ws_alive.send_text = AsyncMock()
+
+    ws_disconnected = MagicMock()
+    ws_disconnected.client_state = WebSocketState.DISCONNECTED
+    ws_disconnected.send_text = AsyncMock()
+
+    broadcaster.add(ws_alive)
+    broadcaster.add(ws_disconnected)
+
+    await broadcaster._on_event(Event(EventType.STORE_CHANGED, {"test": 1}))
+
+    ws_alive.send_text.assert_awaited_once()
+    ws_disconnected.send_text.assert_not_awaited()
+    assert ws_disconnected not in broadcaster._active_ws

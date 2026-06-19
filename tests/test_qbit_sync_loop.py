@@ -1,6 +1,7 @@
 """
 Test QBitSyncLoop — background polling service for qBittorrent state sync.
 """
+
 import sys
 import os
 import asyncio
@@ -12,7 +13,7 @@ import pytest
 from magnet_harvester.bus import EventType, MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
-from magnet_harvester.services.qbit_sync import QBitSyncLoop
+from magnet_harvester.services.qbit_sync import QBitSyncLoop, SyncBackoffPolicy
 from magnet_harvester.transitions import MagnetItemTransitions
 
 
@@ -31,13 +32,54 @@ class FakeQbitClient:
 
     def map_torrent_status(self, torrent):
         from magnet_harvester.models import TaskStatus
+
         state = str(torrent.get("state", ""))
         progress = float(torrent.get("progress") or 0.0)
         if state in {"error", "missingFiles"}:
             return {"status": TaskStatus.error, "progress": 0.0, "torrent_state": state}
         if progress >= 1.0:
             return {"status": TaskStatus.success, "progress": 100.0, "torrent_state": state}
-        return {"status": TaskStatus.downloading, "progress": round(progress * 100, 1), "torrent_state": state}
+        return {
+            "status": TaskStatus.downloading,
+            "progress": round(progress * 100, 1),
+            "torrent_state": state,
+        }
+
+
+class SnapshotOnlyQbitClient:
+    def __init__(self):
+        self._snapshot = {}
+        self._removed = set()
+
+    async def poll_torrent_snapshot(self):
+        return dict(self._snapshot)
+
+    def take_recently_removed(self):
+        removed = set(self._removed)
+        self._removed.clear()
+        return removed
+
+
+class FailingQbitClient:
+    def __init__(self):
+        self.poll_calls = 0
+
+    async def poll_torrent_snapshot(self):
+        self.poll_calls += 1
+        raise RuntimeError("qB offline")
+
+    def take_recently_removed(self):
+        return set()
+
+
+class RecordingStore(FakeStore):
+    def __init__(self):
+        super().__init__()
+        self.list_calls = 0
+
+    def list(self, *args, **kwargs):
+        self.list_calls += 1
+        return super().list(*args, **kwargs)
 
 
 class FakeTaskManager:
@@ -47,6 +89,24 @@ class FakeTaskManager:
     def create(self, coro, name=None):
         self.calls.append(name)
         return asyncio.create_task(coro, name=name)
+
+
+def test_sync_backoff_policy_increases_after_failures_and_resets_on_success():
+    policy = SyncBackoffPolicy(base_delay=2.0, max_delay=10.0)
+
+    assert policy.next_delay() == 2.0
+
+    policy.record_failure()
+    assert policy.next_delay() == 4.0
+
+    policy.record_failure()
+    assert policy.next_delay() == 8.0
+
+    policy.record_failure()
+    assert policy.next_delay() == 10.0
+
+    policy.record_success()
+    assert policy.next_delay() == 2.0
 
 
 @pytest.mark.asyncio
@@ -116,6 +176,32 @@ async def test_sync_updates_tracked_item_status():
 
 
 @pytest.mark.asyncio
+async def test_sync_maps_qbit_snapshot_without_adapter_mapper():
+    qbit = SnapshotOnlyQbitClient()
+    store = FakeStore()
+    bus = MessageBus()
+
+    item = MagnetItem(
+        hash="CCCC",
+        name="Test",
+        magnet="magnet:?xt=urn:btih:CCCC",
+        status=TaskStatus.queued,
+    )
+    store.add(item)
+    qbit._snapshot = {"cccc": {"state": "stalledDL", "progress": 0.875}}
+
+    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+    await loop.start()
+    await asyncio.sleep(0.15)
+    await loop.stop()
+
+    updated = store.get("CCCC")
+    assert updated.status == TaskStatus.downloading
+    assert updated.progress == 87.5
+    assert updated.torrent_state == "stalledDL"
+
+
+@pytest.mark.asyncio
 async def test_sync_detects_removed_torrent():
     qbit = FakeQbitClient()
     store = FakeStore()
@@ -156,6 +242,36 @@ async def test_no_tracked_items_skips_poll():
     assert store.count == 0
 
 
+@pytest.mark.asyncio
+async def test_sync_failure_backs_off_without_scanning_store():
+    qbit = FailingQbitClient()
+    store = RecordingStore()
+    bus = MessageBus()
+    store.add(
+        MagnetItem(
+            hash="WAITING",
+            name="Waiting",
+            magnet="magnet:?xt=urn:btih:WAITING",
+            status=TaskStatus.queued,
+        )
+    )
+
+    loop = QBitSyncLoop(
+        qbit_client=qbit,
+        store=store,
+        bus=bus,
+        poll_interval=0.01,
+        max_failure_backoff=0.05,
+    )
+
+    await loop.start()
+    await asyncio.sleep(0.035)
+    await loop.stop()
+
+    assert qbit.poll_calls >= 1
+    assert store.list_calls == 0
+
+
 class FakeTransitions:
     """Records reconcile_download_snapshot calls for delegation assertions."""
 
@@ -167,7 +283,6 @@ class FakeTransitions:
         hash_key: str,
         item: MagnetItem,
         torrent: dict | None,
-        mapper,
         *,
         was_removed: bool = False,
     ) -> bool:
@@ -242,9 +357,7 @@ async def test_sync_delegates_reconciliation_to_transitions():
 
     removed_calls = [c for c in transitions.calls if c["hash_key"] == "REMOVED"]
     assert any(
-        c["item"] == removed_item
-        and c["torrent"] is None
-        and c["was_removed"] is True
+        c["item"] == removed_item and c["torrent"] is None and c["was_removed"] is True
         for c in removed_calls
     )
 

@@ -5,17 +5,23 @@ ItemStore — 磁力链接中央存储（深模块）
 - InMemoryItemStore: 默认内存实现，用于单进程
 - RedisItemStore: 可持久化 + 多进程共享（未来）
 """
+
 from __future__ import annotations
 
+import heapq
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Protocol, runtime_checkable
+from typing import Dict, Iterable, List, Optional, Protocol, runtime_checkable
 
 from pydantic import ValidationError
 
 from magnet_harvester.models import MagnetItem, TaskStatus
 
 log = logging.getLogger(__name__)
+
+
+def _item_name_key(item: MagnetItem) -> str:
+    return item.name.lower()
 
 
 @dataclass
@@ -119,23 +125,32 @@ class InMemoryItemStore:
         status: Optional[str] = None,
         limit: int = 20,
     ) -> List[MagnetItem]:
-        items = list(self._items.values())
-        if category:
-            items = [i for i in items if i.category == category]
-        if status and status != "all":
-            items = [i for i in items if i.status.value == status]
-        items.sort(key=lambda i: i.name.lower())
-        return items[:limit]
+        if limit <= 0:
+            return []
+        return heapq.nsmallest(
+            limit,
+            self._iter_filtered_items(category=category, status=status),
+            key=_item_name_key,
+        )
+
+    def _iter_filtered_items(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Iterable[MagnetItem]:
+        for item in self._items.values():
+            if category and item.category != category:
+                continue
+            if status and status != "all" and item.status.value != status:
+                continue
+            yield item
 
     def search(self, query: str) -> List[MagnetItem]:
         q = query.lower()
         return [i for i in self._items.values() if q in i.name.lower()]
 
     def get_pending(self) -> List[MagnetItem]:
-        return [
-            i for i in self._items.values()
-            if i.status == TaskStatus.pending and i.category
-        ]
+        return [i for i in self._items.values() if i.status == TaskStatus.pending and i.category]
 
     def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         """支持通过 hash 前缀查找完整 hash（Agent 用）"""
@@ -164,11 +179,13 @@ class InMemoryItemStore:
 
     def add_batch(self, items: List[MagnetItem]) -> int:
         """批量添加，返回新增数量"""
-        added = 0
+        pending: dict[str, MagnetItem] = {}
         for item in items:
-            if self.add(item):
-                added += 1
-        return added
+            if item.hash in self._items or item.hash in pending:
+                continue
+            pending[item.hash] = item
+        self._items.update(pending)
+        return len(pending)
 
     def clear(self):
         self._items.clear()

@@ -1,4 +1,5 @@
 """Concurrent Crawl sessions keep independent mutable state."""
+
 import asyncio
 from types import SimpleNamespace
 
@@ -25,8 +26,7 @@ class OverlappingCrawler(MagnetCrawler):
         await asyncio.sleep(0.02 if "first" in root_url else 0.01)
         count = 1 if "first" in root_url else 2
         magnets = "\n".join(
-            f"magnet:?xt=urn:btih:{str(i + 1) * 40}&dn=Example.{i}.2160p"
-            for i in range(count)
+            f"magnet:?xt=urn:btih:{str(i + 1) * 40}&dn=Example.{i}.2160p" for i in range(count)
         )
         yield SimpleNamespace(
             url=root_url,

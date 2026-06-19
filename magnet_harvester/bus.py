@@ -4,6 +4,7 @@ MessageBus — 类型化事件总线
 接口: emit(event) — 异步 fan-out 到所有订阅者。
 适配器: NullBus — 测试用静默总线。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +12,8 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Coroutine, Dict, Iterable, List
+
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
@@ -59,8 +62,7 @@ class _EventDelivery:
     ) -> None:
         """并发调用所有回调，阻塞发送方的时间不超过策略超时。"""
         tasks: list[asyncio.Task] = [
-            asyncio.create_task(self._safe_call(cb, event), name=f"bus:{label}")
-            for cb in callbacks
+            BGTaskManager.spawn(self._safe_call(cb, event), name=f"bus:{label}") for cb in callbacks
         ]
         if not tasks:
             return
@@ -102,7 +104,9 @@ class MessageBus:
         if event_type is None:
             self._global_subscribers = [c for c in self._global_subscribers if c != callback]
         elif event_type in self._subscribers:
-            self._subscribers[event_type] = [c for c in self._subscribers[event_type] if c != callback]
+            self._subscribers[event_type] = [
+                c for c in self._subscribers[event_type] if c != callback
+            ]
 
     async def emit(self, event: Event):
         """发射事件到所有匹配的订阅者（并发执行，带 1 秒超时）。

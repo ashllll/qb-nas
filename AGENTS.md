@@ -69,26 +69,25 @@ npm run check    # lint + test
 
 ### Load-bearing modules
 
-| Package/Module | Role |
-|---|---|
-| `main.py` | FastAPI app instance, lifespan (single assembly point via `build_runtime()`) |
-| `assembly.py` | `build_runtime()` wires all services into `AppContext` |
-| `config.py` | `Settings` (pydantic-settings) → `.env`; sub-configs: `CrawlerConfig`, `QBitConfig`, `ServiceConfig` |
-| `models.py` | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus` enum, `MetricSnapshot` |
-| `crawler.py` | `MagnetCrawler` — crawl4ai-based async crawler with depth limits, resolution filtering, cookie injection |
-| `magnet_parser.py` | Regex + Base64 extraction of magnet links from text/markdown/html |
-| `pipeline.py` | `HarvestPipeline` — orchestrates crawl → classify → download |
-| `store.py` | `ItemStore` protocol + `InMemoryItemStore` |
-| `bus.py` | `MessageBus` event system (pub/sub), `NullBus` for testing |
-| `transitions.py` | `MagnetItemTransitions` — state change + event emission |
-| `item_events.py` | Event payload helpers for item changes |
-| `errors.py` | `ErrorHandler` — deduplicated structured error aggregation |
-| `classifier/` | Local rule-chain classifier (KeywordRule → StudioRule → FallbackRule) |
-| `qbit_client/` | qBittorrent WebAPI v2 client (transport, mapper, paths, submitter, sync_state, stats) |
-| `services/` | Background services: `QBitSyncLoop`, `ToolExecutor`, `UserActionExecutor`, `ClipboardMonitor`, `SiteAuth`, `SystemStats` |
-| `context/` | `AppContext` (dependency container) + `QBitRuntime` (hot-swap adapter) |
-| `api/` | REST routes, WebSocket broadcaster, static page router |
-| `utils/` | `url_validator` (SSRF protection), `auth`, `bg_tasks`, `serializers` |
+| Package/Module     | Role                                                                                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.py`          | FastAPI app instance, lifespan (single assembly point via `build_runtime()`)                                                                                           |
+| `assembly.py`      | `build_runtime()` wires all services into `AppContext`                                                                                                                 |
+| `config.py`        | `Settings` (pydantic-settings) → `.env`; sub-configs: `CrawlerConfig`, `QBitConfig`, `ServiceConfig`                                                                   |
+| `models.py`        | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus` enum, `MetricSnapshot`                                                                                   |
+| `crawler.py`       | `MagnetCrawler` — crawl4ai-based async crawler with depth limits, resolution filtering, cookie injection                                                               |
+| `magnet_parser.py` | Regex + Base64 extraction of magnet links from text/markdown/html                                                                                                      |
+| `pipeline.py`      | `HarvestPipeline` — orchestrates crawl → classify → download                                                                                                           |
+| `store.py`         | `ItemStore` protocol + `InMemoryItemStore`                                                                                                                             |
+| `bus.py`           | `MessageBus` event system (pub/sub), `NullBus` for testing                                                                                                             |
+| `transitions.py`   | `MagnetItemTransitions` — state change + event emission                                                                                                                |
+| `errors.py`        | `ErrorHandler` — deduplicated structured error aggregation                                                                                                             |
+| `classifier/`      | Local rule-chain classifier (KeywordRule → StudioRule → FallbackRule)                                                                                                  |
+| `qbit_client/`     | qBittorrent WebAPI v2 client (transport, mapper, paths, submitter, sync_state, stats)                                                                                  |
+| `services/`        | Background and user-facing services: `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `ClipboardMonitor`, `SiteAuth`, `SystemStats` |
+| `context/`         | `AppContext` (dependency container) + `QBitRuntime` (hot-swap adapter)                                                                                                 |
+| `api/`             | REST routes, WebSocket broadcaster, static page router                                                                                                                 |
+| `utils/`           | `url_validator` (SSRF protection), `auth`, `bg_tasks`, `serializers`                                                                                                   |
 
 ### Classification rule chain
 
@@ -134,7 +133,6 @@ qb-nas/
 │   ├── store.py                        # InMemoryItemStore
 │   ├── bus.py                          # MessageBus
 │   ├── transitions.py                  # MagnetItemTransitions
-│   ├── item_events.py                  # Event payload helpers
 │   ├── errors.py                       # ErrorHandler
 │   ├── assembly.py                     # build_runtime()
 │   ├── api/
@@ -158,7 +156,8 @@ qb-nas/
 │   │   ├── submitter.py                # MagnetSubmitter
 │   │   └── sync_state.py               # Incremental sync state
 │   ├── services/
-│   │   ├── agent_tools.py              # ToolExecutor — agent tool dispatch
+│   │   ├── item_queries.py             # Read-only item query formatting
+│   │   ├── observability.py            # Status/health/stats response snapshots
 │   │   ├── clipboard_monitor.py        # ClipboardMonitor (pyperclip polling)
 │   │   ├── qbit_sync.py                # QBitSyncLoop
 │   │   ├── site_auth.py                # Cookie injection helper
@@ -178,18 +177,18 @@ qb-nas/
 
 All settings in `.env` (see `.env.example`). Key categories:
 
-| Variable | Default | Description |
-|---|---|---|
-| `QBIT_HOST` | `http://192.168.1.100:8080` | qBittorrent Web UI |
-| `QBIT_USERNAME` / `QBIT_PASSWORD` | `admin` / `adminadmin` | qB credentials |
-| `SERVICE_HOST` / `SERVICE_PORT` | `127.0.0.1` / `8899` | Service listen address |
-| `API_KEY` | `""` (empty = disabled) | Write-op auth; **required** on non-loopback |
-| `ALLOW_INSECURE_WRITE_API` | `false` | Dev-only bypass for write auth |
-| `CORS_ALLOWED_ORIGINS` | `""` (disabled) | Comma-separated CORS origins |
-| `CRAWLER_*` | See `.env.example` | Crawler timeout, depth, concurrency, resolution filter |
-| `FS_BASE_PATH` | `""` | Local FS root for dir creation (optional) |
-| `MIN_DISK_SPACE_GB` | `10.0` | Disk warning threshold |
-| `SITE_COOKIES` | `{}` | JSON `{"domain": "cookie-string"}` for cookie injection |
+| Variable                          | Default                     | Description                                             |
+| --------------------------------- | --------------------------- | ------------------------------------------------------- |
+| `QBIT_HOST`                       | `http://192.168.1.100:8080` | qBittorrent Web UI                                      |
+| `QBIT_USERNAME` / `QBIT_PASSWORD` | `admin` / `adminadmin`      | qB credentials                                          |
+| `SERVICE_HOST` / `SERVICE_PORT`   | `127.0.0.1` / `8899`        | Service listen address                                  |
+| `API_KEY`                         | `""` (empty = disabled)     | Write-op auth; **required** on non-loopback             |
+| `ALLOW_INSECURE_WRITE_API`        | `false`                     | Dev-only bypass for write auth                          |
+| `CORS_ALLOWED_ORIGINS`            | `""` (disabled)             | Comma-separated CORS origins                            |
+| `CRAWLER_*`                       | See `.env.example`          | Crawler timeout, depth, concurrency, resolution filter  |
+| `FS_BASE_PATH`                    | `""`                        | Local FS root for dir creation (optional)               |
+| `MIN_DISK_SPACE_GB`               | `10.0`                      | Disk warning threshold                                  |
+| `SITE_COOKIES`                    | `{}`                        | JSON `{"domain": "cookie-string"}` for cookie injection |
 
 **Security posture**: Service refuses to start on non-loopback without `API_KEY` or `ALLOW_INSECURE_WRITE_API=true`.
 

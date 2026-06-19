@@ -1,6 +1,7 @@
 """
 HarvestPipeline — 爬取→分类→下载管道（深模块）
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +10,7 @@ from typing import Callable, List, Protocol, runtime_checkable
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
+from magnet_harvester.crawler import CrawlPhase
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import ItemStore
@@ -19,13 +21,18 @@ log = logging.getLogger(__name__)
 
 # ── Phase Protocols ──────────────────────────
 
+
 @runtime_checkable
 class PipelineProtocol(Protocol):
+    async def start_crawl(
+        self, url: str, *, depth: int = 1, auto_download: bool = False
+    ) -> dict: ...
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
     async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
     async def reclassify(self, hashes: list[str]): ...
     def max_crawl_depth(self) -> int: ...
+
 
 @runtime_checkable
 class UsageStats(Protocol):
@@ -34,7 +41,9 @@ class UsageStats(Protocol):
 
 @runtime_checkable
 class ClassifyPhase(Protocol):
-    async def classify_stream_batch(self, items: List[dict], on_result: Callable[[int, dict], None] | None = None) -> None: ...
+    async def classify_stream_batch(
+        self, items: List[dict], on_result: Callable[[int, dict], None] | None = None
+    ) -> None: ...
     @property
     def usage(self) -> UsageStats: ...
     def get_cache_stats(self) -> dict: ...
@@ -43,6 +52,7 @@ class ClassifyPhase(Protocol):
 @runtime_checkable
 class DownloadPhase(Protocol):
     last_error: str | None
+
     async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool: ...
     async def ping(self) -> bool: ...
     def close(self): ...
@@ -71,6 +81,29 @@ class HarvestPipeline:
     def _spawn(self, coro, *, name: str | None = None) -> asyncio.Task:
         return BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
 
+    async def start_crawl(
+        self,
+        url: str,
+        *,
+        depth: int = 1,
+        auto_download: bool = False,
+    ) -> dict:
+        url = url.strip()
+        if not url:
+            return {"status": "error", "reason": "url 不能为空"}
+        try:
+            await self.admit_crawl_target(url)
+        except ValueError as exc:
+            return {"status": "error", "reason": str(exc)}
+
+        effective_depth = max(1, min(int(depth), 3, self.max_crawl_depth()))
+        task = self._spawn(
+            self.execute(url, depth=effective_depth, auto_download=auto_download),
+            name=f"crawl:{url[:40]}",
+        )
+        task_id = getattr(task, "task_id", task.get_name())
+        return {"status": "started", "url": url, "depth": effective_depth, "task_id": task_id}
+
     async def admit_crawl_target(self, url: str) -> str:
         return await self._crawler.admit_url(url)
 
@@ -92,7 +125,9 @@ class HarvestPipeline:
             elif t == "error":
                 await self._bus.emit(Event(EventType.CRAWL_ERROR, msg))
             elif t == "done":
-                await self._bus.emit(Event(EventType.CRAWL_DONE, {"total": msg["total"], "url": msg["url"]}))
+                await self._bus.emit(
+                    Event(EventType.CRAWL_DONE, {"total": msg["total"], "url": msg["url"]})
+                )
 
         if not new_hashes:
             return
@@ -110,10 +145,9 @@ class HarvestPipeline:
         index_to_hash = {i: item.hash for i, item in enumerate(items)}
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
-        await asyncio.gather(*[
-            self._transitions.classification_started(item.hash)
-            for item in items
-        ])
+        await asyncio.gather(
+            *[self._transitions.classification_started(item.hash) for item in items]
+        )
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
         result_events: list[asyncio.Task] = []
@@ -143,11 +177,15 @@ class HarvestPipeline:
             await self._transitions.download_submitting(h)
             async with semaphore:
                 try:
-                    ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
+                    ok = await self._qbit.add_magnet(
+                        item.magnet, item.category, item.save_path or ""
+                    )
                     if ok:
                         await self._transitions.download_submitted(h)
                     else:
-                        await self._transitions.download_failed(h, self._qbit.last_error or "qB 返回失败")
+                        await self._transitions.download_failed(
+                            h, self._qbit.last_error or "qB 返回失败"
+                        )
                 except Exception as e:
                     await self._transitions.download_failed(h, str(e))
 

@@ -1,6 +1,7 @@
 """
 Test MagnetItemTransitions event emission rules (ItemEventEmitter inlined).
 """
+
 import sys
 import os
 
@@ -25,6 +26,7 @@ def _make_item(hash_key="ABC123", name="Test", status=TaskStatus.pending):
 
 # ── 1. STORE_CHANGED is always emitted via classification_started ──
 
+
 async def test_emit_item_changed_always_emits():
     """classification_started always broadcasts STORE_CHANGED."""
     store = FakeStore()
@@ -43,6 +45,7 @@ async def test_emit_item_changed_always_emits():
 
 
 # ── 2. DOWNLOAD_RESULT: terminal always emits ──
+
 
 async def test_terminal_status_always_emits_download_result():
     """Terminal statuses (success/error) always emit DOWNLOAD_RESULT via download_state_changed."""
@@ -63,6 +66,7 @@ async def test_terminal_status_always_emits_download_result():
 
 # ── 3. DOWNLOAD_RESULT: new-phase emits ──
 
+
 async def test_new_phase_emits_download_result():
     """Transitions from pending/adding/classifying/None emit DOWNLOAD_RESULT."""
     for prev in (TaskStatus.pending, TaskStatus.adding, TaskStatus.classifying, None):
@@ -82,6 +86,7 @@ async def test_new_phase_emits_download_result():
 
 # ── 4. DOWNLOAD_RESULT: routine oscillation does NOT emit ──
 
+
 async def test_routine_oscillation_suppressed():
     """queued→downloading and back should NOT emit DOWNLOAD_RESULT (noise suppression)."""
     store = FakeStore()
@@ -98,7 +103,8 @@ async def test_routine_oscillation_suppressed():
     assert len(events) == 0, "queued→downloading should be suppressed"
 
     item2 = MagnetItem(
-        hash="OSC2", name="osc back",
+        hash="OSC2",
+        name="osc back",
         magnet="magnet:?xt=urn:btih:OSC2",
         status=TaskStatus.queued,
     )

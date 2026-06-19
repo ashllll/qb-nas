@@ -6,7 +6,9 @@ P1-8: Bus 内存泄漏测试
 修复: 使用 asyncio.wait_for + asyncio.gather 替代 asyncio.wait，
       超时后显式取消 pending 任务
 """
+
 import asyncio
+from pathlib import Path
 import pytest
 from magnet_harvester.bus import MessageBus, Event, EventType
 
@@ -68,3 +70,10 @@ async def test_emit_many_events_no_leak():
     await asyncio.sleep(0.5)
     # 所有事件都应该被处理（因为 0.05s < 1s 超时）
     assert call_count == 50, f"期望 50 次调用，实际 {call_count}"
+
+
+def test_message_bus_uses_bg_task_manager_spawn():
+    """MessageBus fan-out 不应直接裸用 asyncio.create_task。"""
+    source = Path("magnet_harvester/bus.py").read_text(encoding="utf-8")
+    assert "BGTaskManager.spawn" in source
+    assert "asyncio.create_task" not in source

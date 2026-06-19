@@ -1,16 +1,19 @@
 """
 QBitSyncLoop — background polling service for qBittorrent state sync.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Protocol
 
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import TaskStatus
+from magnet_harvester.store import ItemStore
+from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
@@ -19,7 +22,26 @@ log = logging.getLogger(__name__)
 class QBitSyncClient(Protocol):
     async def poll_torrent_snapshot(self) -> dict: ...
     def take_recently_removed(self) -> set[str]: ...
-    def map_torrent_status(self, torrent) -> dict: ...
+
+
+@dataclass
+class SyncBackoffPolicy:
+    """Tracks qB sync retry delay after consecutive poll failures."""
+
+    base_delay: float
+    max_delay: float
+    failures: int = 0
+
+    def next_delay(self) -> float:
+        if self.failures <= 0:
+            return self.base_delay
+        return min(self.max_delay, self.base_delay * (2**self.failures))
+
+    def record_success(self) -> None:
+        self.failures = 0
+
+    def record_failure(self) -> None:
+        self.failures += 1
 
 
 class QBitSyncLoop:
@@ -31,13 +53,17 @@ class QBitSyncLoop:
         store: ItemStore,
         bus: MessageBus,
         poll_interval: float = 2.0,
+        max_failure_backoff: float = 30.0,
         task_manager: BackgroundTaskSpawner | None = None,
         transitions: MagnetItemTransitions | None = None,
     ):
         self._qbit = qbit_client
         self._store = store
         self._bus = bus
-        self._poll_interval = poll_interval
+        self._backoff = SyncBackoffPolicy(
+            base_delay=poll_interval,
+            max_delay=max_failure_backoff,
+        )
         self._task_manager = task_manager
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
@@ -67,9 +93,7 @@ class QBitSyncLoop:
     async def _run(self):
         while not self._stop_event.is_set():
             try:
-                await asyncio.wait_for(
-                    self._stop_event.wait(), timeout=self._poll_interval
-                )
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self._backoff.next_delay())
                 break
             except asyncio.TimeoutError:
                 pass
@@ -79,15 +103,6 @@ class QBitSyncLoop:
             if qbit is None or store is None:
                 continue
 
-            tracked_items = [
-                item
-                for item in store.list(limit=store.count)
-                if item.status
-                in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
-            ]
-            if not tracked_items:
-                continue
-
             async with self._lock:
                 if qbit is not self._qbit:
                     continue
@@ -95,8 +110,20 @@ class QBitSyncLoop:
                     snapshot = await qbit.poll_torrent_snapshot()
                     removed_hashes = qbit.take_recently_removed()
                 except Exception as e:
-                    log.debug(f"qB 状态同步失败: {e}")
+                    self._backoff.record_failure()
+                    log.debug(
+                        "qB 状态同步失败，将退避到 %.1fs 后重试: %s", self._backoff.next_delay(), e
+                    )
                     continue
+                self._backoff.record_success()
+
+            tracked_items = [
+                item
+                for item in store.list(limit=store.count)
+                if item.status in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
+            ]
+            if not tracked_items:
+                continue
 
             for item in tracked_items:
                 hash_key = item.hash
@@ -107,6 +134,5 @@ class QBitSyncLoop:
                     hash_key,
                     item,
                     torrent,
-                    qbit.map_torrent_status,
                     was_removed=is_removed,
                 )

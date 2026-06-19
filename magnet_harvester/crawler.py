@@ -9,6 +9,7 @@ MagnetCrawler v3.0 — 使用 crawl4ai 引擎
 - start() / stop()
 - crawl(url, depth) → AsyncGenerator[dict, None]
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,12 +30,16 @@ from crawl4ai.deep_crawling.filters import FilterChain, URLFilter, URLPatternFil
 from crawl4ai.deep_crawling.scorers import PathDepthScorer
 
 from magnet_harvester.config import CrawlerConfig, settings
-from magnet_harvester.magnet_parser import extract_from_text
-from magnet_harvester.services.site_auth import parse_site_cookies
+from magnet_harvester.magnet_sources import (
+    MagnetSourceExtractor,
+    filter_resolution_items as _filter_resolution_items,
+)
+from magnet_harvester.services.site_auth import SiteAuth
 from magnet_harvester.utils.url_validator import (
     CrawlTargetAdmission,
     URLValidationError,
 )
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
@@ -64,19 +69,12 @@ class CrawlMetrics:
         }
 
 
-
-
 @runtime_checkable
 class CrawlPhase(Protocol):
     """Protocol for crawl adapters — implemented by MagnetCrawler."""
+
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]: ...
     async def admit_url(self, url: str) -> str: ...
-
-
-def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
-    """Filter crawler results to the configured resolution keywords."""
-    allowed_lower = {a.lower() for a in allowed if a}
-    return [it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)]
 
 
 class CrawlAdmissionFilter(URLFilter):
@@ -97,6 +95,14 @@ class CrawlAdmissionFilter(URLFilter):
         return True
 
 
+def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
+    return _filter_resolution_items(items, allowed=allowed)
+
+
+class BrowserCookieProvider(Protocol):
+    def browser_cookies(self) -> list[dict]: ...
+
+
 class MagnetCrawler:
     """爬虫入口 — 使用 crawl4ai 引擎
 
@@ -110,6 +116,7 @@ class MagnetCrawler:
         self,
         config: CrawlerConfig = None,
         target_admission: CrawlTargetAdmission | None = None,
+        site_auth: BrowserCookieProvider | None = None,
     ):
         if config is None:
             self._config = CrawlerConfig(
@@ -121,6 +128,7 @@ class MagnetCrawler:
                 allowed_resolutions=settings.crawler.allowed_resolutions,
                 wait_until=settings.CRAWLER_WAIT_UNTIL,
                 delay_before_return_html=settings.CRAWLER_DELAY_BEFORE_HTML,
+                word_count_threshold=settings.CRAWLER_WORD_COUNT_THRESHOLD,
                 scan_full_page=settings.CRAWLER_SCAN_FULL_PAGE,
                 scroll_delay=settings.CRAWLER_SCROLL_DELAY,
                 max_scroll_steps=settings.CRAWLER_MAX_SCROLL_STEPS,
@@ -144,6 +152,10 @@ class MagnetCrawler:
         )
         self._seen_lock = asyncio.Lock()
         self._target_admission = target_admission or CrawlTargetAdmission()
+        self._site_auth = site_auth or SiteAuth.from_raw(settings.SITE_COOKIES)
+        self._magnet_sources = MagnetSourceExtractor(
+            allowed_resolutions=self._config.allowed_resolutions
+        )
 
     async def admit_url(self, url: str) -> str:
         return await self._target_admission.admit(url)
@@ -155,34 +167,6 @@ class MagnetCrawler:
     def _clamp_depth(self, depth: int) -> int:
         return max(1, min(int(depth), self._config.max_depth))
 
-    @staticmethod
-    def _build_site_cookies() -> list[dict]:
-        """从配置构建全局站点 cookie 列表（Playwright 格式）。"""
-        site_cookies = parse_site_cookies(settings.SITE_COOKIES)
-        all_cookies: list[dict] = []
-        for domain, cookie_str in site_cookies.items():
-            if not domain or not cookie_str:
-                continue
-            # 解析 cookie 字符串为列表
-            for item in cookie_str.split(";"):
-                item = item.strip()
-                if "=" not in item:
-                    continue
-                name, _, value = item.partition("=")
-                name = name.strip()
-                value = value.strip()
-                if not name:
-                    continue
-                all_cookies.append({
-                    "name": name,
-                    "value": value,
-                    "domain": domain,
-                    "path": "/",
-                })
-        if all_cookies:
-            log.info(f"已加载 {len(all_cookies)} 个站点 cookie，覆盖 {len(site_cookies)} 个域名")
-        return all_cookies
-
     def _current_metrics(self) -> CrawlMetrics:
         metrics = self._session_metrics.get() or self._metrics
         if metrics is None:
@@ -191,8 +175,7 @@ class MagnetCrawler:
 
     async def start(self):
         """启动 crawl4ai 引擎"""
-        # 构建站点 cookie 列表
-        site_cookies = self._build_site_cookies()
+        site_cookies = self._site_auth.browser_cookies()
 
         browser_cfg = BrowserConfig(
             browser_type="chromium",
@@ -240,7 +223,7 @@ class MagnetCrawler:
         seen: Set[str] = set()
         events: asyncio.Queue[dict | None] = asyncio.Queue()
 
-        session_task = asyncio.create_task(
+        session_task = BGTaskManager.spawn(
             self._run_crawl_session(
                 root_url=url,
                 events=events,
@@ -260,8 +243,13 @@ class MagnetCrawler:
             log.error(f"爬取过程异常: {e}")
             yield {"type": "error", "msg": str(e), "url": url}
         finally:
-            await session_task
+            await self._finish_session_task(session_task)
             self._session_metrics.set(None)
+
+    async def _finish_session_task(self, session_task: asyncio.Task) -> None:
+        if not session_task.done():
+            session_task.cancel()
+        await asyncio.gather(session_task, return_exceptions=True)
 
     async def _run_crawl_session(
         self,
@@ -271,7 +259,9 @@ class MagnetCrawler:
         depth: int,
     ) -> None:
         try:
-            await events.put({"type": "progress", "msg": "正在爬取...", "url": root_url, "depth": depth})
+            await events.put(
+                {"type": "progress", "msg": "正在爬取...", "url": root_url, "depth": depth}
+            )
             async for result in self._fetch_deep_stream(root_url, depth):
                 await self._handle_crawl_result(
                     result=result,
@@ -288,12 +278,14 @@ class MagnetCrawler:
             await events.put({"type": "error", "msg": str(exc), "url": root_url})
         finally:
             metrics = self._current_metrics()
-            await events.put({
-                "type": "done",
-                "total": metrics.magnets_found,
-                "url": root_url,
-                "metrics": metrics.as_dict(),
-            })
+            await events.put(
+                {
+                    "type": "done",
+                    "total": metrics.magnets_found,
+                    "url": root_url,
+                    "metrics": metrics.as_dict(),
+                }
+            )
             await events.put(None)
 
     @property
@@ -328,12 +320,14 @@ class MagnetCrawler:
             metrics.magnets_found += 1
             await events.put({"type": "found", "item": item})
 
-        await events.put({
-            "type": "progress",
-            "msg": f"发现 {new_count} 个新磁力",
-            "url": result_url,
-            "metrics": metrics.as_dict(),
-        })
+        await events.put(
+            {
+                "type": "progress",
+                "msg": f"发现 {new_count} 个新磁力",
+                "url": result_url,
+                "metrics": metrics.as_dict(),
+            }
+        )
 
     async def _fetch_deep_stream(self, root_url: str, depth: int):
         result_stream = await self._crawler.arun(
@@ -350,10 +344,12 @@ class MagnetCrawler:
         url_scorer = PathDepthScorer() if self._config.url_score_depth_bias else None
         return BFSDeepCrawlStrategy(
             max_depth=max(0, depth - 1),
-            filter_chain=FilterChain([
-                URLPatternFilter(DETAIL_URL_RE, use_glob=False),
-                CrawlAdmissionFilter(self._target_admission),
-            ]),
+            filter_chain=FilterChain(
+                [
+                    URLPatternFilter(DETAIL_URL_RE, use_glob=False),
+                    CrawlAdmissionFilter(self._target_admission),
+                ]
+            ),
             url_scorer=url_scorer,
             include_external=False,
             max_pages=max(1, self._config.max_detail_links + 1),
@@ -367,7 +363,7 @@ class MagnetCrawler:
     ) -> CrawlerRunConfig:
         return CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
-            word_count_threshold=1,
+            word_count_threshold=self._config.word_count_threshold,
             verbose=False,
             stream=stream,
             page_timeout=self._config.timeout * 1000,
@@ -389,18 +385,4 @@ class MagnetCrawler:
         )
 
     def _extract_page_items(self, result, source_url: str) -> List[dict]:
-        content_sources: List[str] = []
-        for content in (result.markdown, result.cleaned_html, result.html):
-            if content:
-                content_text = str(content)
-                if content_text not in content_sources:
-                    content_sources.append(content_text)
-
-        items: List[dict] = []
-        for text in content_sources:
-            items.extend(extract_from_text(text))
-
-        items = filter_resolution_items(items, allowed=self._config.allowed_resolutions)
-        for item in items:
-            item.setdefault("source_url", source_url)
-        return items
+        return self._magnet_sources.from_page_result(result, source_url=source_url)

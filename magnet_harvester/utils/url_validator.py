@@ -1,4 +1,5 @@
 """Crawl target admission and SSRF prevention."""
+
 from __future__ import annotations
 
 import asyncio

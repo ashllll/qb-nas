@@ -1,6 +1,7 @@
 """
 重试/批量调度交给 crawl4ai 配置处理。
 """
+
 from crawl4ai import CacheMode
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 
@@ -27,6 +28,14 @@ def test_deep_crawl_strategy_uses_crawl4ai_page_limit():
 
     assert isinstance(strategy, BFSDeepCrawlStrategy)
     assert strategy.max_pages == 34
+
+
+def test_run_config_uses_configured_word_count_threshold():
+    crawler = MagnetCrawler(config=CrawlerConfig(word_count_threshold=12))
+
+    cfg = crawler._build_run_config()
+
+    assert cfg.word_count_threshold == 12
 
 
 if __name__ == "__main__":

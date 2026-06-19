@@ -1,6 +1,7 @@
 """
 Test BGTaskManager — background task creation with exception logging.
 """
+
 import sys
 import os
 import asyncio
@@ -25,6 +26,28 @@ async def test_create_returns_task():
     assert task.get_name() == "test_dummy"
     result = await task
     assert result == 42
+
+
+@pytest.mark.asyncio
+async def test_task_status_snapshot_lives_after_completion():
+    async def dummy():
+        return 42
+
+    mgr = BGTaskManager()
+    task = mgr.create(dummy(), name="crawl:https://example.com")
+    task_id = task.task_id
+
+    running = mgr.get_task(task_id)
+    assert running["task_id"] == task_id
+    assert running["name"] == "crawl:https://example.com"
+    assert running["status"] == "running"
+
+    await task
+    completed = mgr.get_task(task_id)
+
+    assert completed["status"] == "completed"
+    assert completed["error"] is None
+    assert mgr.active_count == 0
 
 
 @pytest.mark.asyncio

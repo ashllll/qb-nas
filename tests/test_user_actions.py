@@ -1,4 +1,5 @@
 """Tests for UserActionExecutor depth clamping and dispatch."""
+
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +25,12 @@ class FakePipeline:
     async def admit_crawl_target(self, url: str) -> str:
         return url
 
+    async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False):
+        url = url.strip()
+        depth = max(1, min(int(depth), 3, self.max_crawl_depth()))
+        await self.execute(url, depth=depth, auto_download=auto_download)
+        return {"status": "started", "url": url, "depth": depth}
+
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
         self.calls.append((url, depth, auto_download))
 
@@ -32,6 +39,15 @@ class FakePipeline:
 
     async def reclassify(self, hashes: list[str]):
         pass
+
+
+class StartOnlyPipeline:
+    def __init__(self):
+        self.calls = []
+
+    async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False):
+        self.calls.append((url, depth, auto_download))
+        return {"status": "started", "url": url.strip(), "depth": 2}
 
 
 def _make_executor(max_depth: int = 2) -> tuple[UserActionExecutor, FakePipeline]:
@@ -50,6 +66,24 @@ def _make_executor(max_depth: int = 2) -> tuple[UserActionExecutor, FakePipeline
 
 async def _start(executor: UserActionExecutor, depth: int):
     return await executor.start_crawl("https://example.com", depth=depth)
+
+
+def test_start_crawl_uses_pipeline_start_interface():
+    store = InMemoryItemStore()
+    bus = MessageBus()
+    pipeline = StartOnlyPipeline()
+    transitions = MagnetItemTransitions(store=store, bus=bus)
+    executor = UserActionExecutor(
+        store=store,
+        pipeline=pipeline,
+        task_manager=None,
+        transitions=transitions,
+    )
+
+    result = asyncio.run(executor.start_crawl(" https://example.com ", depth=5, auto_download=True))
+
+    assert result == {"status": "started", "url": "https://example.com", "depth": 2}
+    assert pipeline.calls == [(" https://example.com ", 5, True)]
 
 
 def test_start_crawl_clamps_depth_to_pipeline_max():

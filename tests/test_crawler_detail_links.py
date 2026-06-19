@@ -1,6 +1,7 @@
 """
 测试 crawl4ai 深爬策略配置。
 """
+
 import asyncio
 import os
 import sys
@@ -313,6 +314,41 @@ def test_crawl_consumer_close_cleans_up_deep_crawl_session():
         assert first["type"] == "progress"
         async with asyncio.timeout(1):
             await stream.aclose()
+
+    asyncio.run(consume_and_close())
+
+
+def test_crawl_consumer_close_cancels_unfinished_session():
+    class HangingCrawler(MagnetCrawler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.cancelled = False
+
+        async def start(self):
+            self._crawler = object()
+
+        async def _fetch_deep_stream(self, root_url, depth):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+            yield
+
+    async def consume_and_close():
+        crawler = HangingCrawler(
+            config=CrawlerConfig(concurrency=2),
+            target_admission=CrawlTargetAdmission(
+                resolver=public_resolver,
+                redirect_probe=no_redirect,
+            ),
+        )
+        stream = crawler.crawl("https://example.com", depth=1)
+        first = await anext(stream)
+        assert first["type"] == "progress"
+        async with asyncio.timeout(0.2):
+            await stream.aclose()
+        assert crawler.cancelled is True
 
     asyncio.run(consume_and_close())
 

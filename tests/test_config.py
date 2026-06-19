@@ -1,6 +1,7 @@
 """
 测试配置派生对象
 """
+
 import sys
 import os
 
@@ -35,6 +36,13 @@ def test_default_crawler_detail_link_limit_keeps_large_result_sets():
     assert cfg.crawler.max_detail_links == 200
 
 
+def test_default_crawler_word_count_threshold_filters_short_text():
+    cfg = Settings()
+
+    assert cfg.CRAWLER_WORD_COUNT_THRESHOLD == 10
+    assert cfg.crawler.word_count_threshold == 10
+
+
 def test_persist_qbit_config_updates_env_without_dropping_other_values(tmp_path):
     env_path = tmp_path / ".env"
     env_path.write_text(
@@ -62,6 +70,35 @@ def test_persist_qbit_config_updates_env_without_dropping_other_values(tmp_path)
     assert 'QBIT_PASSWORD="pa\\"ss word"' in text
     assert "OTHER_VALUE=keep-me" in text
     assert "old.example" not in text
+
+
+def test_check_disk_space_reports_configured_path(monkeypatch, tmp_path):
+    import magnet_harvester.config as config_module
+
+    class FakeDiskUsage:
+        total = 100 * 1024**3
+        used = 80 * 1024**3
+        free = 20 * 1024**3
+
+    calls = []
+
+    def fake_disk_usage(path):
+        calls.append(path)
+        return FakeDiskUsage()
+
+    monkeypatch.setattr(config_module.shutil, "disk_usage", fake_disk_usage)
+
+    cfg = Settings(FS_BASE_PATH=str(tmp_path), MIN_DISK_SPACE_GB=25.0)
+
+    assert cfg.check_disk_space() == {
+        "path": str(tmp_path),
+        "total_gb": 100.0,
+        "used_gb": 80.0,
+        "free_gb": 20.0,
+        "min_free_gb": 25.0,
+        "low_space": True,
+    }
+    assert calls == [str(tmp_path)]
 
 
 if __name__ == "__main__":

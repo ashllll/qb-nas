@@ -1,6 +1,7 @@
 """
 Test UserActionExecutor — agent tool operations (ToolExecutor collapsed in).
 """
+
 import sys
 import os
 import asyncio
@@ -10,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 
 from magnet_harvester.models import MagnetItem
+from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.services.user_actions import UserActionExecutor
@@ -27,6 +29,15 @@ class FakePipeline:
 
     async def admit_crawl_target(self, url):
         return url
+
+    async def start_crawl(self, url, *, depth=1, auto_download=False):
+        try:
+            url = await self.admit_crawl_target(url.strip())
+        except ValueError as exc:
+            return {"status": "error", "reason": str(exc)}
+        depth = max(1, min(int(depth), 3, self.max_crawl_depth()))
+        await self.execute(url, depth=depth, auto_download=auto_download)
+        return {"status": "started", "url": url, "depth": depth}
 
     async def execute(self, url, depth=1, auto_download=False):
         self.crawl_urls.append((url, depth, auto_download))
@@ -53,8 +64,11 @@ def _make_executor(store=None, pipeline=None, tasks=None, stats=None):
     tasks = tasks or FakeTaskManager()
     transitions = MagnetItemTransitions(store=store, bus=NullBus())
     return UserActionExecutor(
-        store=store, pipeline=pipeline,
-        task_manager=tasks, transitions=transitions, stats=stats,
+        store=store,
+        pipeline=pipeline,
+        task_manager=tasks,
+        transitions=transitions,
+        stats=stats,
     )
 
 
@@ -63,8 +77,8 @@ def test_get_stats():
     store.add(MagnetItem(hash="A", name="a", magnet="m:?xt=urn:btih:A", category="电影"))
     store.add(MagnetItem(hash="B", name="b", magnet="m:?xt=urn:btih:B", category="电视剧"))
 
-    actions = _make_executor(store=store)
-    result = actions.get_stats()
+    queries = ItemQueryExecutor(store=store)
+    result = queries.get_stats()
 
     assert result["total"] == 2
     assert result["by_category"]["电影"] == 1
@@ -75,11 +89,26 @@ def test_list_items():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
 
-    actions = _make_executor(store=store)
-    result = actions.list_items(category="电影")
+    queries = ItemQueryExecutor(store=store)
+    result = queries.list_items(category="电影")
 
     assert result["count"] == 1
     assert result["items"][0]["name"] == "Alpha"
+
+
+def test_page_items_returns_api_payload_shape():
+    store = FakeStore()
+    store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
+    store.add(MagnetItem(hash="B", name="Beta", magnet="m:?xt=urn:btih:B", category="电视剧"))
+
+    queries = ItemQueryExecutor(store=store)
+    result = queries.page_items(limit=1, offset=1)
+
+    assert result["total"] == 2
+    assert result["limit"] == 1
+    assert result["offset"] == 1
+    assert len(result["items"]) == 1
+    assert "status" in result["items"][0]
 
 
 def test_search_items():
@@ -87,8 +116,8 @@ def test_search_items():
     store.add(MagnetItem(hash="A", name="Alpha Movie", magnet="m:?xt=urn:btih:A"))
     store.add(MagnetItem(hash="B", name="Beta Show", magnet="m:?xt=urn:btih:B"))
 
-    actions = _make_executor(store=store)
-    result = actions.search_items(query="alpha")
+    queries = ItemQueryExecutor(store=store)
+    result = queries.search_items(query="alpha")
 
     assert result["count"] == 1
     assert result["results"][0]["name"] == "Alpha Movie"
@@ -104,7 +133,7 @@ async def test_start_crawl():
 
     assert result["status"] == "started"
     assert pipeline.crawl_urls[0][0] == "https://example.com"
-    assert tasks.calls == ["crawl:https://example.com"]
+    assert tasks.calls == []
 
 
 @pytest.mark.asyncio
@@ -138,7 +167,11 @@ async def test_add_to_queue():
 
 def test_manually_reclassify():
     store = FakeStore()
-    store.add(MagnetItem(hash="ABCDEF123456", name="Test", magnet="m:?xt=urn:btih:ABCDEF123456", category="电影"))
+    store.add(
+        MagnetItem(
+            hash="ABCDEF123456", name="Test", magnet="m:?xt=urn:btih:ABCDEF123456", category="电影"
+        )
+    )
 
     actions = _make_executor(store=store)
     result = asyncio.run(actions.manually_reclassify("ABCDEF12", "电视剧"))

@@ -2,17 +2,19 @@
 Test QBitRuntime.replace_qbit_config — the deep runtime/service operation
 behind PUT /api/config.
 """
+
 from __future__ import annotations
 
 import sys
 import os
+import asyncio
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import QBitConfig
-from magnet_harvester.context.app_context import AppContext, QBitRuntime
+from magnet_harvester.context.app_context import AppContext, QBitReplacementTarget, QBitRuntime
 
 
 class FakeQbit:
@@ -214,6 +216,72 @@ async def test_replace_qbit_config_does_not_replace_on_persist_failure():
     assert old_qbit.closed is False
 
 
+async def test_replace_qbit_config_serializes_concurrent_replacements():
+    class SlowQbit(FakeQbit):
+        active_pings = 0
+        max_active_pings = 0
+
+        async def ping(self) -> bool:
+            type(self).active_pings += 1
+            type(self).max_active_pings = max(
+                type(self).max_active_pings,
+                type(self).active_pings,
+            )
+            try:
+                await asyncio.sleep(0.01)
+                return True
+            finally:
+                type(self).active_pings -= 1
+
+    runtime = _make_runtime(factory=SlowQbit)
+
+    results = await asyncio.gather(
+        runtime.replace_qbit_config(
+            host="http://one:8080",
+            username="user",
+            password="pass",
+        ),
+        runtime.replace_qbit_config(
+            host="http://two:8080",
+            username="user",
+            password="pass",
+        ),
+    )
+
+    assert results == [
+        {"status": "ok", "connected": True},
+        {"status": "ok", "connected": True},
+    ]
+    assert SlowQbit.max_active_pings == 1
+    assert [config.host for config in runtime.settings.persisted] == [
+        "http://one:8080",
+        "http://two:8080",
+    ]
+
+
+async def test_replacement_target_works_without_app_context():
+    old_qbit = FakeQbit(QBitConfig(host="http://old:8080"))
+    new_qbit = FakeQbit(QBitConfig(host="http://new:8080"))
+    holder = {"qbit": old_qbit}
+    sync = FakeSync()
+    pipeline = FakePipeline()
+
+    target = QBitReplacementTarget(
+        lock=None,
+        get_qbit=lambda: holder["qbit"],
+        set_qbit=lambda value: holder.update(qbit=value),
+        qbit_sync=sync,
+        pipeline=pipeline,
+    )
+
+    await target.replace(new_qbit)
+
+    assert holder["qbit"] is new_qbit
+    assert sync.qbit is new_qbit
+    assert pipeline.replaced_qbit is new_qbit
+    assert old_qbit.closed is True
+
+
 if __name__ == "__main__":
     import asyncio
 
@@ -225,6 +293,7 @@ if __name__ == "__main__":
         test_replace_qbit_config_closes_new_client_on_persist_failure,
         test_replace_qbit_config_replaces_and_commits_on_success,
         test_replace_qbit_config_does_not_replace_on_persist_failure,
+        test_replacement_target_works_without_app_context,
     ]
     for t in tests:
         asyncio.run(t())

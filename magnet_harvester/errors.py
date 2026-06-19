@@ -1,4 +1,5 @@
 """统一错误处理模块"""
+
 from __future__ import annotations
 
 import logging
@@ -61,6 +62,7 @@ class ErrorHandler:
 
     def _generate_error_id(self, category: ErrorCategory, message: str) -> str:
         import hashlib
+
         key = f"{category.value}:{message}"
         return hashlib.md5(key.encode()).hexdigest()[:12]
 
@@ -97,23 +99,19 @@ class ErrorHandler:
 
         if severity == ErrorSeverity.ERROR:
             log.error(
-                f"Error [{record.error_id}]: {record.message}",
-                extra={"details": record.details}
+                f"Error [{record.error_id}]: {record.message}", extra={"details": record.details}
             )
         elif severity == ErrorSeverity.CRITICAL:
             log.critical(
                 f"Critical error [{record.error_id}]: {record.message}",
-                extra={"details": record.details}
+                extra={"details": record.details},
             )
 
         return error_id
 
     def _cleanup_old_errors(self):
-        sorted_errors = sorted(
-            self._errors.items(),
-            key=lambda x: x[1].timestamp
-        )
-        to_remove = len(self._errors) - self._max_errors + 100
+        sorted_errors = sorted(self._errors.items(), key=lambda x: x[1].timestamp)
+        to_remove = max(0, len(self._errors) - self._max_errors)
         for error_id, _ in sorted_errors[:to_remove]:
             del self._errors[error_id]
 
@@ -154,5 +152,4 @@ class ErrorHandler:
 
 
 # Module-level singleton
-error_handler = ErrorHandler()
-
+error_handler = ErrorHandler()

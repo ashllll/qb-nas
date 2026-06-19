@@ -2,6 +2,7 @@
 
 向后兼容导出：旧代码可直接从 magnet_harvester.qbit_client 导入。
 """
+
 from __future__ import annotations
 
 from magnet_harvester.qbit_client.client import QBittorrentClient

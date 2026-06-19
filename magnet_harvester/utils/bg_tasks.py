@@ -1,12 +1,36 @@
 """
 BGTaskManager — wraps asyncio.create_task with exception logging.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import uuid
+from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class TaskSnapshot:
+    task_id: str
+    name: str
+    status: str = "running"
+    error: str | None = None
+    created_at: float = 0.0
+    finished_at: float | None = None
+
+    def as_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "name": self.name,
+            "status": self.status,
+            "error": self.error,
+            "created_at": self.created_at,
+            "finished_at": self.finished_at,
+        }
 
 
 class BGTaskManager:
@@ -14,6 +38,8 @@ class BGTaskManager:
 
     def __init__(self):
         self._tasks: set[asyncio.Task] = set()
+        self._task_ids: dict[asyncio.Task, str] = {}
+        self._snapshots: dict[str, TaskSnapshot] = {}
         self._closing = False
 
     def create(self, coro, name: str | None = None) -> asyncio.Task:
@@ -22,14 +48,29 @@ class BGTaskManager:
             if close is not None:
                 close()
             raise RuntimeError("background task manager is shutting down")
-        task = asyncio.create_task(coro, name=name)
+        task_name = name or "background-task"
+        task = asyncio.create_task(coro, name=task_name)
+        task_id = uuid.uuid4().hex
+        task.task_id = task_id
         self._tasks.add(task)
+        self._task_ids[task] = task_id
+        self._snapshots[task_id] = TaskSnapshot(
+            task_id=task_id,
+            name=task_name,
+            created_at=time.time(),
+        )
         task.add_done_callback(self._on_done)
         return task
 
     @property
     def active_count(self) -> int:
         return len(self._tasks)
+
+    def get_task(self, task_id: str) -> dict | None:
+        snapshot = self._snapshots.get(task_id)
+        if snapshot is None:
+            return None
+        return snapshot.as_dict()
 
     async def shutdown(self) -> None:
         self._closing = True
@@ -42,10 +83,26 @@ class BGTaskManager:
 
     def _on_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)
-        if not task.cancelled():
-            exc = task.exception()
-            if exc is not None:
-                log.error(f"后台任务 [{task.get_name()}] 异常: {exc}", exc_info=exc)
+        task_id = self._task_ids.pop(task, None)
+        snapshot = self._snapshots.get(task_id or "")
+        if snapshot is not None:
+            snapshot.finished_at = time.time()
+
+        if task.cancelled():
+            if snapshot is not None:
+                snapshot.status = "cancelled"
+            return
+
+        exc = task.exception()
+        if exc is not None:
+            if snapshot is not None:
+                snapshot.status = "failed"
+                snapshot.error = str(exc)
+            log.error(f"后台任务 [{task.get_name()}] 异常: {exc}", exc_info=exc)
+            return
+
+        if snapshot is not None:
+            snapshot.status = "completed"
 
     @staticmethod
     def spawn(coro, *, task_manager=None, name: str | None = None) -> asyncio.Task:

@@ -1,4 +1,5 @@
 """Tests for CORS configuration."""
+
 from __future__ import annotations
 
 

@@ -8,105 +8,134 @@
 
 ## ✅ 已修复缺陷（此版本不再适用）
 
-| 原编号 | 原问题 | 修复状态 |
-|---|---|---|
-| P0-1 | InMemoryItemStore 字典迭代崩溃 | ✅ 已使用 `list(self._items.values())` 快照 |
-| P0-2 | crawler.py 共享 Set 竞态 | ✅ 已改用 crawl4ai BFSDeepCrawlStrategy |
-| P0-3 | SSRF — 任意 URL 爬取 | ✅ 已实现 `utils/url_validator.py` 全量验证 |
-| P0-4 | API 无认证保护 | ✅ 已实现 `utils/auth.py` require_api_key + 安全态势检查 |
-| P1-5 | qB 配置明文回传 | ✅ PUT /api/config 不再返回密码 |
-| P1-6 | WebSocket 无心跳 | ✅ 已添加心跳和重连机制 |
+| 原编号 | 原问题                                                 | 修复状态                                                                                                              |
+| ------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| P0-1   | InMemoryItemStore 字典迭代崩溃                         | ✅ 已使用 `list(self._items.values())` 快照                                                                           |
+| P0-2   | crawler.py 共享 Set 竞态                               | ✅ 已改用 crawl4ai BFSDeepCrawlStrategy                                                                               |
+| P0-3   | SSRF — 任意 URL 爬取                                   | ✅ 已实现 `utils/url_validator.py` 全量验证                                                                           |
+| P0-4   | API 无认证保护                                         | ✅ 已实现 `utils/auth.py` require_api_key + 安全态势检查                                                              |
+| P1-5   | qB 配置明文回传                                        | ✅ PUT /api/config 不再返回密码                                                                                       |
+| P1-6   | WebSocket 无心跳                                       | ✅ 已添加心跳和重连机制                                                                                               |
+| R-1a   | `crawler.py` 会话任务裸 `create_task` 和提前关闭不取消 | ✅ 已改用 `BGTaskManager.spawn()`，`crawl().aclose()` 会取消未完成 session                                            |
+| R-1b   | `MessageBus` fan-out 裸 `asyncio.create_task`          | ✅ 已改用 `BGTaskManager.spawn()`，保留超时取消和异常隔离语义                                                         |
+| S-1    | `try_decode_base64` 复杂度过高                         | ✅ 已拆为 Base64 候选迭代、单候选解码、磁力文本识别；结果稳定按首次出现顺序去重                                       |
+| S-2    | `extract_from_text` 循环嵌套/重复解析流程              | ✅ 已拆为候选来源迭代器 + `_append_unique_magnet()` 去重解析                                                          |
+| S-3    | `validate_crawl_url` 安全关键函数复杂度偏高            | ✅ 已复核为过期项；当前已拆出 `_validate_protocol()` / `_validate_hostname()` / `_is_unsafe_address()`                |
+| S-4    | `classify_local` 循环内重复正则编译                    | ✅ 已预编译 `COMPILED_LOCAL_RULES`，分类入口 interface 不变                                                           |
+| S-5    | `_json_serializer` 疑似死代码                          | ✅ 已复核为 codebase-memory 假阳性；函数通过 `json.dumps(default=_json_serializer)` 使用                              |
+| R-2    | 静默异常吞没                                           | ✅ 已复核并修正剩余项；`magnet_parser` 不再包裹宽泛异常，`site_auth`/`qbit_client` 均记录异常后按容错 interface 降级  |
+| R-3    | WebSocket 死连接清理边界案例                           | ✅ `_on_event` 发送前检查真实 `WebSocketState`，断开连接直接移除                                                      |
+| P1-6   | qB 状态同步缺少错误恢复                                | ✅ 已添加 `SyncBackoffPolicy` 指数退避；qB snapshot 成功后才扫描 store                                                |
+| P1-7   | Pipeline 下载阶段串行执行                              | ✅ 已复核为过期项；当前 `_download_items()` 使用 `asyncio.gather()` + `Semaphore` 限并发                              |
+| P1-8   | MessageBus 超时任务异常未检索                          | ✅ 已复核为已修复；当前 `_EventDelivery` 使用 `gather(return_exceptions=True)` 并取消后再次 gather                    |
+| P1-9   | `FS_BASE_PATH` 空值导致当前目录污染                    | ✅ 已复核为已修复；`MagnetSubmitter` 仅在 `fs_base_path` 非空时创建本地目录                                           |
+| P1-10  | 磁力链接哈希格式校验不一致                             | ✅ 已修复；`MagnetSubmitter` 复用 `magnet_parser.HASH_RE`，提交层与提取层 btih 规则一致                               |
+| P1-11  | 详情页链接模式过于僵化                                 | ✅ 已复核为已缓解；`DETAIL_URL_RE` 已覆盖 details/torrent/view/resource/movie/subject 和常见 id 查询参数              |
+| P1-12  | qB 全局配置并发修改风险                                | ✅ 已修复；`QBitRuntime.replace_qbit_config()` 使用 runtime 级 lock 串行化 build/ping/persist/replace/commit          |
+| P2-20  | crawler 重试延迟无抖动                                 | ✅ 已复核为过期项；当前无手写固定指数退避，重试交给 crawl4ai `max_retries`                                            |
+| P2-14  | WebSocket 广播串行阻塞                                 | ✅ 已复核为已修复；当前 `_on_event` 对连接快照并发 `asyncio.gather()`                                                 |
+| P2-15  | WebSocket 入站消息未处理                               | ✅ 已修复；`handle_client_message()` 解析控制消息，支持 ping/pong 心跳和错误响应                                      |
+| P2-16  | `MagnetItem` 缺少时间戳字段                            | ✅ 已修复；模型包含 `created_at` / `updated_at`                                                                       |
+| P2-17  | `InMemoryItemStore.list()` 全量排序分页                | ✅ 已修复；筛选候选以迭代器流过 `heapq.nsmallest()`，小 limit 不再全量排序                                            |
+| P2-19  | 关键词前缀匹配过宽                                     | ✅ 已修复；短关键词统一走 token-boundary 正则，不再用裸 `startswith()`                                                |
+| P2-21  | `ensure_category` 固定 sleep 且未验证创建结果          | ✅ 已修复；创建分类后轮询 qB 分类列表，超时仍不可见则返回失败                                                         |
+| P2-22  | qB 登录/请求成功不重置失败计数                         | ✅ 已修复；transport 成功登录和成功请求会重置 `consecutive_failures` 并记录 `last_success_time`                       |
+| P2-23  | fallback 默认分类为“电影”                              | ✅ 已修复；未命中规则时返回“其他”                                                                                     |
+| P2-13  | `items_cleared` 使用错误事件类型                       | ✅ 已添加 `EventType.ITEMS_CLEARED` 并由 `MagnetItemTransitions.cleared()` 发射                                       |
+| P2-18  | `ErrorHandler._cleanup_old_errors` 额外清理 100 条     | ✅ 已改为只清理超过 `_max_errors` 的旧记录                                                                            |
+| P2-24  | Agent 手动分类路径设置错误                             | ✅ `UserActionExecutor.manually_reclassify()` 通过 `MagnetItemTransitions.manually_classified()` 同步分类与保存路径   |
+| P2-25  | Agent depth 无上限                                     | ✅ 爬取入口集中到 `HarvestPipeline.start_crawl()`，统一执行 URL admit 和 depth 截断                                   |
+| P3-26  | `settings.check_disk_space()` 不存在                   | ✅ 已修复；`Settings.check_disk_space()` 返回磁盘容量、阈值和低空间状态，lifespan 直接调用                            |
+| P3-27  | `parse_magnet` 截断空格标题                            | ✅ 已修复；raw 清理不再用 `split()[0]`，保留 `dn` 中的字面空格                                                        |
+| P3-28  | Base64 解码非法 UTF-8 静默丢字符                       | ✅ 已修复；严格 UTF-8 失败时用替换符保留字节位置并记录 debug                                                          |
+| P3-29  | `CrawlerRunConfig.word_count_threshold=1` 过宽         | ✅ 已修复；新增 `CRAWLER_WORD_COUNT_THRESHOLD`，默认 10 并注入 crawl4ai run config                                    |
+| P3-30  | `bus.py` 无意义 done callback                          | ✅ 已复核为过期项；当前 `MessageBus` 通过 `BGTaskManager.spawn()` 和 `gather(return_exceptions=True)` 管理任务        |
+| P3-31  | qB 路径丢失前导斜杠                                    | ✅ 已复核为已修复；`_extract_base_from_path()` 返回带前导 `/` 的父路径                                                |
+| P3-32  | `GET /api/config` 泄露 qB 用户名                       | ✅ 已修复；读取配置也走 `require_api_key`，API key 为空时仍保持开发兼容                                               |
+| P3-33  | `start_crawl` 无任务追踪                               | ✅ 已修复；`BGTaskManager` 保留任务快照，`start_crawl` 返回 `task_id`，`/api/tasks/{task_id}` 可查询                  |
+| P3-34  | `InMemoryItemStore.add_batch()` 无事务语义             | ✅ 已修复；先构造批次 pending map，全部通过后一次性提交，异常时不半写入                                               |
+| P3-35  | 分类规则不支持热更新                                   | ✅ 已修复；`LocalClassifier.reload_rules()` 重载文件型关键词规则，`POST /api/classifier/reload` 触发                  |
+| P3-37  | `pyproject.toml` 缺少 `playwright` 依赖声明            | ✅ 已复核为已修复；`project.dependencies` 已包含 `playwright>=1.40`                                                   |
+| P3-38  | 仓库包含不应提交文件                                   | ✅ 已修复/复核；删除旧分析产物，清理本地垃圾并更新 ignore；`package-lock.json` 保留为 npm dev 工具锁文件              |
+| P3-39  | `requirements.txt` 与 `pyproject.toml` 不同步          | ✅ 已修复；补齐 `requirements.txt` 的 `playwright` 和 `pyproject.toml` 的 `pyperclip`，并新增 manifest 同步测试       |
+| P3-40  | 缺少集成测试                                           | ✅ 已修复；新增 `tests/integration/test_crawl_to_download_flow.py` 覆盖 REST crawl 到 pipeline/store/qB fake 的完整流 |
+| P3-36  | `QBitSyncLoop` 轮询间隔不可配置                        | ✅ 已修复；`Settings.QBIT_SYNC_INTERVAL` 通过 assembly 注入 `QBitSyncLoop.poll_interval`                              |
 
 ---
 
-## 🟡 当前有效缺陷
+## 🟢 当前有效缺陷复核
 
 ### 结构性缺陷
 
-#### S-1: `try_decode_base64` 复杂度过高 (C=11)
+#### S-1: 已修复: `try_decode_base64` 复杂度过高
+
 - **位置**: `magnet_harvester/magnet_parser.py` `try_decode_base64()`
-- **严重度**: 🟡 MEDIUM
-- **度量**: 复杂度 11 | 认知复杂度 30 | 38 行 | linear_scan_in_loop=1
-- **问题**: 函数职责过多（Base64 解码 + 多编码尝试 + 磁力验证），循环内执行字符串搜索导致二次复杂度
-- **建议**: 拆分为独立函数：`_decode_base64_variants()` + `_is_valid_magnet()`
+- **状态**: 已拆为 `_iter_base64_candidates()`、`_decode_candidate()`、`_magnet_from_decoded_text()`；入口 `try_decode_base64(text)` 保持不变。
+- **行为改进**: 结果按文本首次出现顺序稳定去重，不再使用 `set()` 返回无序列表。
+- **验证**: `tests/test_magnet_extract.py::test_base64_decoding_preserves_first_seen_order_and_deduplicates`
 
-#### S-2: `extract_from_text` 循环嵌套过深 (C=10)
+#### S-2: 已修复: `extract_from_text` 循环嵌套过深
+
 - **位置**: `magnet_harvester/magnet_parser.py` `extract_from_text()`
-- **严重度**: 🟡 MEDIUM
-- **度量**: 复杂度 10 | 认知复杂度 22 | 40 行 | loop_count=6
-- **问题**: 6 层循环嵌套使测试和维护困难，单一失败点影响所有提取路径
-- **建议**: 提取内部解析逻辑到独立生成器函数
+- **状态**: 已将标准 magnet、Base64、JSON/引号来源拆为 `_iter_*` 候选生成器，并通过 `_append_unique_magnet()` 集中解析和去重。
+- **验证**: `tests/test_magnet_extract.py`、`tests/test_clipboard_monitor.py`、`tests/test_magnet_source_extractor.py` 覆盖主要提取路径。
 
-#### S-3: `validate_crawl_url` 安全关键函数复杂度偏高 (C=10)
+#### S-3: 已复核: `validate_crawl_url` 安全关键函数复杂度偏高
+
 - **位置**: `magnet_harvester/utils/url_validator.py` `validate_crawl_url()`
-- **严重度**: 🟡 MEDIUM
-- **度量**: 复杂度 10 | 25 行
-- **问题**: 安全关键函数不应有高复杂度——每个分支都是潜在攻击面
-- **建议**: 拆分为 `_validate_protocol()` + `_validate_hostname()` + `_validate_ip()`
+- **状态**: 旧扫描项已过期。当前代码已拆出 `_validate_protocol()`、`_validate_hostname()`、`_is_unsafe_address()`，DNS 和重定向验证集中在 `CrawlTargetAdmission`。
+- **结论**: 无需继续拆分，当前 module interface 保持清晰。
 
-#### S-4: `classify_local` 循环内线性扫描
+#### S-4: 已修复: `classify_local` 循环内重复正则编译
+
 - **位置**: `magnet_harvester/classifier/fallback.py` `classify_local()`
-- **严重度**: 🟢 LOW
-- **度量**: linear_scan_in_loop=1 | 复杂度 2
-- **问题**: 规则匹配循环内执行 `in` 操作，规则数量目前很少，但会随规则增长而恶化
-- **建议**: 对于大量规则场景，考虑编译正则或使用 trie 结构
+- **状态**: 已添加 `COMPILED_LOCAL_RULES`，规则在模块加载时编译一次；`classify_local(name)` interface 不变。
+- **验证**: `tests/test_default_category.py`, `tests/test_classifier_rule.py`, `tests/test_classifier_keywords.py`, `tests/test_local_classifier.py`
 
-#### S-5: `_json_serializer` 疑似死代码
+#### S-5: 已复核: `_json_serializer` 疑似死代码
+
 - **位置**: `magnet_harvester/api/websocket.py` `_json_serializer()`
-- **严重度**: 🟢 LOW
-- **度量**: in_degree=0 | out_degree=0 | 4 行
-- **问题**: 知识图谱显示零调用方，仅在 `json.dumps(default=...)` 中作为回调传递，图不追踪此模式
-- **建议**: 如确实未使用则删除；如使用则保留（可能是 CBM 假阳性）
+- **状态**: codebase-memory 假阳性。函数作为 `json.dumps(default=_json_serializer)` 回调使用，静态调用图不追踪该模式。
+- **结论**: 保留。
 
 ---
 
 ### 运行时缺陷
 
-#### R-1: 裸 `asyncio.create_task` 违反项目规范 (4 处)
-- **位置**:
-  - `magnet_harvester/crawler.py:237`
-  - `magnet_harvester/bus.py:62`
-  - `magnet_harvester/services/qbit_sync.py:55`
-  - `magnet_harvester/services/clipboard_monitor.py:67`
-- **严重度**: 🟡 MEDIUM
-- **问题**: 项目 AGENTS.md 明确要求"使用 `BGTaskManager.create()`，禁止裸 `asyncio.create_task`"。这些任务未注册到统一的异常监控和关闭生命周期中。
-- **建议**:
-  - `crawler.py:237` — 爬虫 session 任务应通过 BGTaskManager 创建
-  - `bus.py:62` — 可接受（fire-and-forget + `_safe_call` 内置错误处理），但建议加注释说明
-  - `qbit_sync.py:55` — 应通过 BGTaskManager 创建以获取关闭时的自动取消
-  - `clipboard_monitor.py:67` — 同上
+#### R-1: 已修复: 裸 `asyncio.create_task` 违反项目规范
 
-#### R-2: 静默异常吞没 (3 处)
-- **位置**:
-  - `magnet_harvester/magnet_parser.py:131` — `except Exception:` 无日志变量
-  - `magnet_harvester/services/site_auth.py:31` — `except Exception:` 返回空列表
-  - `magnet_harvester/qbit_client/client.py:104` — `except Exception:` 返回空 dict
-- **严重度**: 🟡 MEDIUM
-- **问题**: 吞没所有异常类型（包括 KeyboardInterrupt、SystemExit 等 BaseException 子类应避免捕获），且不记录异常细节，导致运行时故障难以排查
-- **建议**:
-  - 使用 `except Exception as e:` 并至少 `log.warning(f"... {e}")` 
-  - 考虑使用 `logger.exception()` 记录完整 traceback
-  - 对预期内的异常使用更具体的类型（如 `ValueError`）
+- **位置**: `magnet_harvester/bus.py`, `magnet_harvester/crawler.py`, `magnet_harvester/services/qbit_sync.py`, `magnet_harvester/services/clipboard_monitor.py`
+- **状态**: 后台任务创建已集中到 `BGTaskManager.spawn()` / `BGTaskManager.create()`；MessageBus fan-out 仍保留超时取消和异常隔离。
+- **验证**: `tests/test_bus_memory_leak.py`, `tests/test_bus_backpressure.py`, `tests/test_crawler_detail_links.py` 覆盖慢订阅者取消和 crawler session 提前关闭。
 
-#### R-3: WebSocket 死连接清理边界案例
+#### R-2: 已复核: 静默异常吞没
+
+- **位置**:
+  - `magnet_harvester/magnet_parser.py` — 宽泛异常包裹已移除，单候选解码仅捕获 `binascii.Error` / `ValueError`
+  - `magnet_harvester/services/site_auth.py` — JSON 和 URL 解析失败均记录日志后降级
+  - `magnet_harvester/qbit_client/client.py` — qB 查询 facade 记录 warning/debug 后返回空对象，属于调用方可处理的容错 interface
+- **结论**: 不再存在“静默”吞异常。qB 查询方法仍保留宽泛 `Exception`，是为隔离外部 qB/httpx 运行时失败；后续如要进一步深化，可独立提取 `QBitQueryGateway`。
+
+#### R-3: 已修复: WebSocket 死连接清理边界案例
+
 - **位置**: `magnet_harvester/api/websocket.py:84-88`
 - **严重度**: 🟢 LOW
-- **问题**: 使用 `asyncio.gather(..., return_exceptions=True)` 并发发送，死连接收集到 `dead` 集合后统一移除。但 `_on_event` 通过异步回调被 MessageBus 触发，可能导致同一连接在清理中被重复尝试发送
-- **建议**: 在 `_on_event` 入口处检查 `ws.client_state` 状态
+- **状态**: `_on_event` 发送前检查真实 `WebSocketState`；已断开的连接直接加入 dead 集合并移除，不再尝试 `send_text`。
+- **验证**: `tests/test_websocket_broadcast.py::test_broadcast_skips_disconnected_clients` 覆盖断开连接跳过发送。
 
 ---
 
 ### 安全态势评估
 
-| 维度 | 状态 | 说明 |
-|---|---|---|
-| API 写保护 | ✅ 强 | 所有写端点有 `Depends(require_api_key)` |
-| SSRF 防护 | ✅ 强 | url_validator 阻断 loopback/link-local/multicast/RFC1918 |
-| CORS | ✅ 正确 | 默认禁用，仅在配置后启用 |
-| 非 loopback 启动 | ✅ 正确 | `validate_security_posture()` 在无 API_KEY 时拒绝启动 |
-| 密码存储 | ✅ 合理 | qB 密码在 .env 明文存储（此为 pydantic-settings 标准做法） |
-| 默认密码 | 🟢 提示 | `admin:adminadmin` 为代码默认值，用户应在 .env 中覆盖 |
-| Cookie 注入 | ✅ 安全 | 仅注入配置中显式指定的域名 |
+| 维度             | 状态    | 说明                                                       |
+| ---------------- | ------- | ---------------------------------------------------------- |
+| API 写保护       | ✅ 强   | 所有写端点有 `Depends(require_api_key)`                    |
+| SSRF 防护        | ✅ 强   | url_validator 阻断 loopback/link-local/multicast/RFC1918   |
+| CORS             | ✅ 正确 | 默认禁用，仅在配置后启用                                   |
+| 非 loopback 启动 | ✅ 正确 | `validate_security_posture()` 在无 API_KEY 时拒绝启动      |
+| 密码存储         | ✅ 合理 | qB 密码在 .env 明文存储（此为 pydantic-settings 标准做法） |
+| 默认密码         | 🟢 提示 | `admin:adminadmin` 为代码默认值，用户应在 .env 中覆盖      |
+| Cookie 注入      | ✅ 安全 | 仅注入配置中显式指定的域名                                 |
 
 **安全总评**: 项目安全态势良好，无不安全实践。
 
@@ -116,9 +145,7 @@
 
 > ⚠️ 以下为旧报告内容，保留供历史参考。当前版本中这些问题已修复。
 
-### 1. `InMemoryItemStore` 并发字典迭代崩溃风险
-
-### 1. `InMemoryItemStore` 并发字典迭代崩溃风险
+### 1. 已修复/复核: `InMemoryItemStore` 并发字典迭代崩溃风险
 
 **位置**：`store.py:123-129`, `store.py:131-133`, `store.py:152-162`
 **问题**：`list()`, `search()`, `stats()` 等方法在遍历 `self._items` 字典时，如果另一个协程同时调用 `add()` / `remove()` / `clear()`，会抛出 `RuntimeError: dictionary changed size during iteration`。
@@ -126,13 +153,13 @@
 **修复建议**：在 `InMemoryItemStore` 中添加 `asyncio.Lock`，或在遍历前复制字典视图：`list(self._items.values())` 已经是复制，但 `for item in self._items.values()` 在遍历过程中如果字典被修改仍会崩溃。应使用 `list(self._items.values())` 快照遍历（当前代码已使用，但 `stats()` 中也是 `for item in self._items.values()`，同样安全）。**实际上当前代码已使用 `list()` 包装，此问题不存在**。但 `clear()` 可能在 `list()` 调用和遍历之间执行，导致空列表。这不是崩溃，但可能丢失数据。
 **重新评估**：当前 `list()` 和 `search()` 已使用 `list(self.__items.values())` 快照，不会崩溃。`stats()` 同样。但 `get_hashes_by_prefix()` 使用 `for h in self._items` 遍历键，如果同时 `clear()` 会崩溃。应改为 `list(self._items.keys())`。
 
-### 2. `crawler.py` 共享 Set 竞态条件导致重复爬取
+### 2. 已修复: `crawler.py` 共享 Set 竞态条件导致重复爬取
 
 **位置**：`crawler.py:344-350`
 **问题**：`_claim_unvisited_links` 中 `if link in visited: continue; visited.add(link)` 不是原子操作。多个 worker 协程可能在同一时刻检查到 `link not in visited`，然后都将其加入，导致同一页面被重复爬取。
 **修复建议**：使用 `asyncio.Lock` 保护 `visited` 和 `seen` 集合的读写，或改用 `asyncio.Queue` 的去重机制。
 
-### 3. `api/routes.py` SSRF 漏洞 — 任意 URL 爬取
+### 3. 已修复: `api/routes.py` SSRF 漏洞 — 任意 URL 爬取
 
 **位置**：`api/routes.py:83-91`
 **问题**：`start_crawl` 接口没有对 `req.url` 做任何验证，攻击者可以提交内网地址（如 `http://192.168.1.1:8080`、 `http://localhost:8085`、 `file:///etc/passwd`），导致服务端请求伪造（SSRF）。
@@ -142,7 +169,7 @@
 2. 禁止内网 IP、localhost、文件协议
 3. 限制只允许 http/https 协议
 
-### 4. `api/routes.py` 关键接口无认证保护
+### 4. 已修复: `api/routes.py` 关键接口无认证保护
 
 **位置**：`api/routes.py:83-91`, `api/routes.py:94-99`, `api/routes.py:102-105`, `api/routes.py:143-160`, `api/routes.py:163-168`
 **问题**：`/api/crawl`, `/api/download`, `/api/reclassify`, `/api/config` (PUT), `/api/items` (DELETE) 等接口没有任何身份验证，任何能访问服务的人都可以：
@@ -153,7 +180,7 @@
 - 触发任意 URL 爬取
   **修复建议**：添加 API Key / Bearer Token / Basic Auth 中间件，至少对修改类接口进行保护。
 
-### 5. `main.py` CORS 配置过于宽松
+### 5. 已修复: `main.py` CORS 配置过于宽松
 
 **位置**：`main.py:47-49`
 **问题**：`allow_origins=["*"]` 允许任何网站通过浏览器调用 API，配合无认证接口，攻击者可以通过构造恶意网页诱导用户触发爬取/下载操作。
@@ -163,243 +190,223 @@
 
 ## 🟠 P1 — High（严重影响功能或性能）
 
-### 6. `qbit_sync.py` 状态同步缺少错误恢复
+### 6. 已修复: `qbit_sync.py` 状态同步缺少错误恢复
 
 **位置**：`services/qbit_sync.py:85-157`
-**问题**：`_run()` 循环中如果 `poll_torrent_snapshot()` 持续失败（如 qB 临时离线），会无限循环并每次打印 `log.debug`。但 `tracked_items` 列表可能包含大量 item，每次循环都全量查询 `store.list(limit=10000)` 并过滤，CPU 开销随 item 数量线性增长。
-**修复建议**：
+**状态**：已添加 `SyncBackoffPolicy`，连续失败后从基础轮询间隔指数退避，最高到 `max_failure_backoff`。同步循环先拉取 qB snapshot，成功后才扫描 store 并 reconcile tracked items，避免 qB 离线时还对本地 store 做全量扫描。
+**验证**：`tests/test_qbit_sync_loop.py::test_sync_backoff_policy_increases_after_failures_and_resets_on_success` 和 `tests/test_qbit_sync_loop.py::test_sync_failure_backs_off_without_scanning_store`。
 
-1. 添加指数退避重试，连续失败时增大轮询间隔
-2. 使用 `store.get_pending()` 替代 `store.list()` + 手动过滤
-3. 添加 `max_consecutive_sync_failures` 阈值，超过后暂停同步并告警
-
-### 7. `pipeline.py` 下载阶段串行执行
+### 7. 已复核: `pipeline.py` 下载阶段串行执行
 
 **位置**：`pipeline.py:207-222`
-**问题**：`_download_items` 使用 `for` 循环顺序调用 `add_magnet`，每次下载间隔 0.3 秒。如果一次爬取发现 100 个磁力链接，全部下载需要 30 秒以上。
-**修复建议**：使用 `asyncio.gather()` 或 `asyncio.Semaphore` 限制并发数（如最多 5 个并发），大幅缩短批量下载时间。
+**状态**：旧扫描项已过期。当前 `_download_items()` 使用 `asyncio.gather()` 并通过 `asyncio.Semaphore(concurrency)` 限制并发，默认并发 3。
+**结论**：不再是串行下载缺陷。
 
-### 8. `bus.py` 超时任务异常未检索导致内存泄漏
+### 8. 已复核: `bus.py` 超时任务异常未检索导致内存泄漏
 
 **位置**：`bus.py:63-93`
-**问题**：`emit()` 中 `await asyncio.wait(tasks, timeout=1.0)` 后，pending 任务继续后台运行。如果这些任务抛出未捕获异常，Python 会记录 `Task exception was never retrieved`，且 Task 对象在事件循环中保持引用直到异常被检索，造成内存泄漏。
-**修复建议**：为所有 pending 任务添加 `add_done_callback` 检索异常，或统一使用 `asyncio.gather(*tasks, return_exceptions=True)` 并设置超时。
+**状态**：旧扫描项已过期。当前 `_EventDelivery.deliver()` 使用 `asyncio.gather(*tasks, return_exceptions=True)` 包住所有投递任务，超时后取消未完成任务并再次 `gather(return_exceptions=True)` 检索结果。
+**结论**：不再存在未检索任务异常问题。
 
-### 9. `qbit_client/client.py` `FS_BASE_PATH` 空值导致当前目录污染
+### 9. 已复核: `qbit_client/client.py` `FS_BASE_PATH` 空值导致当前目录污染
 
 **位置**：`qbit_client/client.py:345-347`
-**问题**：`fs_base = settings.FS_BASE_PATH.strip()` 如果 `.env` 中 `FS_BASE_PATH` 被注释掉或设为空字符串，`Path("") / "电影"` 会在当前工作目录创建 `电影/` 目录。如果服务在系统目录（如 `/usr/local/bin`）运行，会污染系统目录。
-**修复建议**：添加非空校验：`if fs_base and fs_base.strip():` 才执行 `mkdir`。
+**状态**：旧扫描项已过期。本地目录创建逻辑已移至 `MagnetSubmitter`，并且只在 `self._fs_base_path` 非空时执行 `Path(...).mkdir()`。
+**结论**：空 `FS_BASE_PATH` 不会再创建当前工作目录下的分类目录。
 
-### 10. `qbit_client/client.py` 磁力链接哈希格式校验不一致
+### 10. 已修复: `qbit_client/client.py` 磁力链接哈希格式校验不一致
 
 **位置**：`qbit_client/client.py:327` vs `magnet_parser.py:23-26`
-**问题**：`client.py` 使用 `r'btih:([A-Za-z0-9]{8,40})'` 匹配 base32/hex 混合字符，而 `magnet_parser.py` 使用 `r'btih:([a-fA-F0-9]{32,64})'` 严格匹配十六进制。这可能导致：
+**状态**：提交层已改为复用 `magnet_harvester.magnet_parser.HASH_RE`，与提取层统一接受 40 位 hex 或 32 位 Base32 btih，并拒绝 8 位等过短 hash。
+**验证**：`tests/test_qbit_submitter.py::test_submitter_uses_parser_btih_validation_rules` 覆盖 8 位 btih 拒绝和 32 位 Base32 btih 允许。
 
-- Parser 提取失败的链接，Client 却能添加（不一致行为）
-- 32 字符 base32 编码的哈希被 Client 接受，但 qBittorrent 可能拒绝
-  **修复建议**：统一使用 `magnet_parser.py` 的严格十六进制正则，或统一放宽到 `[A-Za-z0-9]{32,40}` 并添加 base32→hex 转换逻辑。
-
-### 11. `crawler.py` 详情页链接硬编码模式过于僵化
+### 11. 已复核: `crawler.py` 详情页链接硬编码模式过于僵化
 
 **位置**：`crawler.py:330-332`
-**问题**：`_extract_detail_links` 硬编码了 `/details/`, `/detail/`, `/torrent/` 等路径模式。很多站点使用完全不同的 URL 结构（如 `/item/123`, `/post/abc`），导致深度爬取失效。
-**修复建议**：
+**状态**：旧扫描项已缓解。当前 `DETAIL_URL_RE` 已覆盖 `/details?/`, `/torrent/`, `/view/`, `/resource/`, `/movie/`, `/subject/`，以及 `id/tid/movie_id/detail` 查询参数。
+**剩余空间**：如果后续要支持站点级自定义规则，可独立把 detail URL policy 抽成可配置 module。
 
-1. 支持从配置文件加载自定义模式
-2. 使用启发式规则：链接文本包含 "详情"、"下载" 等关键词
-3. 限制每个页面的详情链接数量（已有 50 条限制，但模式不匹配时一条都抓不到）
-
-### 12. `config.py` 全局单例并发修改风险
+### 12. 已修复: `config.py` 全局单例并发修改风险
 
 **位置**：`config.py:135`
-**问题**：`settings = Settings()` 是模块级全局单例。`api/routes.py:149` 中 `settings.update_qbit(...)` 直接修改全局对象。如果两个请求同时修改配置，可能产生竞态条件（如一个请求修改 host，另一个修改 password，结果配置混合）。
-**修复建议**：
-
-1. 使用 `asyncio.Lock` 保护配置修改
-2. 或改用不可变配置 + 原子替换模式
-3. 或禁止并发修改，返回 409 Conflict
+**状态**：配置变更已集中到 `QBitRuntime.replace_qbit_config()`，并新增 runtime 级 `config_lock`。`build_qbit_config`、新 client ping、`.env` 持久化、热替换和 `commit_qbit_config` 现在作为一个串行流程执行，避免两个 PUT `/api/config` 同时交错修改运行时和全局 settings。
+**验证**：`tests/test_qbit_runtime_config.py::test_replace_qbit_config_serializes_concurrent_replacements` 覆盖并发替换不会重叠执行 qB ping。
 
 ---
 
 ## 🟡 P2 — Medium（影响体验或可维护性）
 
-### 13. `api/routes.py` 错误事件类型滥用
+### 13. 已修复: `items_cleared` 错误事件类型滥用
 
-**位置**：`api/routes.py:167`, `services/agent_tools.py:111`
-**问题**：`clear_items` 和 `clear_all` 使用 `EventType.ERROR` 来广播 "items_cleared" 事件。语义上完全错误，会导致错误统计虚高，且前端错误处理逻辑可能误触发。
-**修复建议**：添加 `EventType.ITEMS_CLEARED` 或复用 `EventType.STORE_CHANGED`。
+**位置**：`magnet_harvester/transitions.py:225`
+**状态**：`clear_items` 现在通过 `MagnetItemTransitions.cleared()` 广播 `EventType.ITEMS_CLEARED`，不再复用 `EventType.ERROR`。
+**验证**：`tests/test_error_event_type.py` 和 `tests/test_api_auth.py` 覆盖该事件语义。
 
-### 14. `api/websocket.py` WebSocket 广播串行阻塞
+### 14. 已复核: `api/websocket.py` WebSocket 广播串行阻塞
 
 **位置**：`api/websocket.py:71-76`
-**问题**：`_on_event` 中 `await ws.send_text(data)` 是串行执行的。如果某个客户端连接很慢（如网络延迟高），会阻塞其他客户端的广播，导致实时性下降。
-**修复建议**：使用 `asyncio.gather()` 并发发送，或设置发送超时。
+**状态**：旧扫描项已过期。当前 `_on_event` 对 `_active_ws` 快照使用 `asyncio.gather(..., return_exceptions=True)` 并发发送，并在发送前清理断开连接。
+**结论**：不再是串行广播缺陷。
 
-### 15. `api/websocket.py` WebSocket 消息未处理
+### 15. 已修复: `api/websocket.py` WebSocket 消息未处理
 
 **位置**：`api/websocket.py:58-60`
-**问题**：`handle_connection` 中 `while True: await ws.receive_text()` 只接收消息但不处理。客户端发送的任何消息（如心跳、控制命令）都被静默丢弃。
-**修复建议**：解析客户端消息并支持心跳响应、订阅控制等功能。
+**状态**：`handle_connection()` 现在把入站文本交给 `handle_client_message()` 处理。客户端发送 JSON `{"type": "ping"}` 或纯文本 `ping` 会收到 `{"type": "pong"}`；非法 JSON / 未支持的控制消息会收到错误响应，不再静默丢弃。
+**验证**：`tests/test_websocket_broadcaster.py::test_handle_connection_replies_to_ping_message` 和 WebSocket focused suite。
 
-### 16. `models.py` `MagnetItem` 缺少时间戳字段
+### 16. 已修复: `models.py` `MagnetItem` 缺少时间戳字段
 
 **位置**：`models.py:22-33`
-**问题**：`MagnetItem` 没有 `created_at` 或 `updated_at` 字段，无法按时间排序、无法判断 item 年龄、无法做 TTL 清理。
-**修复建议**：添加 `created_at: datetime = Field(default_factory=datetime.now)` 和 `updated_at` 字段。
+**状态**：`MagnetItem` 已包含 `created_at: datetime = Field(default_factory=datetime.now)` 和 `updated_at: datetime = Field(default_factory=datetime.now)`。
+**结论**：基础时间字段已具备；后续若要 TTL，需要另行设计更新时间维护策略。
 
-### 17. `store.py` `list()` 方法内存分页效率低
+### 17. 已修复: `store.py` `list()` 方法内存分页效率低
 
 **位置**：`store.py:117-129`
-**问题**：`list()` 先查询所有 item（`limit=10000`），排序后切片。即使只需要 20 条，也要加载和排序全部 10000 条。
-**修复建议**：在 `InMemoryItemStore` 中维护一个按时间/名称排序的有序列表，或使用 `heapq.nsmallest` 做高效 Top-N 查询。
+**状态**：`list()` 现在通过 `_iter_filtered_items()` 流式筛选候选，再使用 `heapq.nsmallest(limit, ..., key=_item_name_key)` 取按名称排序的前 N 条。小 limit 查询不再构造完整排序列表，interface 和排序语义保持不变。
+**验证**：`tests/test_store_protocol.py::test_list_uses_limited_top_n_selection` 和 store/API/qB sync focused suite。
 
-### 18. `errors.py` 错误清理逻辑计算错误
+### 18. 已修复: `errors.py` 错误清理逻辑计算错误
 
 **位置**：`errors.py:111`
-**问题**：`_cleanup_old_errors` 中 `to_remove = len(self._errors) - self._max_errors + 100` 当错误数为 1001 时，会移除 101 条，导致剩余 899 条（低于 max_errors 1000）。
-**修复建议**：改为 `to_remove = max(0, len(self._errors) - self._max_errors)`，或只移除超出部分 + 少量缓冲。
+**状态**：`_cleanup_old_errors` 现在使用 `to_remove = max(0, len(self._errors) - self._max_errors)`，只删除超出上限的最旧记录。
+**验证**：`tests/test_error_handler.py::test_cleanup_removes_only_entries_over_limit` 覆盖小容量上限场景。
 
-### 19. `keyword_recognizer.py` 前缀匹配过于宽泛
+### 19. 已修复: `keyword_recognizer.py` 前缀匹配过于宽泛
 
 **位置**：`keyword_recognizer.py:47-49`
-**问题**：`n.startswith(keyword)` 会匹配任何以关键词开头的文件名。例如关键词 "AV" 会匹配 "Avatar"、"Avengers"，导致误分类。
-**修复建议**：前缀匹配应要求后面紧跟分隔符（如 `.`, `_`, `-`, 空格），或仅对精确匹配使用前缀规则。
+**状态**：已删除裸 `startswith()` 分支，所有关键词统一走 `_compile_keyword_patterns()` 生成的 token-boundary 正则。`AV.Movie`、`AV_Movie` 命中；`Avatar`、`Avengers` 不再误命中。
+**验证**：`tests/test_classifier_keywords.py::test_short_keyword_requires_token_boundary`。
 
-### 20. `crawler.py` 重试延迟无抖动
+### 20. 已复核: `crawler.py` 重试延迟无抖动
 
 **位置**：`crawler.py:289`
-**问题**：`_fetch_with_retry` 使用固定指数退避 `delay = 2 ** retry_count`（2, 4, 8 秒）。在并发爬取同一站点时，多个 worker 可能在同一时刻重试，形成 "惊群效应"。
-**修复建议**：添加随机抖动：`delay = 2 ** retry_count + random.uniform(0, 1)`。
+**状态**：旧扫描项已过期。当前 crawler 没有 `_fetch_with_retry` 手写 worker/retry loop；并发和重试由 crawl4ai deep crawl 配置处理，`CrawlerRunConfig.max_retries` 来自 `CrawlerConfig.max_retries`。
+**验证**：`tests/test_retry_jitter.py` 覆盖当前 run config 使用 crawl4ai semaphore/deep crawl，而非手写 retry loop。
 
-### 21. `qbit_client/client.py` `ensure_category` 固定 sleep 不灵活
+### 21. 已修复: `qbit_client/client.py` `ensure_category` 固定 sleep 不灵活
 
 **位置**：`qbit_client/client.py:291-314`
-**问题**：创建分类后固定 `await asyncio.sleep(0.5)`，在某些慢速系统上可能不够，在快速系统上浪费时间。
-**修复建议**：使用轮询验证替代固定 sleep：循环检查分类是否存在，最多等待 3 秒。
+**状态**：创建分类后不再固定 sleep 一次后直接返回成功；现在通过 `_wait_for_category()` 轮询 qB 分类列表。分类在轮询窗口内可见才返回成功，始终不可见则返回 False。
+**验证**：`tests/test_qbit_categories.py::test_ensure_category_waits_until_created_category_is_visible` 和 `tests/test_qbit_categories.py::test_ensure_category_fails_when_created_category_never_appears`。
 
-### 22. `qbit_client/client.py` 登录成功不重置失败计数
+### 22. 已修复: `qbit_client/client.py` 登录成功不重置失败计数
 
-**位置**：`qbit_client/client.py:70-95`
-**问题**：`_login` 成功时不重置 `consecutive_failures`，只有 `add_magnet` 成功时才重置。这意味着如果 `ping` 或 `get_maindata` 失败多次，`is_healthy()` 会持续返回 False，即使后续操作正常。
-**修复建议**：在 `_login` 成功、任何 `_req` 成功返回后重置 `consecutive_failures`。
+**位置**：`qbit_client/_transport.py:70-160`
+**状态**：`QBitTransport` 已集中通过 `_record_success()` / `_record_failure()` 维护健康计数。成功登录和成功请求都会重置 `consecutive_failures` 并记录 `last_success_time`，避免 qB 已恢复后 `is_healthy()` 仍因旧失败持续返回 False。
+**验证**：`tests/test_qbit_transport.py::test_successful_request_resets_consecutive_failures`。
 
-### 23. `classifier/fallback.py` 默认分类为 "电影" 过于武断
+### 23. 已修复: `classifier/fallback.py` 默认分类为 "电影" 过于武断
 
 **位置**：`classifier/fallback.py:27-33`
-**问题**：`classify_local` 在未匹配任何规则时默认返回 "电影"。很多内容（如普通软件、文档）会被错误分类为电影。
-**修复建议**：默认返回 "其他"，让未识别内容进入人工审核队列。
+**状态**：`classify_local()` 未匹配任何规则时返回 `"其他"`。
+**验证**：`tests/test_default_category.py` 覆盖默认分类行为。
 
-### 24. `services/agent_tools.py` `reclassify_item` 路径设置错误
+### 24. 已修复: 手动分类路径设置错误
 
-**位置**：`services/agent_tools.py:86`
-**问题**：`store.update(match, category=cat, save_path=cat)` 将 `save_path` 直接设为分类名（如 "电影"），而不是实际文件系统路径（如 `/downloads/电影`）。这会导致 qBittorrent 分类路径错误。
-**修复建议**：通过 `QBitPathResolver` 或配置映射获取分类对应的真实路径。
+**位置**：`magnet_harvester/services/user_actions.py:65-75`, `magnet_harvester/transitions.py`
+**状态**：旧 `services/agent_tools.py` 已移除。`UserActionExecutor.manually_reclassify()` 现在通过 `MagnetItemTransitions.manually_classified()` 应用分类变更，由 transition 统一维护分类与保存路径。
+**验证**：`tests/test_agent_tool_path.py` 覆盖手动分类后的 `category` 和 `save_path`。
 
-### 25. `services/agent_tools.py` `start_crawl` depth 无上限
+### 25. 已修复: Agent/HTTP 共用爬取入口 depth 无上限
 
-**位置**：`services/agent_tools.py:63`
-**问题**：Agent 工具直接调用 `pipeline.execute(url, depth=depth)`，不经过 `CrawlRequest` 的 Pydantic validator（`clamp_depth` 限制 1-3）。Agent 可能传入 `depth=10` 导致指数级页面爆炸。
-**修复建议**：在 `ToolExecutor.start_crawl` 中添加 `depth = max(1, min(depth, 3))`。
+**位置**：`magnet_harvester/pipeline.py:76-96`
+**状态**：爬取入口集中到 `HarvestPipeline.start_crawl()`，执行 `max(1, min(int(depth), 3, self.max_crawl_depth()))` 后才创建后台任务。
+**验证**：`tests/test_agent_depth_limit.py` 和 `tests/test_user_actions.py` 覆盖该路径。
 
 ---
 
 ## 🟢 P3 — Low（优化建议）
 
-### 26. `main.py` `check_disk_space` 方法不存在
+### 26. 已修复: `main.py` `check_disk_space` 方法不存在
 
 **位置**：`main.py:34`
-**问题**：`settings.check_disk_space()` 被 `hasattr` 保护，但 `config.py` 中 `Settings` 类根本没有这个方法。`disk_info` 永远为 `{}`，日志中永远显示 `磁盘: ?GB`。
-**修复建议**：在 `Settings` 中实现 `check_disk_space()`，或移除该日志字段。
+**状态**：`Settings.check_disk_space()` 已实现，使用 `FS_BASE_PATH`（为空时使用当前目录）调用 `shutil.disk_usage()`，返回 `total_gb` / `used_gb` / `free_gb` / `min_free_gb` / `low_space`。`main.lifespan()` 现在直接调用该 interface，不再用 `hasattr` 降级为空结果。
+**验证**：`tests/test_config.py::test_check_disk_space_reports_configured_path` 和 config/lifespan focused suite。
 
-### 27. `magnet_parser.py` `parse_magnet` 截断风险
+### 27. 已修复: `magnet_parser.py` `parse_magnet` 截断风险
 
 **位置**：`magnet_parser.py:73`
-**问题**：`raw.strip().rstrip("'\").split()[0]` 如果磁力链接参数值内部有空格（虽然罕见），会被截断。
-**修复建议**：使用正则提取完整磁力链接，而不是 `split()[0]`。
+**状态**：`parse_magnet()` 已将 raw 清理集中到 `_clean_raw_magnet()`，不再用 `split()[0]` 把 `dn` 中的字面空格当作链接结束符。
+**验证**：`tests/test_magnet_extract.py::test_parse_magnet_preserves_literal_spaces_in_dn`。
 
-### 28. `magnet_parser.py` Base64 解码后 UTF-8 丢失字符
+### 28. 已修复: `magnet_parser.py` Base64 解码后 UTF-8 丢失字符
 
 **位置**：`magnet_parser.py:109`
-**问题**：`decoded_bytes.decode('utf-8', errors='ignore')` 会静默丢弃非法 UTF-8 字节，可能导致解码后的磁力链接不完整。
-**修复建议**：使用 `errors='replace'` 并添加日志警告，或尝试多种编码（latin-1, gbk）。
+**状态**：Base64 内容现在先按严格 UTF-8 解码；遇到非法字节时使用 `errors="replace"` 保留字节位置，并记录 debug 日志，不再用 `errors="ignore"` 静默丢字符。
+**验证**：`tests/test_magnet_extract.py::test_base64_decoding_replaces_invalid_utf8_bytes_instead_of_dropping_them`。
 
-### 29. `crawler.py` `word_count_threshold=1` 过于宽松
+### 29. 已修复: `crawler.py` `word_count_threshold=1` 过于宽松
 
 **位置**：`crawler.py:276`
-**问题**：`CrawlerRunConfig(word_count_threshold=1)` 会保留几乎所有内容，包括导航栏、页脚等无意义文本，增加解析开销。
-**修复建议**：提高到 `word_count_threshold=10` 或更高，过滤掉短文本片段。
+**状态**：已新增 `CrawlerConfig.word_count_threshold` / `Settings.CRAWLER_WORD_COUNT_THRESHOLD` / `.env.example` 配置项，默认值为 `10`。`MagnetCrawler._build_run_config()` 现在把配置值注入 `CrawlerRunConfig.word_count_threshold`，不再硬编码为 `1`。
+**验证**：`tests/test_retry_jitter.py::test_run_config_uses_configured_word_count_threshold` 和 crawler/config focused suite。
 
-### 30. `bus.py` 无意义的 done_callback
+### 30. 已复核: `bus.py` 无意义的 done_callback
 
 **位置**：`bus.py:92`
-**问题**：`task.add_done_callback(lambda t: None)` 没有任何作用，只是让代码阅读者困惑。
-**修复建议**：移除或改为实际的异常检索回调。
+**状态**：旧扫描项已过期。当前 `MessageBus` 不再添加 `lambda t: None`；事件投递任务通过 `BGTaskManager.spawn()` 创建，并由 `asyncio.gather(..., return_exceptions=True)` 统一检索结果和取消超时任务。
+**结论**：无需代码变更。
 
-### 31. `qbit_client/paths.py` 路径丢失前导斜杠
+### 31. 已复核: `qbit_client/paths.py` 路径丢失前导斜杠
 
 **位置**：`qbit_client/paths.py:31`
-**问题**：`_extract_base_from_path` 返回的路径缺少前导 `/`（如 `"downloads"` 而非 `"/downloads"`），在路径拼接时可能产生相对路径。
-**修复建议**：返回时添加前导斜杠：`return "/" + "/".join(...)` 或确保调用方处理。
+**状态**：旧扫描项已过期。`_extract_base_from_path()` 已返回带前导 `/` 的父路径，并拒绝相对路径。
+**验证**：`tests/test_path_leading_slash.py`。
 
-### 32. `api/routes.py` `get_config` 泄露敏感信息
+### 32. 已修复: `api/routes.py` `get_config` 泄露敏感信息
 
 **位置**：`api/routes.py:135-140`
-**问题**：`get_config` 返回 `qbit_username`，虽然不算高度敏感，但配合无认证接口，攻击者可以获取 qBittorrent 用户名。
-**修复建议**：配置接口应要求认证，或至少不返回凭据信息。
+**状态**：`GET /api/config` 现在和 `PUT /api/config` 一样依赖 `require_api_key`。当 `API_KEY` 配置存在时，未携带或携带错误 key 的请求返回 401；当 API key 为空时，仍保留本地开发向后兼容行为。
+**验证**：`tests/test_api_auth.py::TestAPIKeyAuth::test_config_get_without_key_returns_401` 和 API/auth focused suite。
 
-### 33. `api/routes.py` `start_crawl` 无任务追踪
+### 33. 已修复: `api/routes.py` `start_crawl` 无任务追踪
 
 **位置**：`api/routes.py:83-91`
-**问题**：后台任务创建后不返回任务 ID，前端无法查询进度、取消任务或获取结果。
-**修复建议**：返回 `task_id`，并提供 `/api/tasks/{task_id}` 查询接口。
+**状态**：`BGTaskManager.create()` 现在为后台任务分配 `task_id` 并保留运行/完成/失败/取消快照。`HarvestPipeline.start_crawl()` 返回该 `task_id`，`GET /api/tasks/{task_id}` 可查询任务状态；该查询同样走 `require_api_key`。
+**验证**：`tests/test_bg_tasks.py::test_task_status_snapshot_lives_after_completion`、`tests/test_pipeline_phases.py::test_start_crawl_returns_trackable_task_id`、`tests/test_api_routes.py::test_task_status_route_uses_background_task_manager`。
 
-### 34. `store.py` `add_batch` 无事务语义
+### 34. 已修复: `store.py` `add_batch` 无事务语义
 
 **位置**：`store.py:166-172`
-**问题**：`add_batch` 逐条调用 `add()`，如果中途发生异常（理论上不会，因为无 await），已添加的 item 不会回滚。
-**修复建议**：对于内存存储这不是大问题，但如果未来实现持久化存储，需要事务支持。
+**状态**：`add_batch()` 现在先构造待提交的 `pending` map，并在遍历完整个批次后一次性 `update()` 到 store。批次中出现异常时不会写入前半部分，重复 hash 仍按原语义只计一次新增。
+**验证**：`tests/test_store_protocol.py::test_add_batch_does_not_partially_commit_when_batch_is_invalid` 和 store focused suite。
 
-### 35. `classifier/local_classifier.py` 规则不支持热更新
+### 35. 已修复: `classifier/local_classifier.py` 规则不支持热更新
 
 **位置**：`classifier/local_classifier.py:36-39`
-**问题**：`KeywordCategoryRecognizer` 在 `LocalClassifier.__init__` 中初始化，之后无法在不重启服务的情况下更新规则。
-**修复建议**：添加 `/api/classifier/reload` 接口，或监听配置文件变化自动重载。
+**状态**：`KeywordRule` 现在支持文件型规则 reload，`LocalClassificationEngine.reload_rules()` 遍历规则链并重载可重载规则，`LocalClassifier.reload_rules()` 暴露稳定调用 interface。新增 `POST /api/classifier/reload` 通过 `AppContext.classifier` 触发热更新，并使用 `require_api_key` 保护。
+**验证**：`tests/test_local_classifier.py::test_reload_rules_uses_updated_keyword_file` 和 `tests/test_api_routes.py::test_classifier_reload_route_uses_context_classifier`。
 
-### 36. `services/qbit_sync.py` 轮询间隔不可配置
+### 36. 已修复: `services/qbit_sync.py` 轮询间隔不可配置
 
 **位置**：`services/qbit_sync.py:33`
-**问题**：`poll_interval=2.0` 是硬编码的。对于大型 qBittorrent 实例，2 秒可能太频繁；对于小型实例，可以更频繁。
-**修复建议**：从 `settings` 读取 `QBIT_SYNC_INTERVAL`。
+**状态**：已添加 `Settings.QBIT_SYNC_INTERVAL`，`.env.example` 暴露默认值 `2.0`，`build_runtime()` 将配置值作为 `poll_interval` 注入 `QBitSyncLoop`。
+**验证**：`tests/test_assembly_wiring.py::test_build_runtime_uses_configured_qbit_sync_interval` 和 `tests/test_appcontext.py::test_main_lifespan_supports_end_to_end_pipeline_flow`。
 
-### 37. `pyproject.toml` 缺少 `playwright` 依赖声明
+### 37. 已复核: `pyproject.toml` 缺少 `playwright` 依赖声明
 
 **位置**：`pyproject.toml:14`
-**问题**：`crawl4ai` 内部依赖 `playwright`，但 `pyproject.toml` 没有直接声明。如果 `crawl4ai` 未来版本移除 playwright 依赖，项目会崩溃。
-**修复建议**：显式添加 `playwright>=1.40` 到 dependencies。
+**状态**：旧扫描项已过期。`[project].dependencies` 已显式包含 `playwright>=1.40`。
+**结论**：`pyproject.toml` 不再缺少该直接依赖；`requirements.txt` 同步问题仍由 P3-39 单独跟踪。
 
-### 38. 仓库包含不应提交的文件
+### 38. 已修复/复核: 仓库包含不应提交的文件
 
 **位置**：根目录
-**问题**：`.DS_Store`, `node_modules/`, `package-lock.json`, `codebase_analysis.md`, `plan.md` 等文件存在于仓库中。
-**修复建议**：更新 `.gitignore`，移除已提交的不必要文件。
+**状态**：已删除旧生成产物 `architecture-review-20260619.html`、`codebase_analysis.md`、`plan.md`；已清理本地未跟踪垃圾 `.DS_Store`、`node_modules/`、`reasonix.toml`；`.gitignore` 新增 `reasonix.toml`、`.planning/`、`architecture-review-*.html`。`package-lock.json` 保留，因为项目使用 npm scripts / Husky / lint-staged / prettier，lockfile 有助于 dev 工具可重复安装。`.codebase-memory/` artifact 保留，因为本项目明确使用 codebase-memory 共享索引产物。
+**验证**：`find . -maxdepth 2 ...` 不再发现这些本地垃圾和旧生成文件。
 
-### 39. `requirements.txt` 与 `pyproject.toml` 不同步
+### 39. 已修复: `requirements.txt` 与 `pyproject.toml` 不同步
 
 **位置**：`requirements.txt`
-**问题**：`requirements.txt` 和 `pyproject.toml` 的依赖版本约束不一致（如 `fastapi>=0.110` vs `fastapi>=0.110.0`）。
-**修复建议**：统一使用 `pyproject.toml` 作为唯一依赖源，`requirements.txt` 通过 `pip-compile` 或 `pip freeze` 生成。
+**状态**：两个运行时依赖清单已同步：`requirements.txt` 补齐 `playwright>=1.40`，`pyproject.toml` 补齐 `pyperclip>=1.9`。新增 `tests/test_dependency_manifest.py`，用 `tomllib` 对比两个清单的运行时依赖包名，防止再次漂移。
+**验证**：`tests/test_dependency_manifest.py`。
 
-### 40. 测试文件缺少集成测试
+### 40. 已修复: 测试文件缺少集成测试
 
 **位置**：`tests/`
-**问题**：40+ 个测试文件全部是单元测试，缺少：
-
-- 端到端 API 测试（FastAPI TestClient）
-- 爬虫集成测试（mock crawl4ai）
-- qBittorrent 客户端模拟测试
-- 并发安全测试（多协程同时操作 store）
-  **修复建议**：添加 `tests/integration/` 目录，使用 `httpx.AsyncClient` + `TestClient` 做端到端测试。
+**状态**：已新增 `tests/integration/test_crawl_to_download_flow.py`，通过真实 FastAPI routes、`UserActionExecutor`、`HarvestPipeline`、`MagnetItemTransitions`、`InMemoryItemStore`、`BGTaskManager` 和 `ItemQueryExecutor`，配合 fake crawler/classifier/qB adapter，覆盖 `POST /api/crawl` 自动下载到 `GET /api/items` 可见 queued item 的完整纵向流程。
+**验证**：`tests/integration/test_crawl_to_download_flow.py`。
 
 ---
 
@@ -419,10 +426,10 @@
 
 ### 第一周（安全 + 稳定）
 
-1. 修复 P0-3 SSRF 漏洞（URL 白名单验证）
-2. 修复 P0-4 接口认证（API Key / Bearer Token）
-3. 修复 P0-2 爬虫 Set 竞态条件（加锁）
-4. 修复 P0-5 CORS 配置（限制域名）
+1. ✅ P0-3 SSRF 漏洞已修复（URL admission/validator）
+2. ✅ P0-4 接口认证已修复（API Key / 安全态势检查）
+3. ✅ P0-2 爬虫 Set 竞态条件已修复（crawl4ai BFS 策略 + 会话管理）
+4. ✅ P0-5 CORS 配置已修复（默认禁用，仅允许配置来源）
 5. 修复 P1-9 FS_BASE_PATH 空值保护
 
 ### 第二周（性能 + 可靠性）
@@ -435,10 +442,11 @@
 
 ### 第三周（体验 + 可维护性）
 
-11. 修复 P2-13 错误事件类型滥用
+11. ✅ P2-13 错误事件类型滥用已修复
 12. 修复 P2-16 时间戳字段
-13. 修复 P2-24 Agent 工具路径设置
-14. 修复 P2-25 Agent depth 限制
+    12a. ✅ P2-18 错误清理逻辑已修复
+13. ✅ P2-24 Agent 工具路径设置已修复
+14. ✅ P2-25 Agent depth 限制已修复
 15. 添加 P3-40 集成测试
 
 ---

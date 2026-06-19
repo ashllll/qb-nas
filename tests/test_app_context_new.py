@@ -1,6 +1,7 @@
 """
 Test context/app_context.py — AppContext, RuntimeContext, get_context.
 """
+
 import sys
 import os
 import asyncio
@@ -16,8 +17,12 @@ def test_appcontext_holds_all_deps():
     store = FakeStore()
     bus = NullBus()
     ctx = AppContext(
-        store=store, bus=bus,
-        pipeline=None, crawler=None, classifier=None, qbit=None,
+        store=store,
+        bus=bus,
+        pipeline=None,
+        crawler=None,
+        classifier=None,
+        qbit=None,
     )
     assert ctx.store is store
     assert ctx.bus is bus
@@ -34,8 +39,12 @@ def test_get_context_from_request():
 
     store = FakeStore()
     ctx = AppContext(
-        store=store, bus=NullBus(),
-        pipeline=None, crawler=None, classifier=None, qbit=None,
+        store=store,
+        bus=NullBus(),
+        pipeline=None,
+        crawler=None,
+        classifier=None,
+        qbit=None,
     )
 
     req = FakeRequest()
@@ -66,8 +75,12 @@ def test_runtime_context_replace_qbit_updates_pipeline():
     pipeline._qbit = old_qbit
 
     app_ctx = AppContext(
-        store=FakeStore(), bus=NullBus(),
-        pipeline=pipeline, crawler=None, classifier=None, qbit=old_qbit,
+        store=FakeStore(),
+        bus=NullBus(),
+        pipeline=pipeline,
+        crawler=None,
+        classifier=None,
+        qbit=old_qbit,
     )
     runtime = RuntimeContext(ctx=app_ctx)
 

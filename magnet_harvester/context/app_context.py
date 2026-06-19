@@ -1,6 +1,7 @@
 """
 Application context — dependency container for Magnet Harvester.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,6 +31,7 @@ class StatsTracker(Protocol):
 
 class BackgroundTaskSpawner(Protocol):
     def create(self, coro, name: str | None = None): ...
+    def get_task(self, task_id: str) -> dict | None: ...
     async def shutdown(self) -> None: ...
 
 
@@ -40,8 +42,12 @@ class BroadcasterLike(Protocol):
 
 
 class UserActionExecutorLike(Protocol):
-    async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False) -> dict: ...
-    async def download(self, hashes: list[str], *, task_name: str = "download_selected") -> dict: ...
+    async def start_crawl(
+        self, url: str, *, depth: int = 1, auto_download: bool = False
+    ) -> dict: ...
+    async def download(
+        self, hashes: list[str], *, task_name: str = "download_selected"
+    ) -> dict: ...
     async def download_pending(self) -> dict: ...
     async def reclassify(self, hashes: list[str]) -> dict: ...
     async def manually_reclassify(self, hash_prefix: str, category: str) -> dict: ...
@@ -54,6 +60,12 @@ class QBitSyncLike(Protocol):
 
 class QBitRuntimeLike(Protocol):
     async def replace_qbit(self, new_qbit) -> None: ...
+    async def replace_qbit_config(
+        self,
+        host: str | None,
+        username: str | None,
+        password: str | None,
+    ) -> dict: ...
 
 
 class ClipboardMonitorLike(Protocol):
@@ -68,6 +80,32 @@ class ClipboardMonitorLike(Protocol):
 class ErrorHandlerLike(Protocol):
     def get_error_stats(self) -> dict: ...
     def clear_resolved(self): ...
+
+
+class ObservabilityLike(Protocol):
+    async def system_status(self) -> dict: ...
+    async def health(self) -> dict: ...
+    def api_stats(self) -> dict: ...
+
+
+class ItemQueryLike(Protocol):
+    def get_stats(self) -> dict: ...
+    def list_items(
+        self,
+        *,
+        category: str | None = None,
+        status: str = "all",
+        limit: int = 20,
+    ) -> dict: ...
+    def page_items(
+        self,
+        *,
+        category: str | None = None,
+        status: str = "all",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict: ...
+    def search_items(self, *, query: str, limit: int = 20) -> dict: ...
 
 
 @dataclass
@@ -89,6 +127,8 @@ class AppContext:
     clipboard_monitor: ClipboardMonitorLike | None = None
     error_handler: ErrorHandlerLike | None = None
     item_transitions: MagnetItemTransitions | None = None
+    observability: ObservabilityLike | None = None
+    item_queries: ItemQueryLike | None = None
 
 
 @dataclass
@@ -135,6 +175,7 @@ class QBitRuntime:
     settings: Settings = field(default_factory=lambda: default_settings)
     client_factory: type[QBittorrentClient] = field(default_factory=lambda: QBittorrentClient)
     replacement_target: QBitReplacementTarget | None = None
+    config_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def replace_qbit(self, new_qbit):
         target = self.replacement_target or QBitReplacementTarget.from_context(self.ctx)
@@ -156,25 +197,26 @@ class QBitRuntime:
             ValueError: if the candidate config is invalid (maps to HTTP 422).
             OSError: if persisting the config fails (maps to HTTP 500).
         """
-        candidate = self.settings.build_qbit_config(
-            host=host,
-            username=username,
-            password=password,
-        )
-        new_qbit = self.client_factory(config=candidate)
-        if not await new_qbit.ping():
-            await new_qbit.close()
-            return {"status": "failed", "connected": False}
+        async with self.config_lock:
+            candidate = self.settings.build_qbit_config(
+                host=host,
+                username=username,
+                password=password,
+            )
+            new_qbit = self.client_factory(config=candidate)
+            if not await new_qbit.ping():
+                await new_qbit.close()
+                return {"status": "failed", "connected": False}
 
-        try:
-            self.settings.persist_qbit_config(candidate)
-        except OSError:
-            await new_qbit.close()
-            raise
+            try:
+                self.settings.persist_qbit_config(candidate)
+            except OSError:
+                await new_qbit.close()
+                raise
 
-        await self.replace_qbit(new_qbit)
-        self.settings.commit_qbit_config(candidate)
-        return {"status": "ok", "connected": True}
+            await self.replace_qbit(new_qbit)
+            self.settings.commit_qbit_config(candidate)
+            return {"status": "ok", "connected": True}
 
 
 RuntimeContext = QBitRuntime

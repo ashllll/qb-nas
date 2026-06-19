@@ -4,6 +4,7 @@ SystemStats — service-level statistics tracking.
 Pure dataclass: no external dependencies. Callers compose
 store count / websocket clients / error stats separately.
 """
+
 from __future__ import annotations
 
 import time

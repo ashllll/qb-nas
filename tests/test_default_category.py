@@ -4,6 +4,7 @@ P3-23: 默认分类过于武断测试
 缺陷: classify_local 在未匹配任何规则时默认返回 "电影"，很多内容会被错误分类
 修复: 默认返回 "其他"
 """
+
 from magnet_harvester.classifier.fallback import classify_local, make_fallback
 
 

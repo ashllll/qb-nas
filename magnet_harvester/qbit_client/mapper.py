@@ -1,4 +1,5 @@
 """Map qBittorrent torrent states to the application's TaskStatus model."""
+
 from __future__ import annotations
 
 from magnet_harvester.models import TaskStatus
@@ -37,7 +38,12 @@ class TorrentStatusMapper:
             status = TaskStatus.error
         elif progress >= 1.0:
             status = TaskStatus.success
-        elif state in success_states and downloaded > 0 and total_size > 0 and downloaded >= total_size:
+        elif (
+            state in success_states
+            and downloaded > 0
+            and total_size > 0
+            and downloaded >= total_size
+        ):
             # stalledUP / forcedUP with complete data -> success
             status = TaskStatus.success
         elif state in success_states:

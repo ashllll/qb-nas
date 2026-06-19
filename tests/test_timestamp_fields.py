@@ -4,6 +4,7 @@ P2-16: 时间戳字段测试
 缺陷: MagnetItem 没有 created_at 或 updated_at 字段，无法按时间排序、判断 item 年龄
 修复: 添加 created_at 和 updated_at 字段，default_factory=datetime.now
 """
+
 from datetime import datetime
 from magnet_harvester.models import MagnetItem
 

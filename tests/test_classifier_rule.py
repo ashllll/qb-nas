@@ -1,6 +1,7 @@
 """
 Test classifier rule chain — ClassificationRule protocol + unified result type.
 """
+
 import sys
 import os
 
@@ -16,6 +17,7 @@ from magnet_harvester.classifier.rule import (
 
 
 # ── 1. ClassificationResult is a consistent shape ──
+
 
 def test_classification_result_fields():
     """All rules return the same ClassificationResult shape."""
@@ -33,10 +35,13 @@ def test_classification_result_fields():
 
 # ── 2. Each rule returns None when no match ──
 
+
 def test_keyword_rule_no_match():
-    rule = KeywordRule(keywords=[
-        {"keyword": "ubuntu", "category": "软件", "save_path": "软件"},
-    ])
+    rule = KeywordRule(
+        keywords=[
+            {"keyword": "ubuntu", "category": "软件", "save_path": "软件"},
+        ]
+    )
     assert rule.apply("Random.Movie.2160p") is None
 
 
@@ -58,10 +63,13 @@ def test_fallback_rule_always_matches():
 
 # ── 3. Each rule returns ClassificationResult on match ──
 
+
 def test_keyword_rule_match():
-    rule = KeywordRule(keywords=[
-        {"keyword": "ubuntu", "category": "软件", "save_path": "软件"},
-    ])
+    rule = KeywordRule(
+        keywords=[
+            {"keyword": "ubuntu", "category": "软件", "save_path": "软件"},
+        ]
+    )
     r = rule.apply("ubuntu-22.04-live-server-amd64.iso")
     assert r is not None
     assert isinstance(r, ClassificationResult)
@@ -91,6 +99,7 @@ def test_fallback_rule_always_returns():
 
 # ── 4. Protocol compatibility ──
 
+
 class FakeRule:
     def __init__(self, cat: str | None):
         self._cat = cat
@@ -98,7 +107,10 @@ class FakeRule:
     def apply(self, name: str) -> ClassificationResult | None:
         if self._cat:
             return ClassificationResult(
-                category=self._cat, confidence="fake", reason="test", save_path=self._cat,
+                category=self._cat,
+                confidence="fake",
+                reason="test",
+                save_path=self._cat,
             )
         return None
 

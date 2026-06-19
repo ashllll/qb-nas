@@ -1,6 +1,7 @@
 """
 集成测试：MagnetCrawler (crawl4ai 适配器) 生命周期
 """
+
 import sys
 import os
 
@@ -12,12 +13,20 @@ from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.config import CrawlerConfig
 
 
+class FakeCookieProvider:
+    def __init__(self, cookies):
+        self.cookies = cookies
+
+    def browser_cookies(self):
+        return list(self.cookies)
+
+
 @pytest.mark.asyncio
 async def test_crawler_start_stop():
     """验证 crawler 使用 crawl4ai 能正常启动和关闭"""
     config = CrawlerConfig(headless=True, timeout=10)
     crawler = MagnetCrawler(config=config)
-    
+
     try:
         # 启动
         await crawler.start()
@@ -26,8 +35,39 @@ async def test_crawler_start_stop():
     finally:
         # 关闭
         await crawler.stop()
-    
+
     assert crawler._crawler is None, "关闭后 _crawler 应为 None"
+
+
+@pytest.mark.asyncio
+async def test_crawler_start_uses_injected_site_cookies(monkeypatch):
+    """Crawler startup should get browser cookies from the SiteAuth seam."""
+    captured = {}
+
+    class FakeAsyncWebCrawler:
+        def __init__(self, config):
+            captured["config"] = config
+
+        async def start(self):
+            captured["started"] = True
+
+        async def close(self):
+            captured["closed"] = True
+
+    cookies = [{"name": "sid", "value": "abc", "domain": "example.com", "path": "/"}]
+    monkeypatch.setattr("magnet_harvester.crawler.AsyncWebCrawler", FakeAsyncWebCrawler)
+
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(headless=True, timeout=10),
+        site_auth=FakeCookieProvider(cookies),
+    )
+
+    await crawler.start()
+    try:
+        assert captured["started"] is True
+        assert captured["config"].cookies == cookies
+    finally:
+        await crawler.stop()
 
 
 @pytest.mark.asyncio
@@ -35,22 +75,22 @@ async def test_crawler_context_manager():
     """验证 async with 用法（通过 start/stop 模拟）"""
     config = CrawlerConfig(headless=True, timeout=10)
     crawler = MagnetCrawler(config=config)
-    
+
     # 启动前不能 crawl
     assert crawler._crawler is None
-    
+
     await crawler.start()
     try:
         assert crawler._crawler is not None
     finally:
         await crawler.stop()
-    
+
     assert crawler._crawler is None
 
 
 if __name__ == "__main__":
     import asyncio
-    
+
     async def run():
         config = CrawlerConfig(headless=True, timeout=10)
         crawler = MagnetCrawler(config=config)
@@ -61,5 +101,5 @@ if __name__ == "__main__":
         await crawler.stop()
         print("爬虫已关闭 ✓")
         print("生命周期测试通过!")
-    
+
     asyncio.run(run())

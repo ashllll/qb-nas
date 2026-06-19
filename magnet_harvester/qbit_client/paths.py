@@ -2,6 +2,7 @@
 
 纯逻辑模块，不依赖 HTTP 客户端。通过回调函数获取外部数据。
 """
+
 from __future__ import annotations
 
 import logging

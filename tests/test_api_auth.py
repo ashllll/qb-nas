@@ -65,6 +65,15 @@ class TestAPIKeyAuth:
         r = client.put("/api/config", json={"qbit_host": "http://new.host:8080"})
         assert r.status_code == 401
 
+    def test_config_get_without_key_returns_401(self, client):
+        r = client.get("/api/config")
+        assert r.status_code == 401
+
+    def test_config_get_with_valid_key_succeeds(self, client):
+        r = client.get("/api/config", headers={"X-API-Key": "test-secret-key-123"})
+        assert r.status_code == 200
+        assert "qbit_username" in r.json()
+
     def test_delete_items_without_key_returns_401(self, client):
         r = client.delete("/api/items")
         assert r.status_code == 401
@@ -89,7 +98,6 @@ class TestAPIKeyAuth:
         assert client.get("/api/status").status_code == 200
         assert client.get("/api/items").status_code == 200
         assert client.get("/api/health").status_code == 200
-        assert client.get("/api/config").status_code == 200
 
     def test_no_key_config_allows_all(self, client):
         """When API_KEY is empty, auth is disabled (backward compat)."""

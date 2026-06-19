@@ -1,4 +1,5 @@
 """Verify build_runtime() wires all components correctly."""
+
 import pytest
 
 
@@ -8,9 +9,10 @@ async def test_build_runtime_wires_all_components(monkeypatch):
     from magnet_harvester.config import CrawlerConfig, QBitConfig
 
     class FakeCrawler:
-        def __init__(self, config, tavily=None):
+        def __init__(self, config, site_auth=None, tavily=None):
             assert isinstance(config, CrawlerConfig)
             self._config = config
+            self.site_auth = site_auth
             self.max_depth = 3
 
         async def start(self):
@@ -56,6 +58,8 @@ async def test_build_runtime_wires_all_components(monkeypatch):
     assert ctx.qbit_sync is not None, "qbit_sync missing"
     assert ctx.qbit_lock is not None, "qbit_lock missing"
     assert ctx.error_handler is not None, "error_handler missing"
+    assert ctx.observability is not None, "observability missing"
+    assert ctx.item_queries is not None, "item_queries missing"
     assert ctx.api_key is not None, "api_key missing"
 
     # SyncLoop must be wired
@@ -64,3 +68,13 @@ async def test_build_runtime_wires_all_components(monkeypatch):
     # Config values accessible via injected qbit
     assert ctx.qbit.host is not None
     assert ctx.qbit.username is not None
+
+
+def test_build_runtime_uses_configured_qbit_sync_interval(monkeypatch):
+    import magnet_harvester.assembly as assembly_module
+
+    monkeypatch.setattr(assembly_module.settings, "QBIT_SYNC_INTERVAL", 7.5, raising=False)
+
+    runtime = assembly_module.build_runtime()
+
+    assert runtime.sync_loop._backoff.next_delay() == 7.5

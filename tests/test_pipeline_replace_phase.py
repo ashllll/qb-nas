@@ -1,6 +1,7 @@
 """
 Test HarvestPipeline.replace_download_phase() public method.
 """
+
 import sys
 import os
 
@@ -15,8 +16,11 @@ class FakeQbit:
 
 def test_replace_download_phase_updates_private_field():
     pipeline = HarvestPipeline(
-        crawler=None, classifier=None,
-        qbit=FakeQbit(), store=None, bus=None,
+        crawler=None,
+        classifier=None,
+        qbit=FakeQbit(),
+        store=None,
+        bus=None,
     )
     new_qbit = FakeQbit()
 

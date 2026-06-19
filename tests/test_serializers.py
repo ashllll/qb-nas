@@ -1,6 +1,7 @@
 """
 Test serializers — MagnetItem to API response dicts.
 """
+
 import sys
 import os
 

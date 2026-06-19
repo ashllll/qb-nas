@@ -28,8 +28,12 @@ def test_websocket_init_replaces_stale_client_state():
 
 
 def test_bulk_selection_is_scoped_to_visible_items():
-    select_all = HTML.split("function selectAllVisible()", 1)[1].split("function selectNone()", 1)[0]
-    toggle_all = HTML.split("function toggleVisible(checked)", 1)[1].split("function selectAllVisible()", 1)[0]
+    select_all = HTML.split("function selectAllVisible()", 1)[1].split("function selectNone()", 1)[
+        0
+    ]
+    toggle_all = HTML.split("function toggleVisible(checked)", 1)[1].split(
+        "function selectAllVisible()", 1
+    )[0]
     assert "visibleItems()" in select_all
     assert "visibleItems()" in toggle_all
 

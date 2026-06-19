@@ -1,6 +1,7 @@
 """
 MagnetItem serializers — API response formatting.
 """
+
 from __future__ import annotations
 
 from magnet_harvester.models import MagnetItem

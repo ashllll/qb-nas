@@ -1,4 +1,5 @@
 """Magnet Harvester v3.0 — app entrypoint and lifespan assembly."""
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,7 @@ async def lifespan(app: FastAPI):
     app.state.ctx = runtime.ctx
     await runtime.start()
     qbit_ok = await runtime.ctx.qbit.ping()
-    disk_info = settings.check_disk_space() if hasattr(settings, 'check_disk_space') else {}
+    disk_info = settings.check_disk_space()
     log.info(
         f"Crawl4AI 已启动 | qB: {'在线' if qbit_ok else '离线'} "
         f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
@@ -65,4 +66,10 @@ app.include_router(ws_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("magnet_harvester.main:app", host=settings.SERVICE_HOST, port=settings.SERVICE_PORT, reload=False)
+
+    uvicorn.run(
+        "magnet_harvester.main:app",
+        host=settings.SERVICE_HOST,
+        port=settings.SERVICE_PORT,
+        reload=False,
+    )

@@ -2,6 +2,7 @@
 TDD 循环 1: Pydantic 模型更新与存储一致性
 验证 ItemStore.update() 通过 Pydantic 验证保持类型安全
 """
+
 import sys
 import os
 
@@ -22,6 +23,7 @@ def _make_item(hash_key: str, name: str = "Test") -> MagnetItem:
 # ═══════════════════════════════════════════════════
 # 示踪弹: update() 应拒绝非法 status 字符串
 # ═══════════════════════════════════════════════════
+
 
 def test_update_rejects_invalid_status_string():
     """传入非法 status 字符串时，update() 应返回 False，不修改原对象"""
@@ -45,6 +47,7 @@ def test_update_rejects_invalid_status_string():
 # 增量测试 2: update() 应接受合法的 TaskStatus Enum
 # ═══════════════════════════════════════════════════
 
+
 def test_update_accepts_valid_task_status():
     """传入合法的 TaskStatus Enum 时，update() 应成功更新"""
     store = InMemoryItemStore()
@@ -59,6 +62,7 @@ def test_update_accepts_valid_task_status():
 # ═══════════════════════════════════════════════════
 # 增量测试 3: update() 应接受合法的 status 字符串（Pydantic 自动转换）
 # ═══════════════════════════════════════════════════
+
 
 def test_update_accepts_valid_status_string():
     """传入合法的 status 字符串时，Pydantic 应自动转换为 TaskStatus"""
@@ -75,6 +79,7 @@ def test_update_accepts_valid_status_string():
 # 增量测试 4: update() 应拒绝非法 progress 值
 # ═══════════════════════════════════════════════════
 
+
 def test_update_rejects_invalid_progress():
     """传入非法 progress 值（如字符串）时，update() 应返回 False"""
     store = InMemoryItemStore()
@@ -89,6 +94,7 @@ def test_update_rejects_invalid_progress():
 # ═══════════════════════════════════════════════════
 # 增量测试 5: update() 更新后应产生新的不可变实例
 # ═══════════════════════════════════════════════════
+
 
 def test_update_creates_new_instance():
     """update() 应通过 model_copy() 创建新实例，保持不可变性"""
@@ -112,6 +118,7 @@ def test_update_creates_new_instance():
 # 增量测试 6: update() 应拒绝不存在的字段名
 # ═══════════════════════════════════════════════════
 
+
 def test_update_rejects_unknown_fields():
     """传入 MagnetItem 不存在的字段时，update() 应返回 False"""
     store = InMemoryItemStore()
@@ -125,6 +132,7 @@ def test_update_rejects_unknown_fields():
 # ═══════════════════════════════════════════════════
 # 增量测试 7: 批量更新应保持原子性（全部成功或全部失败）
 # ═══════════════════════════════════════════════════
+
 
 def test_update_multiple_fields_atomic():
     """同时更新多个字段时，如果任一字段非法，全部不应生效"""

@@ -1,4 +1,5 @@
 """Application runtime assembly helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,10 @@ from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
+from magnet_harvester.services.item_queries import ItemQueryExecutor
+from magnet_harvester.services.observability import ObservabilitySnapshot
 from magnet_harvester.services.qbit_sync import QBitSyncLoop
+from magnet_harvester.services.site_auth import SiteAuth
 from magnet_harvester.services.stats import SystemStats
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import InMemoryItemStore
@@ -41,13 +45,15 @@ class AppRuntime:
 
 def build_runtime() -> AppRuntime:
     qbit_lock = asyncio.Lock()
-    crawler = MagnetCrawler(config=settings.crawler)
+    site_auth = SiteAuth.from_raw(settings.SITE_COOKIES)
+    crawler = MagnetCrawler(config=settings.crawler, site_auth=site_auth)
     qbit = QBittorrentClient(config=settings.qbit)
     classifier = LocalClassifier()
     store = InMemoryItemStore()
     bus = MessageBus()
     bg_manager = BGTaskManager()
     item_transitions = MagnetItemTransitions(store=store, bus=bus)
+    item_queries = ItemQueryExecutor(store=store)
     pipeline = HarvestPipeline(
         crawler=crawler,
         classifier=classifier,
@@ -59,6 +65,13 @@ def build_runtime() -> AppRuntime:
     )
     app_stats = SystemStats()
     broadcaster = WSBroadcaster(bus=bus, store=store)
+    observability = ObservabilitySnapshot(
+        store=store,
+        qbit=qbit,
+        stats=app_stats,
+        broadcaster=broadcaster,
+        error_handler=error_handler,
+    )
     action_executor = UserActionExecutor(
         store=store,
         pipeline=pipeline,
@@ -72,6 +85,7 @@ def build_runtime() -> AppRuntime:
         bus=bus,
         task_manager=bg_manager,
         transitions=item_transitions,
+        poll_interval=settings.QBIT_SYNC_INTERVAL,
     )
     clipboard_monitor = ClipboardMonitor(
         bus=bus,
@@ -98,6 +112,8 @@ def build_runtime() -> AppRuntime:
         clipboard_monitor=clipboard_monitor,
         error_handler=error_handler,
         item_transitions=item_transitions,
+        observability=observability,
+        item_queries=item_queries,
     )
     ctx.qbit_runtime = QBitRuntime(
         ctx=ctx,

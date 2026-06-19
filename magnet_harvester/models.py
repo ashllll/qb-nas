@@ -11,36 +11,36 @@ from magnet_harvester.utils.url_validator import URLValidationError, validate_cr
 
 
 class TaskStatus(str, Enum):
-    pending     = "pending"
-    crawling    = "crawling"
+    pending = "pending"
+    crawling = "crawling"
     classifying = "classifying"
-    adding      = "adding"
-    queued      = "queued"
+    adding = "adding"
+    queued = "queued"
     downloading = "downloading"
-    success     = "success"
-    error       = "error"
-    skipped     = "skipped"
+    success = "success"
+    error = "error"
+    skipped = "skipped"
 
 
 class MagnetItem(BaseModel):
-    hash:       str
-    name:       str
-    magnet:     str
-    size:       Optional[str] = None
+    hash: str
+    name: str
+    magnet: str
+    size: Optional[str] = None
     source_url: str = ""
-    category:   Optional[str] = None
-    save_path:  Optional[str] = None
-    status:     TaskStatus = TaskStatus.pending
-    progress:   float = 0.0
+    category: Optional[str] = None
+    save_path: Optional[str] = None
+    status: TaskStatus = TaskStatus.pending
+    progress: float = 0.0
     torrent_state: Optional[str] = None
-    error_msg:  Optional[str] = None
+    error_msg: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class CrawlRequest(BaseModel):
-    url:           str
-    depth:         int  = 1
+    url: str
+    depth: int = 1
     auto_download: bool = False
 
     # Fix C: clamp depth to prevent exponential page explosion
@@ -65,13 +65,15 @@ class DownloadRequest(BaseModel):
 
 # ── Metrics 接口 — 统一指标快照 ──────────────────────────
 
+
 @dataclass
 class MetricSnapshot:
     """所有指标收集器的统一快照格式。
 
     每个适配器实现 snapshot() → MetricSnapshot，由 MetricsReport 合并。
     """
-    namespace: str                          # e.g. "crawler", "classifier", "qbit"
+
+    namespace: str  # e.g. "crawler", "classifier", "qbit"
     values: dict[str, object] = field(default_factory=dict)
 
     def as_dict(self) -> dict:

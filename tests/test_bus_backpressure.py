@@ -2,6 +2,7 @@
 TDD 循环 4: 事件总线与状态转换的背压隔离
 验证 MessageBus.emit() 不阻塞发送方
 """
+
 import asyncio
 import sys
 import os
@@ -15,6 +16,7 @@ from magnet_harvester.bus import MessageBus, Event, EventType
 # ═══════════════════════════════════════════════════
 # 示踪弹: 慢订阅者不应阻塞 emit()
 # ═══════════════════════════════════════════════════
+
 
 async def _slow_subscriber(event):
     """模拟慢订阅者"""
@@ -40,6 +42,7 @@ async def test_emit_does_not_block_on_slow_subscriber():
 # 增量测试 2: 订阅者异常不应传播到 emit()
 # ═══════════════════════════════════════════════════
 
+
 async def _error_subscriber(event):
     """模拟抛出异常的订阅者"""
     raise RuntimeError("订阅者故障")
@@ -59,6 +62,7 @@ async def test_emit_survives_subscriber_exception():
 # ═══════════════════════════════════════════════════
 # 增量测试 3: 多个订阅者时超时仍生效
 # ═══════════════════════════════════════════════════
+
 
 async def _fast_subscriber(event):
     pass

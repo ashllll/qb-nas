@@ -4,6 +4,7 @@ P1-6: 同步循环优化测试
 缺陷: _stream_classify 中 classification_started 是顺序 await，items 多时慢
 修复: 使用 asyncio.gather 并发执行 classification_started
 """
+
 import asyncio
 import pytest
 from magnet_harvester.pipeline import HarvestPipeline
@@ -15,10 +16,13 @@ from magnet_harvester.models import MagnetItem, TaskStatus
 class FakeQBit:
     async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool:
         return True
+
     async def ping(self) -> bool:
         return True
+
     def close(self):
         pass
+
     def is_healthy(self) -> bool:
         return True
 
@@ -27,13 +31,18 @@ class FakeClassifier:
     async def classify_stream_batch(self, items, on_result=None):
         for item in items:
             if on_result:
-                on_result(item["index"], {"category": "电影", "save_path": "/movies", "confidence": "high"})
+                on_result(
+                    item["index"],
+                    {"category": "电影", "save_path": "/movies", "confidence": "high"},
+                )
 
     @property
     def usage(self):
         return self
+
     def as_dict(self):
         return {}
+
     def get_cache_stats(self):
         return {}
 

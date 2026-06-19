@@ -1,4 +1,5 @@
 """Main app should delegate runtime wiring to a dedicated assembly helper."""
+
 from pathlib import Path
 
 

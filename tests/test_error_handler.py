@@ -1,6 +1,7 @@
 """
 测试 ErrorHandler — 验证可独立实例化、无单例
 """
+
 import sys
 import os
 
@@ -49,9 +50,23 @@ def test_error_stats():
     assert stats["unique_errors"] == 2
 
 
+def test_cleanup_removes_only_entries_over_limit():
+    """超过上限时只清理超出的旧记录，不额外丢 100 条。"""
+    h = ErrorHandler()
+    h._max_errors = 3
+
+    for idx in range(4):
+        h.record(ErrorCategory.CRAWLER, ErrorSeverity.WARNING, f"error {idx}")
+
+    errors = h.get_recent_errors(limit=10)
+    assert len(errors) == 3
+    assert {e.message for e in errors} == {"error 1", "error 2", "error 3"}
+
+
 if __name__ == "__main__":
     test_independent_instances()
     test_no_singleton()
     test_error_dedup()
     test_error_stats()
+    test_cleanup_removes_only_entries_over_limit()
     print("=== ErrorHandler tests passed! ===")

@@ -8,6 +8,7 @@ ClipboardMonitor — 系统剪贴板监控，检测 magnet 链接自动处理。
 解码后的 magnet、JSON/引号包裹的 magnet 以及 Base64 编码的 magnet；剪贴板
  ingestion 不应用爬虫的分辨率过滤策略。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +19,7 @@ import pyperclip
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.transitions import MagnetItemTransitions
-from magnet_harvester.magnet_parser import extract_from_text
+from magnet_harvester.magnet_sources import MagnetSourceExtractor
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.store import ItemStore
@@ -44,6 +45,7 @@ class ClipboardMonitor:
         self._classifier = classifier
         self._pipeline = pipeline
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
+        self._magnet_sources = MagnetSourceExtractor()
         self._poll_interval = poll_interval
         self._running = False
         self._stop_event = asyncio.Event()
@@ -66,10 +68,15 @@ class ClipboardMonitor:
         self._running = True
         self._stop_event.clear()
         self._task = BGTaskManager.spawn(self._run(), name="clipboard-monitor")
-        await self._bus.emit(Event(EventType.CLIPBOARD_STATUS, {
-            "running": True,
-            "magnet_count": self._magnet_count,
-        }))
+        await self._bus.emit(
+            Event(
+                EventType.CLIPBOARD_STATUS,
+                {
+                    "running": True,
+                    "magnet_count": self._magnet_count,
+                },
+            )
+        )
         log.info("剪贴板监控已启动")
 
     async def stop(self):
@@ -85,10 +92,15 @@ class ClipboardMonitor:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        await self._bus.emit(Event(EventType.CLIPBOARD_STATUS, {
-            "running": False,
-            "magnet_count": self._magnet_count,
-        }))
+        await self._bus.emit(
+            Event(
+                EventType.CLIPBOARD_STATUS,
+                {
+                    "running": False,
+                    "magnet_count": self._magnet_count,
+                },
+            )
+        )
         log.info("剪贴板监控已停止")
 
     async def shutdown(self):
@@ -103,7 +115,7 @@ class ClipboardMonitor:
                 content = await asyncio.to_thread(pyperclip.paste)
                 if content and isinstance(content, str) and content != self._last_seen:
                     self._last_seen = content
-                    for item in extract_from_text(content):
+                    for item in self._magnet_sources.from_clipboard_text(content):
                         if not self._running:
                             break
                         await self._handle_item(item)
@@ -111,9 +123,7 @@ class ClipboardMonitor:
                 log.debug(f"剪贴板读取异常: {e}")
 
             try:
-                await asyncio.wait_for(
-                    self._stop_event.wait(), timeout=self._poll_interval
-                )
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)
                 break
             except asyncio.TimeoutError:
                 pass

@@ -1,6 +1,7 @@
 """
 爬虫链接去重/遍历由 crawl4ai 深爬策略负责。
 """
+
 import ast
 import os
 import sys
@@ -29,7 +30,9 @@ def test_crawl_admission_filter_is_in_deep_crawl_filter_chain():
     crawler = MagnetCrawler(config=CrawlerConfig())
     strategy = crawler._build_deep_crawl_strategy(depth=2)
 
-    assert any(isinstance(filter_, CrawlAdmissionFilter) for filter_ in strategy.filter_chain.filters)
+    assert any(
+        isinstance(filter_, CrawlAdmissionFilter) for filter_ in strategy.filter_chain.filters
+    )
 
 
 def test_no_manual_worker_loop_methods_remain():

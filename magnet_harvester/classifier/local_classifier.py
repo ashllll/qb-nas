@@ -4,9 +4,11 @@ LocalClassifier — 纯本地规则分类器，零外部依赖
 使用 ClassificationRule 链：KeywordRule → StudioRule → FallbackRule。
 规则链可配置，优先级显式，每个规则返回统一的 ClassificationResult。
 """
+
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Callable, List
 
 from magnet_harvester.classifier.rule import (
@@ -22,13 +24,17 @@ log = logging.getLogger(__name__)
 class LocalClassificationEngine:
     """Classifies names through the configured local rule chain."""
 
-    def __init__(self, rule_chain: List[ClassificationRule] | None = None):
+    def __init__(
+        self,
+        rule_chain: List[ClassificationRule] | None = None,
+        keyword_rules_file: Path | None = None,
+    ):
         if rule_chain is not None:
             self._rule_chain = rule_chain
         else:
             # Default: keyword → studio → fallback
             self._rule_chain = [
-                KeywordRule(),
+                KeywordRule(rules_file=keyword_rules_file),
                 StudioRule(),
                 FallbackRule(),
             ]
@@ -52,6 +58,15 @@ class LocalClassificationEngine:
             "save_path": "其他",
         }
 
+    def reload_rules(self) -> int:
+        """Reload file-backed rules in the chain, returning the count reloaded."""
+        reloaded = 0
+        for rule in self._rule_chain:
+            reload_rule = getattr(rule, "reload", None)
+            if reload_rule is not None and reload_rule():
+                reloaded += 1
+        return reloaded
+
 
 class LocalClassifier:
     """ClassifyPhase adapter for the local rule engine.
@@ -65,10 +80,14 @@ class LocalClassifier:
         self,
         rule_chain: List[ClassificationRule] | None = None,
         engine: LocalClassificationEngine | None = None,
+        keyword_rules_file: Path | None = None,
     ):
         self.usage = _NullUsageStats()
         self._ok = True
-        self._engine = engine or LocalClassificationEngine(rule_chain=rule_chain)
+        self._engine = engine or LocalClassificationEngine(
+            rule_chain=rule_chain,
+            keyword_rules_file=keyword_rules_file,
+        )
 
     # ── 协议方法 ──────────────────────────
 
@@ -91,14 +110,18 @@ class LocalClassifier:
 
     def classify_sync_batch(self, items: list[dict]) -> list[dict]:
         """同步批量分类（非协程版本）"""
-        return [
-            self._engine.classify_name(item.get("name", ""))
-            for item in items
-        ]
+        return [self._engine.classify_name(item.get("name", "")) for item in items]
 
     def classify_one(self, name: str) -> dict:
         """单条分类"""
         return self._engine.classify_name(name)
+
+    def reload_rules(self) -> dict:
+        """Reload file-backed local classification rules."""
+        return {
+            "status": "reloaded",
+            "rules_reloaded": self._engine.reload_rules(),
+        }
 
     # ── 兼容方法 ────
 
@@ -114,6 +137,7 @@ class LocalClassifier:
 
 class _NullUsageStats:
     """占位 UsageStats — 保持分类器协议兼容"""
+
     input_tokens: int = 0
     output_tokens: int = 0
     api_calls: int = 0

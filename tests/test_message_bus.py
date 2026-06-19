@@ -1,6 +1,7 @@
 """
 Test MessageBus - deterministic concurrent delivery and failure isolation.
 """
+
 import sys
 import os
 import asyncio

@@ -1,4 +1,5 @@
 """qBittorrent WebAPI v2 客户端 v2.0"""
+
 from __future__ import annotations
 
 import asyncio
@@ -19,6 +20,48 @@ from magnet_harvester.qbit_client.sync_state import QBitSyncState
 log = logging.getLogger(__name__)
 
 QBitApiObject = dict[str, object]
+
+
+class _ClientSubmissionGateway:
+    """Adapter from QBittorrentClient internals to MagnetSubmitter's gateway."""
+
+    def __init__(self, client: "QBittorrentClient"):
+        self._client = client
+
+    async def request(self, method: str, path: str, **kw) -> httpx.Response:
+        return await self._client._req(method, path, **kw)
+
+    async def ensure_category(self, name: str, save_path: str) -> bool:
+        return await self._client.ensure_category(name, save_path)
+
+    async def get_base_save_path(self) -> str:
+        return await self._client.get_base_save_path()
+
+    async def find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
+        return await self._client._find_torrent_by_prefix(hash_prefix)
+
+
+class _ClientSubmissionRecorder:
+    """Adapter from submission outcomes to QBittorrentClient stats fields."""
+
+    def __init__(self, client: "QBittorrentClient"):
+        self._client = client
+
+    def attempted(self) -> None:
+        self._client.stats.total_added += 1
+
+    def succeeded(self) -> None:
+        self._client.stats.total_success += 1
+        self._client.stats.consecutive_failures = 0
+        self._client.stats.last_success_time = time.time()
+
+    def failed(self) -> None:
+        self._client.stats.total_failed += 1
+        self._client.stats.consecutive_failures += 1
+        self._client.stats.last_failure_time = time.time()
+
+    def error(self, message: str | None) -> None:
+        self._client.last_error = message
 
 
 class QBittorrentClient:
@@ -192,15 +235,23 @@ class QBittorrentClient:
                     cats = await self.get_categories()
 
                     if name not in cats:
-                        await self._req("POST", "/torrents/createCategory",
-                                        data={"category": name, "savePath": save_path})
+                        await self._req(
+                            "POST",
+                            "/torrents/createCategory",
+                            data={"category": name, "savePath": save_path},
+                        )
                         log.info(f"创建分类: [{name}] → {save_path}")
-                        await asyncio.sleep(0.5)
-                        cats = await self.get_categories()
+                        cats = await self._wait_for_category(name)
+                        if name not in cats:
+                            log.warning("分类 [%s] 创建后未出现在 qB 分类列表中", name)
+                            return False
 
                     if name in cats and cats[name].get("savePath", "") != save_path:
-                        await self._req("POST", "/torrents/editCategory",
-                                        data={"category": name, "savePath": save_path})
+                        await self._req(
+                            "POST",
+                            "/torrents/editCategory",
+                            data={"category": name, "savePath": save_path},
+                        )
                         log.info(f"更新分类路径: [{name}] → {save_path}")
 
                     return True
@@ -212,6 +263,21 @@ class QBittorrentClient:
 
             return False
 
+    async def _wait_for_category(
+        self,
+        name: str,
+        *,
+        checks: int = 15,
+        interval: float = 0.2,
+    ) -> dict:
+        """Poll qB until a newly created category becomes visible."""
+        cats = {}
+        for _ in range(checks):
+            await asyncio.sleep(interval)
+            cats = await self.get_categories()
+            if name in cats:
+                return cats
+        return cats
 
     async def add_magnet(self, magnet: str, category: str, save_path: str = "") -> bool:
         """添加磁力链接到 qBittorrent。
@@ -221,32 +287,10 @@ class QBittorrentClient:
         - add 时不传 savepath，让 qB 根据分类的 savePath 自动路由
         - autoTMM=true 让 qB 自动管理分类目录
         """
-        def record_attempt():
-            self.stats.total_added += 1
-
-        def record_success():
-            self.stats.total_success += 1
-            self.stats.consecutive_failures = 0
-            self.stats.last_success_time = time.time()
-
-        def record_failure():
-            self.stats.total_failed += 1
-            self.stats.consecutive_failures += 1
-            self.stats.last_failure_time = time.time()
-
-        def set_last_error(msg: str | None) -> None:
-            self.last_error = msg
-
         submitter = MagnetSubmitter(
-            request=self._req,
-            ensure_category=self.ensure_category,
-            get_base_save_path=self.get_base_save_path,
-            find_torrent_by_prefix=self._find_torrent_by_prefix,
+            gateway=_ClientSubmissionGateway(self),
             fs_base_path=self._config.fs_base_path,
-            set_last_error=set_last_error,
-            record_attempt=record_attempt,
-            record_success=record_success,
-            record_failure=record_failure,
+            recorder=_ClientSubmissionRecorder(self),
         )
         return await submitter.add_magnet(magnet, category, save_path)
 
@@ -264,9 +308,9 @@ class QBittorrentClient:
                 params["status"] = status
             if hashes:
                 params["hashes"] = "|".join(hashes)
-            
+
             r = await self._req("GET", "/torrents/info", params=params)
-            
+
             if r.status_code == 200:
                 return r.json()
             return []

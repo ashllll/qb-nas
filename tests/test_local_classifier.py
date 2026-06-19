@@ -1,8 +1,10 @@
 """
 测试 LocalClassifier — 纯本地规则分类，无需 AI
 """
+
 import sys
 import os
+import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -100,6 +102,39 @@ def test_batch_classify():
     assert results[0]["category"] == "电视剧"
     assert results[1]["category"] == "音乐"
     assert results[2]["category"] == "其他"
+
+
+def test_reload_rules_uses_updated_keyword_file(tmp_path):
+    rules_file = tmp_path / "category_keywords.json"
+    rules_file.write_text(
+        json.dumps(
+            {
+                "keywords": [
+                    {"keyword": "OldKey", "category": "电影", "save_path": "电影"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    clf = LocalClassifier(keyword_rules_file=rules_file)
+
+    assert clf.classify_one("OldKey.Release")["category"] == "电影"
+    assert clf.classify_one("NewKey.Release")["category"] == "其他"
+
+    rules_file.write_text(
+        json.dumps(
+            {
+                "keywords": [
+                    {"keyword": "NewKey", "category": "游戏", "save_path": "游戏"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert clf.reload_rules() == {"status": "reloaded", "rules_reloaded": 1}
+    assert clf.classify_one("OldKey.Release")["category"] == "其他"
+    assert clf.classify_one("NewKey.Release")["category"] == "游戏"
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """验证主要模块可以正确导入和最小实例化。"""
+
 from __future__ import annotations
 
 import os

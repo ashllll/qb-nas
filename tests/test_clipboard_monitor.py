@@ -16,9 +16,7 @@ def test_clipboard_no_longer_uses_local_magnet_regex():
     """剪贴板模块不应再暴露内部 _MAGNET_RE 正则，应复用共享解析器。"""
     from magnet_harvester.services import clipboard_monitor
 
-    assert not hasattr(clipboard_monitor, "_MAGNET_RE"), (
-        "clipboard_monitor 不应再暴露 _MAGNET_RE"
-    )
+    assert not hasattr(clipboard_monitor, "_MAGNET_RE"), "clipboard_monitor 不应再暴露 _MAGNET_RE"
 
 
 def test_clipboard_accepts_non_2160p_magnet():
@@ -30,8 +28,7 @@ def test_clipboard_accepts_non_2160p_magnet():
         pipeline=None,
     )
     magnet = (
-        "magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-        "&dn=Example.Movie.1080p.WEB-DL"
+        "magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&dn=Example.Movie.1080p.WEB-DL"
     )
     items = extract_from_text(magnet)
     assert len(items) == 1

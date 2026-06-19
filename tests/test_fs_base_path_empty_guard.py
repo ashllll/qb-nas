@@ -1,4 +1,5 @@
 """FS_BASE_PATH directory creation regression tests."""
+
 from unittest.mock import AsyncMock
 
 import httpx

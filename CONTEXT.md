@@ -46,13 +46,17 @@ The module that manages all active WebSocket client connections and subscribes t
 
 The background module that polls qBittorrent state at regular intervals and reconciles tracked Magnet items with the current torrent snapshot.
 
-### ToolExecutor
+### ItemQueryExecutor
 
-The module that dispatches agent tool calls (get_stats, list_items, start_crawl, add_to_queue, reclassify_item, search_items, clear_all) to the appropriate `ItemStore` or `HarvestPipeline` operations.
+The read-only query module that formats Magnet item stats, list, and search results from `ItemStore`.
 
 ### UserActionExecutor
 
-The module that executes user-triggered actions shared by HTTP routes and agent tools, including crawl start, download submission, reclassification, manual category changes, and item clearing.
+The command module that executes user-triggered actions shared by HTTP routes and agent tools, including crawl start, download submission, reclassification, manual category changes, and item clearing.
+
+### ObservabilitySnapshot
+
+The query module that builds user-facing runtime snapshots for status, health, and service stats from `ItemStore`, qBittorrent, `SystemStats`, WebSocket state, and error stats.
 
 ### BGTaskManager
 
