@@ -115,8 +115,8 @@ class WSBroadcaster:
             return
         try:
             data = json.dumps(event.as_dict(), ensure_ascii=False, default=_json_serializer)
-        except Exception:
-            log.warning("WebSocket JSON 序列化失败: %s", event.type.value, exc_info=True)
+        except Exception as e:
+            log.warning("WebSocket JSON 序列化失败: %s — %s", event.type.value, e, exc_info=True)
             return
         dead = set()
 
@@ -131,6 +131,7 @@ class WSBroadcaster:
             try:
                 await ws.send_text(data)
             except Exception:
+                # 连接已断开或不可写 — 标记为 dead 稍后统一清理
                 dead.add(ws)
 
         # 使用快照避免并发 remove() 修改 _active_ws 导致迭代不一致

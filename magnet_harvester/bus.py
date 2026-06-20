@@ -84,8 +84,8 @@ class _EventDelivery:
     async def _safe_call(cb: Subscriber, event: Event) -> None:
         try:
             await cb(event)
-        except Exception:
-            log.debug(f"MessageBus 订阅者异常: {event.type.value}", exc_info=True)
+        except Exception as e:
+            log.debug("MessageBus 订阅者异常: %s — %s", event.type.value, e, exc_info=True)
 
 
 class MessageBus:

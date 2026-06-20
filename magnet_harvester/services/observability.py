@@ -24,11 +24,16 @@ class StatsLike(Protocol):
 
 
 class BroadcasterLike(Protocol):
+    """Narrow interface — only exposes `active_count` for status snapshots.
+    (Deliberately separate from app_context.BroadcasterLike which also
+    exposes handle_connection — Interface Segregation Principle.)"""
     @property
     def active_count(self) -> int: ...
 
 
 class ErrorHandlerLike(Protocol):
+    """Narrow interface — only exposes `get_error_stats` for status snapshots.
+    (Deliberately separate from app_context.ErrorHandlerLike.)"""
     def get_error_stats(self) -> dict: ...
 
 
