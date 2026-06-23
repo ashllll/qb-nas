@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from magnet_harvester.classifier.fallback import make_fallback
+import re
+
+from magnet_harvester.classifier.fallback import LOCAL_RULES
 from magnet_harvester.classifier.keyword_recognizer import KeywordCategoryRecognizer
 from magnet_harvester.classifier.studio_recognizer import recognize as studio_recognize
 
@@ -84,16 +86,32 @@ class StudioRule:
 
 
 class FallbackRule:
-    """Always returns a result — last rule in the chain."""
+    """Always returns a result — last rule in the chain.
+
+    Compiles LOCAL_RULES into instance-level compiled patterns so reloads
+    or multiple instances don't share mutable module-level state.
+    """
 
     def __init__(self, reason: str = "local_rule"):
         self._reason = reason
+        self._compiled_rules: list[tuple[re.Pattern, str]] = [
+            (re.compile(pattern, re.IGNORECASE), category)
+            for pattern, category in LOCAL_RULES
+        ]
 
     def apply(self, name: str) -> ClassificationResult | None:
-        result = make_fallback(name, reason=self._reason)
+        for pattern, category in self._compiled_rules:
+            if pattern.search(name):
+                return ClassificationResult(
+                    category=category,
+                    confidence="low",
+                    reason=self._reason,
+                    save_path=category,
+                )
+        # No rule matched — fallback to "其他"
         return ClassificationResult(
-            category=result["category"],
-            confidence=result["confidence"],
-            reason=result["reason"],
-            save_path=result["save_path"],
+            category="其他",
+            confidence="low",
+            reason=self._reason,
+            save_path="其他",
         )
