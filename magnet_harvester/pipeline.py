@@ -169,27 +169,26 @@ class HarvestPipeline:
 
     async def _download_items(self, hashes: List[str], concurrency: int = 3):
         semaphore = asyncio.Semaphore(concurrency)
+        await asyncio.gather(*(self._download_single_item(h, semaphore) for h in hashes))
 
-        async def _download_one(h: str):
-            item = self._store.get(h)
-            if not item or not item.category:
-                return
-            await self._transitions.download_submitting(h)
-            async with semaphore:
-                try:
-                    ok = await self._qbit.add_magnet(
-                        item.magnet, item.category, item.save_path or ""
+    async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
+        item = self._store.get(hash_key)
+        if not item or not item.category:
+            return
+        await self._transitions.download_submitting(hash_key)
+        async with semaphore:
+            try:
+                ok = await self._qbit.add_magnet(
+                    item.magnet, item.category, item.save_path or ""
+                )
+                if ok:
+                    await self._transitions.download_submitted(hash_key)
+                else:
+                    await self._transitions.download_failed(
+                        hash_key, self._qbit.last_error or "qB 返回失败"
                     )
-                    if ok:
-                        await self._transitions.download_submitted(h)
-                    else:
-                        await self._transitions.download_failed(
-                            h, self._qbit.last_error or "qB 返回失败"
-                        )
-                except Exception as e:
-                    await self._transitions.download_failed(h, str(e))
-
-        await asyncio.gather(*[_download_one(h) for h in hashes])
+            except Exception as e:
+                await self._transitions.download_failed(hash_key, str(e))
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]
