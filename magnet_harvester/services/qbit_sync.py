@@ -120,7 +120,13 @@ class QBitSyncLoop:
             tracked_items = [
                 item
                 for item in store.list(limit=store.count)
-                if item.status in {TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading}
+                if item.status
+                in {
+                    TaskStatus.adding,
+                    TaskStatus.queued,
+                    TaskStatus.downloading,
+                    TaskStatus.error,
+                }
             ]
             if not tracked_items:
                 continue

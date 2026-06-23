@@ -93,7 +93,7 @@ async def test_submitter_succeeds_on_ok_response():
     _, kwargs = request.await_args
     assert kwargs["data"]["urls"] == "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
     assert kwargs["data"]["category"] == "电影"
-    assert kwargs["data"]["use_auto_torrent_management"] == "true"
+    assert kwargs["data"]["autoTMM"] == "true"
     assert "savepath" not in kwargs["data"]
     assert recorder.attempts == 1
     assert recorder.successes == 1

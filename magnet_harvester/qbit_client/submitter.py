@@ -116,7 +116,7 @@ class MagnetSubmitter:
                 data={
                     "urls": magnet,
                     "category": category,
-                    "use_auto_torrent_management": "true",
+                    "autoTMM": "true",
                 },
             )
 
