@@ -9,50 +9,155 @@
     <meta name="color-scheme" content="light dark" />
     <title>Magnet Harvester</title>
     <style>
+      /* ============================================================
+         Magnet Harvester — Polarity Design System v2.0.0
+         See static/design.md for the full design specification.
+         ============================================================
+         Token glossary (new → old alias kept for JS compat):
+           --space-0       deepest bg (was --bg)
+           --space-1       main bg    (was --glass)
+           --space-2       elevated   (was --glass-strong)
+           --space-3       hover      (was --glass-muted)
+           --space-4       border emp
+           --pole-north    primary    (was --blue)
+           --pole-south    focus ring (secondary)
+           --border-normal boundary   (was --line)
+           --border-strong boundary   (was --line-strong)
+           --text-primary  body text  (was --text)
+           --text-secondary muted     (was --muted)
+           --text-tertiary faint      (was --faint)
+           --success       green
+           --warning       amber
+           --danger        red
+      ============================================================ */
+
+      /* ---- Token layer: dark mode (default) ---- */
       :root {
-        --bg: #dbe5ea;
-        --glass: rgba(246, 249, 250, 0.78);
-        --glass-strong: rgba(252, 253, 253, 0.9);
-        --glass-muted: rgba(232, 238, 241, 0.72);
-        --sidebar: rgba(225, 233, 236, 0.84);
-        --line: rgba(37, 53, 61, 0.14);
-        --line-strong: rgba(37, 53, 61, 0.24);
-        --text: #182126;
-        --muted: #617078;
-        --faint: #87949a;
-        --blue: #087aff;
-        --blue-strong: #0066d6;
-        --green: #1d8b4b;
-        --amber: #ad6500;
-        --red: #c9323a;
-        --purple: #7256a8;
-        --shadow:
-          0 22px 60px rgba(34, 52, 61, 0.22), 0 2px 8px rgba(34, 52, 61, 0.1);
-        --font:
-          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-          sans-serif;
-        --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        /* Space */
+        --space-0: #060A0E;
+        --space-1: #0C1117;
+        --space-2: #131A22;
+        --space-3: #1B2330;
+        --space-4: #242E3B;
+
+        /* Poles */
+        --pole-north: #7C6FF0;
+        --pole-north-hover: #6B5ED9;
+        --pole-north-active: #5A4EC7;
+        --pole-south: #14C9C9;
+        --pole-south-hover: #0FB5B5;
+        --north-soft: #A599F5;
+        --south-soft: #5CECEC;
+        --north-muted: rgba(124,111,240,0.12);
+        --south-muted: rgba(20,201,201,0.10);
+
+        /* Text */
+        --text-primary: #E6EDF3;
+        --text-secondary: #8D9BAE;
+        --text-tertiary: #4B5A6E;
+
+        /* Borders */
+        --border-subtle: rgba(230,237,243,0.06);
+        --border-normal: rgba(230,237,243,0.10);
+        --border-strong: rgba(230,237,243,0.16);
+
+        /* Functional */
+        --success: #2DA44E;
+        --success-muted: rgba(45,164,78,0.12);
+        --warning: #D29922;
+        --warning-muted: rgba(210,153,34,0.12);
+        --danger: #F85149;
+        --danger-muted: rgba(248,81,73,0.10);
+
+        /* Category spectrum (magnetic field — evenly spaced on hue circle) */
+        --cat-电影: #58A6FF;
+        --cat-电影-bg: rgba(88,166,255,0.10);
+        --cat-电视剧: #BC8CFF;
+        --cat-电视剧-bg: rgba(188,140,255,0.10);
+        --cat-动漫: #FF967D;
+        --cat-动漫-bg: rgba(255,150,125,0.10);
+        --cat-音乐: #3FB950;
+        --cat-音乐-bg: rgba(63,185,80,0.10);
+        --cat-游戏: #F778BA;
+        --cat-游戏-bg: rgba(247,120,186,0.10);
+        --cat-软件: #D29922;
+        --cat-软件-bg: rgba(210,153,34,0.10);
+        --cat-综艺: #79C0FF;
+        --cat-综艺-bg: rgba(121,192,255,0.10);
+        --cat-纪录片: #14C9C9;
+        --cat-纪录片-bg: rgba(20,201,201,0.10);
+        --cat-其他: #8D9BAE;
+        --cat-其他-bg: rgba(141,155,174,0.10);
+        --cat-pending: #4B5A6E;
+        --cat-pending-bg: rgba(75,90,110,0.10);
+
+        /* Shadow */
+        --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+
+        /* Typography */
+        --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "SF Pro Text", sans-serif;
+        --font-display: "Space Grotesk", system-ui, -apple-system, sans-serif;
+        --mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Consolas", "Liberation Mono", monospace;
+
+        /* Motion */
+        --dur-fast: 120ms;
+        --dur-normal: 200ms;
+        --dur-slow: 400ms;
+
+        /* Legacy aliases — keep JS and old class refs working */
+        --bg: var(--space-0);
+        --glass: var(--space-1);
+        --glass-strong: var(--space-2);
+        --glass-muted: var(--space-3);
+        --sidebar: var(--space-2);
+        --line: var(--border-normal);
+        --line-strong: var(--border-strong);
+        --text: var(--text-primary);
+        --muted: var(--text-secondary);
+        --faint: var(--text-tertiary);
+        --blue: var(--pole-north);
+        --blue-strong: var(--pole-north-hover);
+        --green: var(--success);
+        --amber: var(--warning);
+        --red: var(--danger);
+        --purple: #BC8CFF;
       }
-      @media (prefers-color-scheme: dark) {
+      /* ---- Token layer: light mode override ---- */
+      @media (prefers-color-scheme: light) {
         :root {
-          --bg: #11181c;
-          --glass: rgba(25, 33, 38, 0.8);
-          --glass-strong: rgba(31, 40, 45, 0.92);
-          --glass-muted: rgba(41, 51, 57, 0.76);
-          --sidebar: rgba(24, 32, 37, 0.88);
-          --line: rgba(227, 238, 243, 0.12);
-          --line-strong: rgba(227, 238, 243, 0.22);
-          --text: #eef4f6;
-          --muted: #a4b1b7;
-          --faint: #77868d;
-          --blue: #4aa1ff;
-          --blue-strong: #66afff;
-          --green: #50c878;
-          --amber: #f0a447;
-          --red: #ff6b71;
-          --purple: #ab91df;
-          --shadow:
-            0 26px 70px rgba(0, 0, 0, 0.42), 0 2px 10px rgba(0, 0, 0, 0.22);
+          --space-0: #F0F2F5;
+          --space-1: #F6F8FA;
+          --space-2: #FFFFFF;
+          --space-3: #F0F2F5;
+          --space-4: #D8DEE4;
+
+          --text-primary: #1A2028;
+          --text-secondary: #576270;
+          --text-tertiary: #8D9BAE;
+
+          --border-subtle: rgba(26,32,40,0.06);
+          --border-normal: rgba(26,32,40,0.10);
+          --border-strong: rgba(26,32,40,0.16);
+
+          --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.10);
+
+          --north-muted: rgba(124,111,240,0.08);
+          --south-muted: rgba(20,201,201,0.07);
+          --success-muted: rgba(45,164,78,0.08);
+          --warning-muted: rgba(210,153,34,0.08);
+          --danger-muted: rgba(248,81,73,0.07);
+
+          /* Category bg (light — slightly more opaque for readability) */
+          --cat-电影-bg: rgba(88,166,255,0.10);
+          --cat-电视剧-bg: rgba(188,140,255,0.10);
+          --cat-动漫-bg: rgba(255,150,125,0.10);
+          --cat-音乐-bg: rgba(63,185,80,0.10);
+          --cat-游戏-bg: rgba(247,120,186,0.10);
+          --cat-软件-bg: rgba(210,153,34,0.10);
+          --cat-综艺-bg: rgba(121,192,255,0.10);
+          --cat-纪录片-bg: rgba(20,201,201,0.10);
+          --cat-其他-bg: rgba(141,155,174,0.10);
+          --cat-pending-bg: rgba(75,90,110,0.08);
         }
       }
       * {
@@ -81,30 +186,28 @@
       button:focus-visible,
       input:focus-visible,
       select:focus-visible {
-        outline: 3px solid color-mix(in srgb, var(--blue) 30%, transparent);
-        outline-offset: 1px;
+        outline: 2px solid var(--pole-south);
+        outline-offset: 2px;
       }
       .app-window {
         width: calc(100vw - 32px);
         height: calc(100vh - 32px);
         margin: 16px;
         display: grid;
-        grid-template: 62px minmax(0, 1fr) / 270px minmax(480px, 1fr) 292px;
-        background: var(--glass);
-        border: 1px solid rgba(255, 255, 255, 0.45);
+        grid-template: 62px minmax(0, 1fr) / 260px minmax(480px, 1fr) 280px;
+        background: var(--space-1);
+        border: 1px solid var(--border-normal);
         border-radius: 8px;
         box-shadow: var(--shadow);
         overflow: hidden;
-        backdrop-filter: blur(24px) saturate(120%);
-        -webkit-backdrop-filter: blur(24px) saturate(120%);
       }
       .titlebar {
         grid-column: 1 / -1;
         display: grid;
-        grid-template-columns: 270px minmax(0, 1fr) 292px;
+        grid-template-columns: 260px minmax(0, 1fr) 280px;
         align-items: center;
-        border-bottom: 1px solid var(--line);
-        background: var(--glass-strong);
+        border-bottom: 1px solid var(--border-normal);
+        background: var(--space-2);
         user-select: none;
       }
       .title-brand,
@@ -138,31 +241,41 @@
         background: #28c840;
       }
       .brand-mark {
-        width: 30px;
-        height: 30px;
+        width: 32px;
+        height: 32px;
         display: grid;
         place-items: center;
-        color: white;
-        background: #1677d2;
-        border: 1px solid rgba(255, 255, 255, 0.34);
-        border-radius: 7px;
-        box-shadow:
-          inset 0 1px rgba(255, 255, 255, 0.22),
-          0 2px 6px rgba(0, 74, 147, 0.22);
+        position: relative;
+        flex: 0 0 auto;
+      }
+      .brand-mark svg {
+        width: 28px;
+        height: 28px;
+      }
+      #fieldCanvas {
+        width: 40px;
+        height: 20px;
+        flex: 0 0 auto;
+        opacity: 0.6;
+        transition: opacity var(--dur-normal) ease;
       }
       .brand-copy {
         min-width: 0;
       }
       .brand-name {
-        font-size: 13px;
+        font-family: var(--font-display);
+        font-size: 14px;
         font-weight: 700;
         line-height: 1.2;
         white-space: nowrap;
+        letter-spacing: 0.02em;
       }
       .brand-meta {
         margin-top: 2px;
-        color: var(--muted);
+        color: var(--text-secondary);
+        font-family: var(--mono);
         font-size: 10px;
+        letter-spacing: 0.02em;
       }
       .title-center {
         justify-content: center;
@@ -174,24 +287,24 @@
       }
       .workspace-subtitle {
         margin-left: 8px;
-        color: var(--muted);
+        color: var(--text-secondary);
         font-size: 11px;
       }
       .title-status {
         justify-content: flex-end;
-        gap: 7px;
-        padding: 0 14px;
+        gap: 6px;
+        padding: 0 12px;
       }
       .status-chip {
-        min-height: 28px;
+        min-height: 26px;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 5px 9px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: var(--glass-muted);
-        color: var(--muted);
+        gap: 5px;
+        padding: 4px 8px;
+        border: 1px solid var(--border-normal);
+        border-radius: 6px;
+        background: var(--space-3);
+        color: var(--text-secondary);
         font-size: 11px;
         white-space: nowrap;
       }
@@ -199,25 +312,25 @@
         cursor: pointer;
       }
       button.status-chip:hover {
-        border-color: var(--line-strong);
-        background: var(--glass-strong);
+        border-color: var(--border-strong);
+        background: var(--space-4);
       }
       .dot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: var(--faint);
+        background: var(--text-tertiary);
         flex: 0 0 auto;
       }
       .dot.online {
-        background: var(--green);
-        box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 15%, transparent);
+        background: var(--success);
+        box-shadow: 0 0 0 3px var(--success-muted);
       }
       .dot.offline {
-        background: var(--red);
+        background: var(--danger);
       }
       .dot.checking {
-        background: var(--amber);
+        background: var(--warning);
         animation: pulse 1.1s ease-in-out infinite;
       }
       @keyframes pulse {
@@ -233,8 +346,8 @@
       .sidebar {
         display: flex;
         flex-direction: column;
-        background: var(--sidebar);
-        border-right: 1px solid var(--line);
+        background: var(--space-2);
+        border-right: 1px solid var(--border-normal);
       }
       .sidebar-scroll,
       .inspector-scroll {
@@ -243,19 +356,20 @@
       }
       .section {
         padding: 16px;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid var(--border-subtle);
       }
       .section-heading {
         margin: 0 0 11px;
-        color: var(--muted);
+        color: var(--text-secondary);
         font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
       }
       .field-label {
         display: block;
         margin: 0 0 5px;
-        color: var(--muted);
+        color: var(--text-secondary);
         font-size: 11px;
       }
       .input,
@@ -263,18 +377,20 @@
         width: 100%;
         height: 34px;
         padding: 0 10px;
-        color: var(--text);
-        background: var(--glass-strong);
-        border: 1px solid var(--line);
-        border-radius: 7px;
+        color: var(--text-primary);
+        background: var(--space-1);
+        border: 1px solid var(--border-normal);
+        border-radius: 6px;
         outline: none;
+        transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
       }
       .input::placeholder {
-        color: var(--faint);
+        color: var(--text-tertiary);
       }
       .input:focus,
       .select:focus {
-        border-color: color-mix(in srgb, var(--blue) 55%, var(--line));
+        border-color: var(--pole-south);
+        box-shadow: 0 0 0 3px var(--south-muted);
       }
       .field-stack {
         display: grid;
@@ -290,11 +406,12 @@
         display: block;
         font-size: 12px;
         font-weight: 600;
+        color: var(--text-primary);
       }
       .option-copy span {
         display: block;
         margin-top: 2px;
-        color: var(--muted);
+        color: var(--text-secondary);
         font-size: 10px;
       }
       .switch {
@@ -313,7 +430,7 @@
         inset: 0;
         border-radius: 10px;
         cursor: pointer;
-        background: color-mix(in srgb, var(--faint) 38%, transparent);
+        background: var(--space-4);
         transition: background 0.18s ease;
       }
       .switch-track::after {
@@ -325,11 +442,11 @@
         height: 16px;
         border-radius: 50%;
         background: white;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         transition: transform 0.18s ease;
       }
       .switch input:checked + .switch-track {
-        background: var(--blue);
+        background: var(--pole-north);
       }
       .switch input:checked + .switch-track::after {
         transform: translateX(14px);
@@ -340,40 +457,50 @@
         align-items: center;
         justify-content: center;
         gap: 7px;
-        padding: 0 11px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: var(--glass-strong);
+        padding: 0 12px;
+        border: 1px solid var(--border-normal);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-primary);
         cursor: pointer;
         font-weight: 600;
         font-size: 12px;
         transition:
-          background 0.15s ease,
-          border-color 0.15s ease,
-          transform 0.15s ease;
+          background var(--dur-fast) ease,
+          border-color var(--dur-fast) ease,
+          transform var(--dur-fast) ease;
       }
       .button:hover {
-        border-color: var(--line-strong);
-        background: color-mix(in srgb, var(--glass-strong) 80%, white);
+        border-color: var(--border-strong);
+        background: var(--space-3);
       }
       .button:active {
-        transform: translateY(1px);
+        transform: scale(0.97);
       }
       .button:disabled {
-        opacity: 0.45;
+        opacity: 0.4;
         cursor: default;
         transform: none;
       }
       .button.primary {
-        color: white;
-        background: var(--blue);
-        border-color: var(--blue);
+        color: #fff;
+        background: var(--pole-north);
+        border-color: var(--pole-north);
       }
       .button.primary:hover {
-        background: var(--blue-strong);
+        background: var(--pole-north-hover);
+        border-color: var(--pole-north-hover);
+      }
+      .button.primary:active {
+        background: var(--pole-north-active);
       }
       .button.danger {
-        color: var(--red);
+        color: var(--danger);
+        border-color: rgba(248,81,73,0.3);
+      }
+      .button.danger:hover {
+        background: var(--danger-muted);
+        border-color: var(--danger);
       }
       .button.full {
         width: 100%;
@@ -397,18 +524,20 @@
       }
       .stat {
         padding: 10px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: color-mix(in srgb, var(--glass-strong) 70%, transparent);
+        border: 1px solid var(--border-normal);
+        border-radius: 6px;
+        background: var(--space-1);
       }
       .stat-value {
-        font-size: 18px;
-        font-weight: 700;
-        letter-spacing: 0;
+        font-family: var(--mono);
+        font-size: 20px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        color: var(--text-primary);
       }
       .stat-label {
-        margin-top: 2px;
-        color: var(--muted);
+        margin-top: 3px;
+        color: var(--text-secondary);
         font-size: 10px;
       }
       .activity {
@@ -429,38 +558,38 @@
         min-height: 0;
         overflow-y: auto;
         font-family: var(--mono);
-        font-size: 10px;
+        font-size: 11px;
         line-height: 1.55;
       }
       .log-line {
         display: grid;
         grid-template-columns: 50px 1fr;
-        gap: 7px;
+        gap: 8px;
         padding: 3px 0;
       }
       .log-time {
-        color: var(--faint);
+        color: var(--text-tertiary);
       }
       .log-msg {
-        color: var(--muted);
+        color: var(--text-secondary);
         overflow-wrap: anywhere;
       }
       .log-msg.info {
-        color: var(--blue);
+        color: var(--pole-south);
       }
       .log-msg.found {
-        color: var(--green);
+        color: var(--success);
       }
       .log-msg.warn {
-        color: var(--amber);
+        color: var(--warning);
       }
       .log-msg.error {
-        color: var(--red);
+        color: var(--danger);
       }
       .library {
         display: flex;
         flex-direction: column;
-        background: var(--glass);
+        background: var(--space-1);
         overflow: hidden;
       }
       .toolbar {
@@ -469,8 +598,8 @@
         align-items: center;
         gap: 8px;
         padding: 10px 12px;
-        border-bottom: 1px solid var(--line);
-        background: color-mix(in srgb, var(--glass-strong) 72%, transparent);
+        border-bottom: 1px solid var(--border-normal);
+        background: var(--space-2);
       }
       .search-wrap {
         position: relative;
@@ -484,7 +613,7 @@
         top: 9px;
         width: 15px;
         height: 15px;
-        color: var(--faint);
+        color: var(--text-tertiary);
         pointer-events: none;
       }
       .search-input {
@@ -492,7 +621,7 @@
       }
       .selection-summary {
         margin-left: auto;
-        color: var(--muted);
+        color: var(--text-secondary);
         font-size: 11px;
         white-space: nowrap;
       }
@@ -500,30 +629,32 @@
         min-height: 42px;
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 2px;
         padding: 6px 12px;
         overflow-x: auto;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid var(--border-subtle);
       }
       .filter-tab {
         height: 28px;
         padding: 0 10px;
         border: 0;
         border-radius: 6px;
-        color: var(--muted);
+        color: var(--text-secondary);
         background: transparent;
         cursor: pointer;
         white-space: nowrap;
         font-size: 11px;
+        font-weight: 500;
+        transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
       }
       .filter-tab:hover {
-        background: var(--glass-muted);
-        color: var(--text);
+        background: var(--space-3);
+        color: var(--text-primary);
       }
       .filter-tab.active {
-        color: var(--text);
-        background: var(--glass-strong);
-        box-shadow: 0 1px 4px rgba(24, 38, 45, 0.12);
+        color: var(--text-primary);
+        background: var(--space-3);
+        font-weight: 600;
       }
       .table-shell {
         min-height: 0;
@@ -545,33 +676,39 @@
       th {
         height: 34px;
         padding: 0 10px;
-        color: var(--muted);
-        background: var(--glass-strong);
-        border-bottom: 1px solid var(--line);
+        color: var(--text-secondary);
+        background: var(--space-2);
+        border-bottom: 1px solid var(--border-normal);
         text-align: left;
         font-size: 10px;
-        font-weight: 650;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
       }
       td {
         height: 48px;
         padding: 6px 10px;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid var(--border-subtle);
         vertical-align: middle;
+        position: relative;
       }
       tbody tr {
-        transition: background 0.12s ease;
+        transition: background var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+        box-shadow: inset 2px 0 0 0 transparent;
       }
       tbody tr:hover {
-        background: color-mix(in srgb, var(--blue) 5%, transparent);
+        background: var(--north-muted);
+        box-shadow: inset 2px 0 0 0 var(--pole-north);
       }
       tbody tr.selected {
-        background: color-mix(in srgb, var(--blue) 9%, transparent);
+        background: var(--south-muted);
+        box-shadow: inset 2px 0 0 0 var(--pole-south);
       }
       .checkbox {
         width: 15px;
         height: 15px;
         margin: 0;
-        accent-color: var(--blue);
+        accent-color: var(--pole-north);
         cursor: pointer;
       }
       .name-cell {
@@ -585,45 +722,33 @@
       }
       .item-meta {
         margin-top: 3px;
-        color: var(--faint);
+        color: var(--text-tertiary);
         font-family: var(--mono);
-        font-size: 9px;
+        font-size: 10px;
       }
       .chip {
         display: inline-flex;
         align-items: center;
         min-height: 22px;
-        padding: 2px 7px;
-        border-radius: 6px;
-        border: 1px solid var(--line);
-        background: var(--glass-muted);
-        color: var(--muted);
+        padding: 2px 8px;
+        border-radius: 5px;
+        border: none;
+        background: var(--cat-pending-bg);
+        color: var(--cat-pending);
         font-size: 10px;
+        font-weight: 600;
         white-space: nowrap;
       }
-      .cat-电影,
-      .cat-纪录片 {
-        color: var(--blue-strong);
-        background: color-mix(in srgb, var(--blue) 9%, var(--glass-strong));
-      }
-      .cat-电视剧,
-      .cat-动漫 {
-        color: var(--purple);
-        background: color-mix(in srgb, var(--purple) 10%, var(--glass-strong));
-      }
-      .cat-音乐,
-      .cat-综艺 {
-        color: var(--green);
-        background: color-mix(in srgb, var(--green) 9%, var(--glass-strong));
-      }
-      .cat-游戏 {
-        color: var(--red);
-        background: color-mix(in srgb, var(--red) 8%, var(--glass-strong));
-      }
-      .cat-软件 {
-        color: var(--amber);
-        background: color-mix(in srgb, var(--amber) 8%, var(--glass-strong));
-      }
+      .cat-电影 { color: var(--cat-电影); background: var(--cat-电影-bg); }
+      .cat-电视剧 { color: var(--cat-电视剧); background: var(--cat-电视剧-bg); }
+      .cat-动漫 { color: var(--cat-动漫); background: var(--cat-动漫-bg); }
+      .cat-音乐 { color: var(--cat-音乐); background: var(--cat-音乐-bg); }
+      .cat-游戏 { color: var(--cat-游戏); background: var(--cat-游戏-bg); }
+      .cat-软件 { color: var(--cat-软件); background: var(--cat-软件-bg); }
+      .cat-综艺 { color: var(--cat-综艺); background: var(--cat-综艺-bg); }
+      .cat-纪录片 { color: var(--cat-纪录片); background: var(--cat-纪录片-bg); }
+      .cat-其他 { color: var(--cat-其他); background: var(--cat-其他-bg); }
+      .cat-pending { color: var(--cat-pending); background: var(--cat-pending-bg); }
       .status-cell {
         white-space: nowrap;
         font-size: 11px;
@@ -637,29 +762,19 @@
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: var(--faint);
+        background: var(--text-tertiary);
       }
       .status-pending,
-      .status-skipped {
-        color: var(--muted);
-      }
+      .status-skipped { color: var(--text-secondary); }
       .status-classifying,
-      .status-adding {
-        color: var(--amber);
-      }
-      .status-queued {
-        color: var(--blue);
-      }
+      .status-adding { color: var(--warning); }
+      .status-queued { color: var(--pole-south); }
       .status-downloading,
-      .status-success {
-        color: var(--green);
-      }
-      .status-error {
-        color: var(--red);
-      }
+      .status-success { color: var(--success); }
+      .status-error { color: var(--danger); }
       .source-cell {
         max-width: 150px;
-        color: var(--muted);
+        color: var(--text-secondary);
         font-size: 10px;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -675,7 +790,7 @@
       .empty-content {
         max-width: 280px;
         text-align: center;
-        color: var(--muted);
+        color: var(--text-secondary);
       }
       .empty-icon {
         width: 48px;
@@ -683,13 +798,13 @@
         margin: 0 auto 12px;
         display: grid;
         place-items: center;
-        color: var(--blue);
-        background: color-mix(in srgb, var(--blue) 11%, var(--glass-strong));
-        border: 1px solid color-mix(in srgb, var(--blue) 18%, var(--line));
+        color: var(--pole-north);
+        background: var(--north-muted);
+        border: 1px solid rgba(124,111,240,0.2);
         border-radius: 8px;
       }
       .empty-title {
-        color: var(--text);
+        color: var(--text-primary);
         font-size: 13px;
         font-weight: 700;
       }
@@ -699,8 +814,8 @@
         line-height: 1.5;
       }
       .inspector {
-        background: var(--sidebar);
-        border-left: 1px solid var(--line);
+        background: var(--space-2);
+        border-left: 1px solid var(--border-normal);
         overflow: hidden;
       }
       .inspector-head {
@@ -709,7 +824,7 @@
         align-items: center;
         justify-content: space-between;
         padding: 0 16px;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid var(--border-normal);
       }
       .inspector-title {
         display: flex;
@@ -723,21 +838,21 @@
         align-items: center;
         margin-top: 10px;
         padding: 7px 9px;
-        color: var(--muted);
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: var(--glass-muted);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-normal);
+        border-radius: 6px;
+        background: var(--space-1);
         font-size: 11px;
       }
       .connection-result.success {
-        color: var(--green);
+        color: var(--success);
       }
       .connection-result.error {
-        color: var(--red);
+        color: var(--danger);
       }
       .security-note {
         margin: 10px 0 0;
-        color: var(--muted);
+        color: var(--text-tertiary);
         font-size: 10px;
         line-height: 1.45;
       }
@@ -751,7 +866,7 @@
         left: 16px;
         width: 0;
         height: 2px;
-        background: var(--blue);
+        background: var(--pole-north);
         transition: width 0.3s ease;
       }
       .toast-stack {
@@ -768,19 +883,19 @@
         gap: 9px;
         align-items: flex-start;
         padding: 11px 12px;
-        color: var(--text);
-        background: var(--glass-strong);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        box-shadow: 0 12px 30px rgba(25, 42, 50, 0.2);
-        backdrop-filter: blur(20px);
+        color: var(--text-primary);
+        background: var(--space-2);
+        border: 1px solid var(--border-normal);
+        border-left: 3px solid var(--pole-south);
+        border-radius: 6px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
         animation: toast-in 0.2s ease-out;
       }
       .toast.error {
-        border-color: color-mix(in srgb, var(--red) 35%, var(--line));
+        border-left-color: var(--danger);
       }
       .toast.success {
-        border-color: color-mix(in srgb, var(--green) 35%, var(--line));
+        border-left-color: var(--success);
       }
       .toast svg {
         width: 16px;
@@ -789,24 +904,19 @@
         margin-top: 1px;
       }
       @keyframes toast-in {
-        from {
-          opacity: 0;
-          transform: translateY(8px);
-        }
+        from { opacity: 0; transform: translateX(12px); }
       }
       dialog {
         width: min(390px, calc(100vw - 32px));
         padding: 0;
-        color: var(--text);
-        background: var(--glass-strong);
-        border: 1px solid var(--line);
+        color: var(--text-primary);
+        background: var(--space-2);
+        border: 1px solid var(--border-normal);
         border-radius: 8px;
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(28px);
+        box-shadow: 0 16px 48px rgba(0,0,0,0.45);
       }
       dialog::backdrop {
-        background: rgba(12, 20, 24, 0.28);
-        backdrop-filter: blur(4px);
+        background: rgba(6,10,14,0.6);
       }
       .dialog-body {
         padding: 18px;
@@ -817,7 +927,7 @@
       }
       .dialog-copy {
         margin: 7px 0 0;
-        color: var(--muted);
+        color: var(--text-secondary);
         line-height: 1.5;
       }
       .dialog-actions {
@@ -825,7 +935,7 @@
         justify-content: flex-end;
         gap: 8px;
         padding: 12px 18px;
-        border-top: 1px solid var(--line);
+        border-top: 1px solid var(--border-normal);
       }
       .icon-glyph,
       svg {
@@ -845,7 +955,7 @@
         height: 10px;
       }
       ::-webkit-scrollbar-thumb {
-        background: color-mix(in srgb, var(--faint) 35%, transparent);
+        background: rgba(141,155,174,0.22);
         border: 3px solid transparent;
         background-clip: padding-box;
         border-radius: 7px;
@@ -861,7 +971,7 @@
           grid-template-columns: 240px minmax(0, 1fr);
         }
         .title-status {
-          padding-right: 12px;
+          padding-right: 10px;
         }
         .inspector {
           display: none;
@@ -945,8 +1055,8 @@
           padding: 6px max(8px, env(safe-area-inset-right))
             calc(6px + env(safe-area-inset-bottom))
             max(8px, env(safe-area-inset-left));
-          background: var(--glass-strong);
-          border-top: 1px solid var(--line);
+          background: var(--space-2);
+          border-top: 1px solid var(--border-normal);
         }
         .mobile-nav button {
           display: flex;
@@ -954,15 +1064,15 @@
           align-items: center;
           justify-content: center;
           gap: 2px;
-          color: var(--muted);
+          color: var(--text-secondary);
           background: transparent;
           border: 0;
           border-radius: 6px;
           font-size: 9px;
         }
         .mobile-nav button.active {
-          color: var(--blue);
-          background: color-mix(in srgb, var(--blue) 8%, transparent);
+          color: var(--pole-north);
+          background: var(--north-muted);
         }
         .mobile-nav svg {
           width: 16px;
@@ -998,7 +1108,20 @@
             ><span class="traffic-light amber"></span
             ><span class="traffic-light green"></span>
           </div>
-          <div class="brand-mark"><i data-lucide="magnet"></i></div>
+          <div class="brand-mark">
+            <svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <defs>
+                <linearGradient id="mag-bridge" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="var(--pole-north)"/>
+                  <stop offset="100%" stop-color="var(--pole-south)"/>
+                </linearGradient>
+              </defs>
+              <path d="M5.5 8C5.5 2.5 22.5 2.5 22.5 8" stroke="url(#mag-bridge)" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+              <rect x="3" y="8" width="7" height="16" rx="2.5" fill="var(--pole-north)"/>
+              <rect x="18" y="8" width="7" height="16" rx="2.5" fill="var(--pole-south)"/>
+            </svg>
+          </div>
+          <canvas id="fieldCanvas" width="64" height="32" aria-hidden="true"></canvas>
           <div class="brand-copy">
             <div class="brand-name">Magnet Harvester</div>
             <div class="brand-meta">NAS 资源工作台</div>
@@ -1460,6 +1583,70 @@
         });
       }
 
+      /* ---- Magnetic field canvas animation ---- */
+      let fieldAnimId = null;
+      let fieldPulseEnergy = 0;       // 0–1, decays over time
+      let fieldBreathPhase = 0;       // slow idle breathing
+      const fieldReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const fieldCanvas = document.getElementById("fieldCanvas");
+      const fieldCtx = fieldCanvas?.getContext("2d");
+
+      function startFieldAnimation() {
+        if (!fieldCtx || fieldReducedMotion) return;
+        if (fieldAnimId) return;
+        const step = (ts) => {
+          const w = fieldCanvas.width;
+          const h = fieldCanvas.height;
+          fieldCtx.clearRect(0, 0, w, h);
+
+          fieldBreathPhase = (fieldBreathPhase + 0.004) % (Math.PI * 2);
+          fieldPulseEnergy = Math.max(0, fieldPulseEnergy - 0.012);
+
+          const breath = Math.sin(fieldBreathPhase) * 0.2 + 0.5;   // 0.3–0.7
+          const pulse = fieldPulseEnergy * 0.5;                      // 0–0.5
+          const alpha = Math.min(1, breath + pulse);
+
+          fieldCtx.globalAlpha = alpha;
+
+          // Draw 5 field lines from north (left) to south (right)
+          const lines = [
+            { y0: 12, cpY: 4,  y1: 14 },
+            { y0: 16, cpY: 2,  y1: 16 },
+            { y0: 20, cpY: 6,  y1: 18 },
+            { y0: 10, cpY: 14, y1: 12 },
+            { y0: 22, cpY: 10, y1: 20 },
+          ];
+
+          lines.forEach((l, i) => {
+            const offset = Math.sin(fieldBreathPhase + i * 1.3) * 2;
+            fieldCtx.beginPath();
+            fieldCtx.moveTo(8, l.y0 + offset);
+            fieldCtx.quadraticCurveTo(w / 2, l.cpY + offset * 1.5, w - 8, l.y1 + offset);
+            fieldCtx.strokeStyle = i % 2 === 0
+              ? `rgba(124,111,240,${0.3 + pulse * 0.4})`
+              : `rgba(20,201,201,${0.25 + pulse * 0.35})`;
+            fieldCtx.lineWidth = i === 2 ? 1.2 : 0.8;
+            fieldCtx.stroke();
+          });
+
+          fieldAnimId = requestAnimationFrame(step);
+        };
+        fieldAnimId = requestAnimationFrame(step);
+      }
+
+      function fieldPulse(intensity = 1) {
+        fieldPulseEnergy = Math.min(1, fieldPulseEnergy + 0.35 * intensity);
+        if (!fieldAnimId && fieldCtx && !fieldReducedMotion) startFieldAnimation();
+      }
+
+      if (fieldReducedMotion) {
+        if (fieldCanvas) fieldCanvas.style.display = "none";
+      } else {
+        startFieldAnimation();
+      }
+
+      /* ---- End field animation ---- */
+
       function apiHeaders(extra = {}) {
         const headers = { ...extra };
         const key = sessionStorage.getItem("magnet-api-key") || "";
@@ -1516,6 +1703,7 @@
       function handleMsg(msg) {
         switch (msg.type) {
           case "init":
+            fieldPulse(0.5);
             items.clear();
             selected.clear();
             (msg.items || []).forEach((item) => items.set(item.hash, item));
@@ -1523,6 +1711,7 @@
             addLog("实时数据已同步", "info");
             break;
           case "crawl_start":
+            fieldPulse(0.6);
             setProgress(10);
             setCrawling(true);
             addLog(`开始爬取 ${shortUrl(msg.url)}`, "info");
@@ -1533,6 +1722,7 @@
             );
             break;
           case "magnet_found":
+            fieldPulse(0.8);
             if (msg.item) {
               items.set(msg.item.hash, msg.item);
               renderTable();
@@ -1561,6 +1751,7 @@
             addLog("分类完成", "found");
             break;
           case "crawl_done":
+            fieldPulse(1);
             setProgress(100);
             setTimeout(() => setProgress(0), 900);
             setCrawling(false);
