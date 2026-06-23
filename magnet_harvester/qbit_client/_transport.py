@@ -110,6 +110,37 @@ class QBitTransport:
             self._record_failure()
             return False
 
+    async def _handle_auth_retry(self, client, auth_retry_count: int, max_auth_retries: int) -> int:
+        """Handle 403 response by re-authenticating. Returns new retry count or raises."""
+        if auth_retry_count >= max_auth_retries:
+            raise RuntimeError(
+                f"qBittorrent Session 过期（已重试{max_auth_retries}次）"
+            )
+        log.warning("qBittorrent Session 过期，重新登录...")
+        self._cookie = None
+        client.cookies.clear()
+        count = auth_retry_count + 1
+        ok = await self._login(force=True)
+        if not ok:
+            raise RuntimeError("qBittorrent 重新登录失败")
+        return count
+
+    async def _handle_network_retry(
+        self, attempt: int, label: str, exc: Exception
+    ) -> None:
+        """Sleep with backoff on network errors if more retries remain; log otherwise."""
+        if attempt < self._retry_config["max_retries"] - 1:
+            delay = self._backoff_delay(attempt)
+            log.warning("qBittorrent %s，%.1f秒后重试...", label, delay)
+            await asyncio.sleep(delay)
+        else:
+            log.error("qBittorrent %s（已重试%d次）", label, self._retry_config["max_retries"])
+
+    def _backoff_delay(self, attempt: int) -> float:
+        """指数退避延迟，无抖动。"""
+        cfg = self._retry_config
+        return min(cfg["max_delay"], cfg["base_delay"] * (2**attempt))
+
     async def request(self, method: str, path: str, **kw) -> httpx.Response:
         config = self._retry_config
         last_exception = None
@@ -132,22 +163,13 @@ class QBitTransport:
                 )
 
                 if r.status_code == 403:
-                    if auth_retry_count >= max_auth_retries:
-                        raise RuntimeError(
-                            f"qBittorrent Session 过期（已重试{max_auth_retries}次）"
-                        )
-
-                    log.warning("qBittorrent Session 过期，重新登录...")
-                    self._cookie = None
-                    client.cookies.clear()
-                    auth_retry_count += 1
-                    ok = await self._login(force=True)
-                    if not ok:
-                        raise RuntimeError("qBittorrent 重新登录失败")
+                    auth_retry_count = await self._handle_auth_retry(
+                        client, auth_retry_count, max_auth_retries
+                    )
                     continue
 
                 if r.status_code in config["retry_on"] and attempt < config["max_retries"] - 1:
-                    delay = min(config["base_delay"] * (2**attempt), config["max_delay"])
+                    delay = self._backoff_delay(attempt)
                     log.warning(f"qBittorrent 请求失败 ({r.status_code})，{delay:.1f}秒后重试...")
                     await asyncio.sleep(delay)
                     continue
@@ -158,21 +180,11 @@ class QBitTransport:
 
             except httpx.TimeoutException as e:
                 last_exception = e
-                if attempt < config["max_retries"] - 1:
-                    delay = min(config["base_delay"] * (2**attempt), config["max_delay"])
-                    log.warning(f"qBittorrent 请求超时，{delay:.1f}秒后重试...")
-                    await asyncio.sleep(delay)
-                else:
-                    log.error(f"qBittorrent 请求超时（已重试{config['max_retries']}次）")
+                await self._handle_network_retry(attempt, "请求超时", e)
 
             except httpx.ConnectError as e:
                 last_exception = e
-                if attempt < config["max_retries"] - 1:
-                    delay = min(config["base_delay"] * (2**attempt), config["max_delay"])
-                    log.warning(f"qBittorrent 连接失败，{delay:.1f}秒后重试...")
-                    await asyncio.sleep(delay)
-                else:
-                    log.error(f"qBittorrent 连接失败（已重试{config['max_retries']}次）")
+                await self._handle_network_retry(attempt, "连接失败", e)
 
             except Exception as e:
                 last_exception = e
