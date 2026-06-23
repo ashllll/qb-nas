@@ -88,6 +88,31 @@ async def test_crawler_context_manager():
     assert crawler._crawler is None
 
 
+def test_crawler_falls_back_to_settings_when_no_config_given(monkeypatch):
+    """MagnetCrawler() 无参构造时应使用 settings.crawler 作为默认配置。"""
+    from magnet_harvester.config import CrawlerConfig
+
+    crawler = MagnetCrawler()
+    default = crawler._config
+
+    # 验证关键字段与默认 CrawlerConfig 一致
+    ref = CrawlerConfig()
+    assert default.timeout == ref.timeout
+    assert default.max_depth == ref.max_depth
+    assert default.concurrency == ref.concurrency
+    assert default.headless == ref.headless
+    assert default.allowed_resolutions == ("2160p", "4k")
+    assert default.wait_until == ref.wait_until
+    assert default.delay_before_return_html == ref.delay_before_return_html
+    assert default.word_count_threshold == ref.word_count_threshold
+    assert default.scan_full_page == ref.scan_full_page
+    assert default.max_retries == ref.max_retries
+    assert default.check_robots_txt == ref.check_robots_txt
+    assert default.simulate_user == ref.simulate_user
+    assert default.magics == ref.magics
+    assert default.url_score_depth_bias == ref.url_score_depth_bias
+
+
 if __name__ == "__main__":
     import asyncio
 

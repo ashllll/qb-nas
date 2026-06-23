@@ -118,32 +118,7 @@ class MagnetCrawler:
         target_admission: CrawlTargetAdmission | None = None,
         site_auth: BrowserCookieProvider | None = None,
     ):
-        if config is None:
-            self._config = CrawlerConfig(
-                timeout=settings.CRAWLER_TIMEOUT,
-                max_depth=settings.CRAWLER_MAX_DEPTH,
-                concurrency=settings.CRAWLER_CONCURRENCY,
-                max_detail_links=settings.CRAWLER_MAX_DETAIL_LINKS,
-                headless=settings.CRAWLER_HEADLESS,
-                allowed_resolutions=settings.crawler.allowed_resolutions,
-                wait_until=settings.CRAWLER_WAIT_UNTIL,
-                delay_before_return_html=settings.CRAWLER_DELAY_BEFORE_HTML,
-                word_count_threshold=settings.CRAWLER_WORD_COUNT_THRESHOLD,
-                scan_full_page=settings.CRAWLER_SCAN_FULL_PAGE,
-                scroll_delay=settings.CRAWLER_SCROLL_DELAY,
-                max_scroll_steps=settings.CRAWLER_MAX_SCROLL_STEPS,
-                process_iframes=settings.CRAWLER_PROCESS_IFRAMES,
-                flatten_shadow_dom=settings.CRAWLER_FLATTEN_SHADOW_DOM,
-                remove_overlay_elements=settings.CRAWLER_REMOVE_OVERLAYS,
-                remove_consent_popups=settings.CRAWLER_REMOVE_CONSENT_POPUPS,
-                max_retries=settings.CRAWLER_MAX_RETRIES,
-                check_robots_txt=settings.CRAWLER_CHECK_ROBOTS_TXT,
-                simulate_user=settings.CRAWLER_SIMULATE_USER,
-                magics=settings.CRAWLER_MAGICS,
-                url_score_depth_bias=settings.CRAWLER_URL_SCORE_DEPTH_BIAS,
-            )
-        else:
-            self._config = config
+        self._config = config if config is not None else settings.crawler
         self._crawler: Optional[AsyncWebCrawler] = None
         self._metrics: Optional[CrawlMetrics] = None
         self._session_metrics: ContextVar[CrawlMetrics | None] = ContextVar(
