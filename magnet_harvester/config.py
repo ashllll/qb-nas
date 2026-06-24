@@ -301,7 +301,11 @@ class Settings(BaseSettings):
 
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text("".join(rendered), encoding="utf-8")
-        os.replace(tmp, path)  # 原子替换，避免崩溃时文件损坏
+        try:
+            os.replace(tmp, path)  # 原子替换，避免崩溃时文件损坏
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
 
     @staticmethod
     def _env_line_key(line: str) -> str | None:

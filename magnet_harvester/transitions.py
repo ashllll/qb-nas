@@ -44,6 +44,8 @@ class MagnetItemTransitions:
         item = self._store.get(hash_key)
         if item is None:
             return
+        if previous_status is not None and previous_status == item.status:
+            return  # 状态未变化，跳过重复事件
         is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
         is_new_phase = previous_status in {
             TaskStatus.pending,

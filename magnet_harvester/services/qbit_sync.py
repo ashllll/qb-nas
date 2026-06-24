@@ -122,7 +122,7 @@ class QBitSyncLoop:
 
             tracked_items = [
                 item
-                for item in store.list(limit=store.count)
+                for item in store.list(limit=2000)  # 上限防全表扫描，活跃种子通常远小于此值
                 if item.status
                 in {
                     TaskStatus.adding,

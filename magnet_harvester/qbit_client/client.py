@@ -201,8 +201,8 @@ class QBittorrentClient:
         （如 /var/apps/qBittorrent/.../Download），而非 NAS 真实路径。
         因此优先从已存在的分类 / torrent 的 savePath 获取真实路径。
         """
-        if self._cached_default_path:
-            return self._cached_default_path
+        if self._cached_default_path is not None:
+            return self._cached_default_path or None
 
         # 1-2. 从已有分类/种子推断（通过 QBitPathResolver）
         path = await self._path_resolver.resolve()
@@ -225,6 +225,7 @@ class QBittorrentClient:
         except Exception as e:
             log.warning(f"get_default_save_path 异常: {e}")
 
+        self._cached_default_path = ""  # 负缓存：避免重复网络请求
         return None
 
     def clear_cached_path(self):
