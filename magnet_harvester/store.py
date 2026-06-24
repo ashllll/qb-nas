@@ -378,7 +378,7 @@ class SQLiteItemStore:
             return []
 
         conditions: list[str] = []
-        params: list[str] = []
+        params: list[str | int] = []
         if category:
             conditions.append("category = ?")
             params.append(category)

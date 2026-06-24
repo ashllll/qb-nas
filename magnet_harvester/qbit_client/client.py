@@ -132,9 +132,13 @@ class QBittorrentClient:
             r = await self._req("GET", f"/sync/maindata?rid={rid}")
             if r.status_code == 200:
                 return r.json()
+            log.warning(f"get_maindata 返回非 200: {r.status_code}")
+            return {}
+        except httpx.TransportError as e:
+            log.error(f"get_maindata 网络异常: {e}")
             return {}
         except Exception as e:
-            log.warning(f"get_maindata 失败: {e}")
+            log.error(f"get_maindata 未知异常: {e}", exc_info=True)
             return {}
 
     async def poll_torrent_snapshot(self) -> Dict[str, dict]:
@@ -165,8 +169,11 @@ class QBittorrentClient:
                 log.warning(f"get_categories 返回 {r.status_code}")
                 return {}
             return r.json()
+        except httpx.TransportError as e:
+            log.error(f"get_categories 网络异常: {e}")
+            return {}
         except Exception as e:
-            log.warning(f"get_categories 异常: {e}")
+            log.error(f"get_categories 未知异常: {e}", exc_info=True)
             return {}
 
     async def _find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:

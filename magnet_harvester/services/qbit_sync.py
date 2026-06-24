@@ -106,19 +106,16 @@ class QBitSyncLoop:
             if qbit is None or store is None:
                 continue
 
-            async with self._lock:
-                if qbit is not self._qbit:
-                    continue
-                try:
-                    snapshot = await qbit.poll_torrent_snapshot()
-                    removed_hashes = qbit.take_recently_removed()
-                except Exception as e:
-                    self._backoff.record_failure()
-                    log.debug(
-                        "qB 状态同步失败，将退避到 %.1fs 后重试: %s", self._backoff.next_delay(), e
-                    )
-                    continue
-                self._backoff.record_success()
+            try:
+                snapshot = await qbit.poll_torrent_snapshot()
+                removed_hashes = qbit.take_recently_removed()
+            except Exception as e:
+                self._backoff.record_failure()
+                log.debug(
+                    "qB 状态同步失败，将退避到 %.1fs 后重试: %s", self._backoff.next_delay(), e
+                )
+                continue
+            self._backoff.record_success()
 
             tracked_items = [
                 item

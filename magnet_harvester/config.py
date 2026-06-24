@@ -316,6 +316,8 @@ class Settings(BaseSettings):
         stripped = line.lstrip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             return None
+        if stripped.startswith("export "):
+            return None  # 不覆盖 export 前缀行（与注释一致）
         left, _, _ = stripped.partition("=")
         parts = left.strip().split()
         key = parts[-1] if parts else ""

@@ -66,7 +66,7 @@ class ErrorHandler:
         import hashlib
 
         key = f"{category.value}:{message}"
-        return hashlib.md5(key.encode()).hexdigest()[:12]
+        return hashlib.sha256(key.encode()).hexdigest()[:12]
 
     def record(
         self,
