@@ -36,11 +36,9 @@ class QBitSyncState:
 
         removed = {str(h).lower() for h in data.get("torrents_removed", [])}
         if removed:
-            self._recently_removed = removed
+            self._recently_removed |= removed
             for hash_key in removed:
                 self._torrent_snapshot.pop(hash_key, None)
-        else:
-            self._recently_removed = set()
 
         return dict(self._torrent_snapshot)
 

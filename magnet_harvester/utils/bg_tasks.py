@@ -51,7 +51,10 @@ class BGTaskManager:
         task_name = name or "background-task"
         task = asyncio.create_task(coro, name=task_name)
         task_id = uuid.uuid4().hex
-        task.task_id = task_id
+        try:
+            task.task_id = task_id
+        except AttributeError:
+            pass  # 非 CPython 运行时可能不支持 Task 动态属性
         self._tasks.add(task)
         self._task_ids[task] = task_id
         self._snapshots[task_id] = TaskSnapshot(

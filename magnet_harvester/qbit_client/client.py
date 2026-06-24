@@ -81,6 +81,8 @@ class QBittorrentClient:
         self._last_ping_at = 0.0
         self._last_ping_result: bool | None = None
         self._cached_default_path: str | None = None
+        # 分类数量通常有限（qB 上限约 100 个），结合 ensure_category 的串行化
+        # 访问模式，_category_locks 不会无限增长，无需主动清理。
         self._category_locks: dict[str, asyncio.Lock] = {}
         self.last_error: str | None = None
         self._sync_state = QBitSyncState()
@@ -104,7 +106,7 @@ class QBittorrentClient:
         return await self._transport.request(method, path, **kw)
 
     async def ping(self) -> bool:
-        now = time.time()
+        now = time.monotonic()
         if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
             return self._last_ping_result
         try:
@@ -113,7 +115,7 @@ class QBittorrentClient:
         except Exception as e:
             log.warning(f"qBittorrent ping 失败: {e}")
             ok = False
-        self._last_ping_at = time.time()
+        self._last_ping_at = time.monotonic()
         self._last_ping_result = ok
         return ok
 

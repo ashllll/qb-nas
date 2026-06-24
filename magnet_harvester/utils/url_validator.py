@@ -25,6 +25,7 @@ _RFC1918_NETS = (
     ipaddress.IPv4Network("10.0.0.0/8"),
     ipaddress.IPv4Network("172.16.0.0/12"),
     ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv4Network("100.64.0.0/10"),  # RFC 6598 CGNAT
     ipaddress.IPv6Network("fc00::/7"),
 )
 REDIRECT_PROBE_TIMEOUT_SEC = 2.0

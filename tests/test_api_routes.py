@@ -179,6 +179,7 @@ def _make_app():
         qbit=qbit,
         stats=stats,
         error_handler=error_handler,
+        classifier=classifier,
     )
     item_queries = ItemQueryExecutor(store=store)
 

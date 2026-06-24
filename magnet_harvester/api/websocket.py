@@ -57,7 +57,7 @@ class WSBroadcaster:
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store:
-            items = [item_payload(i) for i in self._store.list(limit=10000)]
+            items = [item_payload(i) for i in self._store.list(limit=500)]
             await self.send_init(ws, items)
         else:
             await self.send_init(ws, [])
@@ -68,6 +68,10 @@ class WSBroadcaster:
         self.add(ws)
         try:
             await self.send_init_from_store(ws)
+            # 服务端不做主动 keep-alive ping；由客户端负责发送 ping 帧
+            # （handle_client_message 已响应 "ping" → "pong"）。
+            # 若客户端长时间无消息，反向代理/OS 可能断开空闲连接，
+            # 客户端应自行维护定时 ping 间隔（推荐 30s）。
             while True:
                 await self.handle_client_message(ws, await ws.receive_text())
         except WebSocketDisconnect:
@@ -145,3 +149,7 @@ async def websocket_endpoint(ws: WebSocket):
     broadcaster = getattr(getattr(ctx, "ctx", None), "broadcaster", None)
     if broadcaster:
         await broadcaster.handle_connection(ws)
+    else:
+        log.error("WebSocket 连接被拒绝：broadcaster 未初始化")
+        await ws.accept()
+        await ws.close(code=1011, reason="broadcaster not ready")

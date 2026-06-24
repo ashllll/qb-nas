@@ -64,6 +64,7 @@ class QBitTransport:
     async def _get_client(self) -> AsyncHttpClientLike:
         if self._client is None or self._client.is_closed:
             self._client = self._client_factory()
+            self._cookie = None  # 新 client 的 cookie jar 已变化，强制重新登录
         return self._client
 
     async def close(self) -> None:

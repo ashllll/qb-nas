@@ -143,6 +143,8 @@ class MagnetCrawler:
         return max(1, min(int(depth), self._config.max_depth))
 
     def _current_metrics(self) -> CrawlMetrics:
+        # self._metrics 始终为 None（初始化后未赋值），or 分支是防御性备选，
+        # 确保未来如有直接赋值 _metrics 的路径仍能正确回退。
         metrics = self._session_metrics.get() or self._metrics
         if metrics is None:
             raise RuntimeError("crawl metrics are only available during a Crawl session")

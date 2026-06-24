@@ -22,6 +22,9 @@ def _load_keywords(rules_file: Path = KEYWORD_FILE) -> List[Dict[str, str]]:
         if rules_file.exists():
             with open(rules_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                if not isinstance(data, dict):
+                    log.error("分类关键词配置文件格式错误：应为 JSON 对象")
+                    return []
                 return data.get("keywords", [])
         log.warning(f"分类关键词配置文件不存在: {rules_file}")
         return []
@@ -58,7 +61,11 @@ class KeywordCategoryRecognizer:
 
     def __init__(self, rules_file: Path = KEYWORD_FILE):
         self._rules_file = rules_file
-        self._keywords = _load_keywords(rules_file)
+        self._reset()
+
+    def _reset(self):
+        """重新加载关键词文件并编译匹配模式（供 __init__ 与 reload 复用）。"""
+        self._keywords = _load_keywords(self._rules_file)
         self._patterns = _compile_keyword_patterns(self._keywords)
 
     def recognize(self, name: str) -> Optional[Dict[str, str]]:
@@ -69,7 +76,7 @@ class KeywordCategoryRecognizer:
         return None
 
     def reload(self):
-        self.__init__(self._rules_file)
+        self._reset()
 
     @classmethod
     def from_keywords(cls, keywords: List[Dict[str, str]]) -> "KeywordCategoryRecognizer":

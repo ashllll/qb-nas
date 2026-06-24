@@ -97,7 +97,7 @@ class MagnetSubmitter:
             if base:
                 category_save_path = f"{base}/{category_save_path}"
         if not category_save_path:
-            category_save_path = save_path
+            category_save_path = await self._gateway.get_base_save_path() or ""
 
         if self._fs_base_path:
             (Path(self._fs_base_path) / _safe_fs_segment(category)).mkdir(
@@ -109,6 +109,9 @@ class MagnetSubmitter:
                 category_ok = await self._gateway.ensure_category(category, category_save_path)
                 if not category_ok:
                     log.warning(f"分类 [{category}] 创建失败")
+                    self._recorder.error(f"分类 [{category}] 创建失败")
+                    self._recorder.failed()
+                    return False
 
             r = await self._gateway.request(
                 "POST",

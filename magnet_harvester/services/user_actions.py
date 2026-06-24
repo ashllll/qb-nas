@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
 from magnet_harvester.pipeline import PipelineProtocol
 from magnet_harvester.store import ItemStore
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
+
+log = logging.getLogger(__name__)
 
 
 class UserActionExecutor:
@@ -27,6 +31,9 @@ class UserActionExecutor:
         self._stats = stats
 
     def _spawn(self, coro, *, name: str):
+        if self._task_manager is None:
+            log.warning("task_manager 未配置，跳过后台任务: %s", name)
+            return
         return BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
 
     async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False) -> dict:
@@ -70,6 +77,12 @@ class UserActionExecutor:
         matches = self._store.get_hashes_by_prefix(hash_prefix)
         if not matches:
             return {"status": "not_found", "hash": hash_prefix}
+
+        if len(matches) > 1:
+            log.warning(
+                "hash 前缀 %r 匹配到 %d 条记录，仅操作第一条 %r",
+                hash_prefix, len(matches), matches[0],
+            )
 
         match = matches[0]
         await self._transitions.manually_classified(match, category)

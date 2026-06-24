@@ -37,6 +37,11 @@ class ErrorHandlerLike(Protocol):
     def get_error_stats(self) -> dict: ...
 
 
+class ClassifierLike(Protocol):
+    """Narrow interface — only exposes `get_cache_stats` for health checks."""
+    def get_cache_stats(self) -> dict: ...
+
+
 class ObservabilitySnapshot:
     """Builds API-facing runtime snapshots behind one interface."""
 
@@ -48,12 +53,14 @@ class ObservabilitySnapshot:
         stats: StatsLike | None = None,
         broadcaster: BroadcasterLike | None = None,
         error_handler: ErrorHandlerLike | None = None,
+        classifier: ClassifierLike | None = None,
     ):
         self._store = store
         self._qbit = qbit
         self._stats = stats
         self._broadcaster = broadcaster
         self._error_handler = error_handler
+        self._classifier = classifier
 
     async def system_status(self) -> dict:
         qbit_ok = await self._qbit.ping()
@@ -73,7 +80,8 @@ class ObservabilitySnapshot:
 
     async def health(self) -> dict:
         qbit_ok = await self._qbit.ping()
-        return {"healthy": qbit_ok, "qbittorrent": qbit_ok, "classifier": True}
+        classifier_ok = self._classifier is not None
+        return {"healthy": qbit_ok and classifier_ok, "qbittorrent": qbit_ok, "classifier": classifier_ok}
 
     def api_stats(self) -> dict:
         if self._stats is not None:

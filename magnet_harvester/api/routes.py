@@ -18,7 +18,7 @@ from magnet_harvester.context.app_context import (
     get_context,
 )
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity
-from magnet_harvester.models import CrawlRequest, DownloadRequest
+from magnet_harvester.models import CrawlRequest, DownloadRequest, QBitConfigUpdate
 from magnet_harvester.utils.auth import require_api_key
 
 router = APIRouter()
@@ -160,8 +160,14 @@ async def get_errors(
 ):
     if ctx.stats is not None:
         ctx.stats.record_api_call()
-    cat = ErrorCategory(category) if category else None
-    sev = ErrorSeverity(severity) if severity else None
+    try:
+        cat = ErrorCategory(category) if category else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid error category: {category}")
+    try:
+        sev = ErrorSeverity(severity) if severity else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid error severity: {severity}")
     eh = ctx.error_handler
     if eh is None:
         return {"errors": [], "stats": {}}
@@ -191,13 +197,15 @@ async def get_config(_=Depends(require_api_key)):
 
 @router.put("/api/config")
 async def update_config(
-    data: dict, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
+    data: QBitConfigUpdate,
+    ctx: AppContext = Depends(get_context),
+    _=Depends(require_api_key),
 ):
     try:
         return await _qbit_runtime(ctx).replace_qbit_config(
-            host=data.get("qbit_host"),
-            username=data.get("qbit_username"),
-            password=data.get("qbit_password"),
+            host=data.qbit_host,
+            username=data.qbit_username,
+            password=data.qbit_password,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

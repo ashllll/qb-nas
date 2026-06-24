@@ -267,7 +267,6 @@ async def test_replacement_target_works_without_app_context():
     pipeline = FakePipeline()
 
     target = QBitReplacementTarget(
-        lock=None,
         get_qbit=lambda: holder["qbit"],
         set_qbit=lambda value: holder.update(qbit=value),
         qbit_sync=sync,

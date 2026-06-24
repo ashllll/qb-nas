@@ -114,11 +114,13 @@ class ClipboardMonitor:
             try:
                 content = await asyncio.to_thread(pyperclip.paste)
                 if content and isinstance(content, str) and content != self._last_seen:
-                    self._last_seen = content
                     for item in self._magnet_sources.from_clipboard_text(content):
                         if not self._running:
                             break
                         await self._handle_item(item)
+                    else:
+                        # 只在所有 item 处理完后才标记已处理，避免中途 stop 导致剩余 magnet 永久丢失
+                        self._last_seen = content
             except Exception as e:
                 log.debug(f"剪贴板读取异常: {e}")
 

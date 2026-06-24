@@ -12,7 +12,7 @@ from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.crawler import CrawlPhase
 from magnet_harvester.transitions import MagnetItemTransitions
-from magnet_harvester.models import MagnetItem
+from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -117,9 +117,18 @@ class HarvestPipeline:
         async for msg in self._crawler.crawl(url, depth=depth):
             t = msg["type"]
             if t == "found":
-                item = MagnetItem(**msg["item"])
-                if await self._transitions.found(item):
-                    new_hashes.append(item.hash)
+                try:
+                    item = MagnetItem(**msg["item"])
+                    if await self._transitions.found(item):
+                        new_hashes.append(item.hash)
+                except Exception:
+                    log.exception("Crawl found handler failed for url=%s", url)
+                    await self._bus.emit(
+                        Event(
+                            EventType.CRAWL_ERROR,
+                            {"error": "found_handler_failed", "url": url, "msg": msg},
+                        )
+                    )
             elif t == "progress":
                 await self._bus.emit(Event(EventType.CRAWL_PROGRESS, msg))
             elif t == "error":
@@ -175,8 +184,8 @@ class HarvestPipeline:
         item = self._store.get(hash_key)
         if not item or not item.category:
             return
-        await self._transitions.download_submitting(hash_key)
         async with semaphore:
+            await self._transitions.download_submitting(hash_key)
             try:
                 ok = await self._qbit.add_magnet(
                     item.magnet, item.category, item.save_path or ""
@@ -192,7 +201,15 @@ class HarvestPipeline:
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]
-        items = [i for i in items if i is not None]
+        items = [
+            i for i in items
+            if i is not None and i.status not in {
+                TaskStatus.adding, TaskStatus.queued,
+                TaskStatus.downloading, TaskStatus.success,
+            }
+        ]
+        if not items:
+            return
         await self._stream_classify(items)
 
     async def download(self, hashes: List[str]):

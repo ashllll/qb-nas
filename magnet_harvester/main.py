@@ -14,11 +14,11 @@ from magnet_harvester.api.pages import STATIC_DIR, router as pages_router
 from magnet_harvester.api.routes import router as api_router
 from magnet_harvester.api.websocket import router as ws_router
 from magnet_harvester.config import settings
+from magnet_harvester.logger import configure_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
+configure_logging(
+    level=settings.LOG_LEVEL,
+    log_file=settings.LOG_FILE or None,
 )
 log = logging.getLogger(__name__)
 

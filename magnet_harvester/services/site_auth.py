@@ -76,7 +76,7 @@ def get_cookies_for_url(url: str, site_cookies: dict[str, str]) -> list[dict]:
             cookies = _parse_cookie_string(cookie_str, domain)
             if cookies:
                 log.info(f"已注入 {len(cookies)} 个 cookie 到 {domain}（匹配 {site_domain}）")
-            return cookies
+                return cookies
 
     return []
 

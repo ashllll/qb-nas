@@ -139,16 +139,16 @@ class QBitReplacementTarget:
     optional dependents needed to coordinate a replacement.
     """
 
-    lock: asyncio.Lock | None
     get_qbit: Callable[[], QBittorrentClient | None]
     set_qbit: Callable[[QBittorrentClient | None], None]
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     qbit_sync: QBitSyncLike | None = None
     pipeline: "HarvestPipeline" | None = None
 
     @classmethod
     def from_context(cls, ctx: AppContext) -> "QBitReplacementTarget":
         return cls(
-            lock=ctx.qbit_lock,
+            lock=ctx.qbit_lock or asyncio.Lock(),
             get_qbit=lambda: ctx.qbit,
             set_qbit=lambda value: setattr(ctx, "qbit", value),
             qbit_sync=ctx.qbit_sync,
@@ -157,8 +157,7 @@ class QBitReplacementTarget:
 
     async def replace(self, new_qbit: QBittorrentClient) -> None:
         """Hot-swap the active qBittorrent adapter and update dependents."""
-        lock = self.lock or asyncio.Lock()
-        async with lock:
+        async with self.lock:
             old_qbit = self.get_qbit()
             if self.qbit_sync is not None:
                 await self.qbit_sync.replace_qbit_client(new_qbit)
@@ -214,8 +213,8 @@ class QBitRuntime:
                 await new_qbit.close()
                 raise
 
-            await self.replace_qbit(new_qbit)
             self.settings.commit_qbit_config(candidate)
+            await self.replace_qbit(new_qbit)
             return {"status": "ok", "connected": True}
 
 

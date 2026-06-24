@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import ipaddress
 import shutil
 from dataclasses import dataclass
@@ -94,13 +95,24 @@ class Settings(BaseSettings):
     MIN_DISK_SPACE_GB: float = 10.0
     AUTO_CREATE_DIRS: bool = True
 
+    # ── 日志 ──
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: str = ""  # 留空仅控制台输出；填写路径则同时输出到滚动文件
+
+    # ── 存储 ──
+    STORE_BACKEND: str = "memory"  # "memory" 或 "sqlite"
+    STORE_DB_PATH: str = "data/magnet_items.db"
+
     API_KEY: str = ""  # 为空则禁用 API Key 认证（向后兼容）
     ALLOW_INSECURE_WRITE_API: bool = False
     CORS_ALLOWED_ORIGINS: str = ""  # 为空则禁用 CORS（只允许同域），逗号分隔多个域名
 
     SITE_COOKIES: str = "{}"  # JSON: {"domain": "cookie1=val1; cookie2=val2"}
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": str(Path(__file__).resolve().parent.parent / ".env"),
+        "env_file_encoding": "utf-8",
+    }
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -287,10 +299,16 @@ class Settings(BaseSettings):
             for key, value in remaining.items():
                 rendered.append(f"{key}={cls._format_env_value(value)}\n")
 
-        path.write_text("".join(rendered), encoding="utf-8")
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text("".join(rendered), encoding="utf-8")
+        os.replace(tmp, path)  # 原子替换，避免崩溃时文件损坏
 
     @staticmethod
     def _env_line_key(line: str) -> str | None:
+        # 解析范围：仅处理简单 KEY=VALUE 行。
+        # 不覆盖：export 前缀、引号包裹值、行内注释（# in value）、
+        # 多行值、变量展开（$VAR / ${VAR}）等高级 dotenv 语法。
+        # 这些场景在当前项目中不存在，保持简单即可。
         stripped = line.lstrip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             return None
@@ -303,7 +321,14 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _format_env_value(value: str) -> str:
-        escaped = value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+            .replace('"', '\\"')
+            .replace("$", "\\$")
+        )
         return f'"{escaped}"'
 
 

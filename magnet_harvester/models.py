@@ -37,6 +37,12 @@ class MagnetItem(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
+    @field_validator("progress")
+    @classmethod
+    def clamp_progress(cls, v: float) -> float:
+        """确保进度值在 0.0–100.0 范围内。"""
+        return max(0.0, min(float(v), 100.0))
+
 
 class CrawlRequest(BaseModel):
     url: str
@@ -61,6 +67,16 @@ class CrawlRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     hashes: List[str]
+
+
+class QBitConfigUpdate(BaseModel):
+    """qBittorrent 配置更新请求体，替换 routes.py 中的裸 dict。
+
+    所有字段可选：仅更新显式传入的字段。
+    """
+    qbit_host: Optional[str] = None
+    qbit_username: Optional[str] = None
+    qbit_password: Optional[str] = None
 
 
 # ── Metrics 接口 — 统一指标快照 ──────────────────────────
