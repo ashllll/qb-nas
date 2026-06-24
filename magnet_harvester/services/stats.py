@@ -28,6 +28,9 @@ class SystemStats:
     download_requests: int = 0
     api_calls: int = 0
     start_time: float = field(default_factory=time.time)
+    # 刻意使用 threading.Lock 而非 asyncio.Lock：
+    # 所有加锁操作均为同步 O(1) 整数递增，无 await 点，
+    # threading.Lock 可同时兼容 asyncio 和原生线程场景。
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_crawl(self):

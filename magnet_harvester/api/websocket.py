@@ -73,7 +73,14 @@ class WSBroadcaster:
             # 若客户端长时间无消息，反向代理/OS 可能断开空闲连接，
             # 客户端应自行维护定时 ping 间隔（推荐 30s）。
             while True:
-                await self.handle_client_message(ws, await ws.receive_text())
+                try:
+                    raw = await asyncio.wait_for(ws.receive_text(), timeout=300)
+                except asyncio.TimeoutError:
+                    # 5 分钟无消息 → 僵尸连接，主动关闭
+                    log.info("WebSocket 空闲超时（5 分钟），关闭连接")
+                    await ws.close(code=1000, reason="idle timeout")
+                    break
+                await self.handle_client_message(ws, raw)
         except WebSocketDisconnect:
             pass
         finally:

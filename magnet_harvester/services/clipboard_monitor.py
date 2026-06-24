@@ -53,6 +53,7 @@ class ClipboardMonitor:
         self._task: asyncio.Task | None = None
         self._last_seen: str | None = None
         self._magnet_count: int = 0
+        self._consecutive_failures: int = 0
 
     @property
     def is_running(self) -> bool:
@@ -116,8 +117,17 @@ class ClipboardMonitor:
         while not self._stop_event.is_set():
             try:
                 content = await asyncio.to_thread(pyperclip.paste)
+                self._consecutive_failures = 0
             except Exception as e:
-                log.warning(f"剪贴板读取异常: {e}")
+                self._consecutive_failures += 1
+                log.warning(f"剪贴板读取异常（连续 {self._consecutive_failures}/10）: {e}")
+                if self._consecutive_failures >= 10:
+                    log.error(
+                        "剪贴板读取连续失败 %d 次，休眠 30 秒后重试",
+                        self._consecutive_failures,
+                    )
+                    await asyncio.sleep(30)
+                    self._consecutive_failures = 0
                 content = None
 
             if content and isinstance(content, str) and content != self._last_seen:

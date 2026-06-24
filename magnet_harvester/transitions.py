@@ -83,8 +83,8 @@ class MagnetItemTransitions:
     async def classified(self, hash_key: str, result: dict):
         if not self._store.update(
             hash_key,
-            category=result["category"],
-            save_path=result["save_path"],
+            category=result.get("category", "其他"),
+            save_path=result.get("save_path", ""),
             status=TaskStatus.pending,
             progress=0.0,
             torrent_state=None,
@@ -243,8 +243,15 @@ class MagnetItemTransitions:
         return False
 
     async def cleared(self) -> int:
-        """清空全部 + ITEMS_CLEARED"""
+        """清空全部 + ITEMS_CLEARED
+
+        注意：count 读取和 clear() 之间存在经典 check-then-act 竞态窗口 ——
+        在 count 快照后、clear() 执行前，其他协程/线程可能并发写入新条目。
+        store 若未提供原子 clear_and_count()，此处以注释明确此已知竞态，
+        依赖后续 clear() 后的 >0 二次检查捕获漏网条目并告警。
+        """
         count = self._store.count
+        log.debug("cleared() 快照 count=%d，即将执行 clear()", count)
         self._store.clear()
         await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
         if self._store.count > 0:

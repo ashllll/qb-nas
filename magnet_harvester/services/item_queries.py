@@ -38,6 +38,7 @@ class ItemQueryExecutor:
         limit: int = 100,
         offset: int = 0,
     ) -> dict:
+        offset = min(offset, 10000)  # 硬上限，防止大 offset 导致内存 DoS
         fetch_limit = max(offset + limit, limit, 1)
         items = self._store.list(category=category, status=status, limit=fetch_limit)
         total = len(items)

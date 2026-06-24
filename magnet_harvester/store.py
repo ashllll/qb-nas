@@ -91,7 +91,8 @@ class InMemoryItemStore:
             return True
 
     def get(self, hash_key: str) -> Optional[MagnetItem]:
-        return self._items.get(hash_key)
+        with self._lock:
+            return self._items.get(hash_key)
 
     def update(self, hash_key: str, **fields) -> bool:
         """更新字段（category, save_path, status, error_msg 等）
@@ -136,11 +137,12 @@ class InMemoryItemStore:
     ) -> List[MagnetItem]:
         if limit <= 0:
             return []
-        return heapq.nsmallest(
-            limit,
-            self._iter_filtered_items(category=category, status=status),
-            key=_item_name_key,
-        )
+        with self._lock:
+            return heapq.nsmallest(
+                limit,
+                self._iter_filtered_items(category=category, status=status),
+                key=_item_name_key,
+            )
 
     def _iter_filtered_items(
         self,
@@ -156,18 +158,21 @@ class InMemoryItemStore:
 
     def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]:
         q = query.lower()
-        results = [i for i in self._items.values() if q in i.name.lower()]
+        with self._lock:
+            results = [i for i in self._items.values() if q in i.name.lower()]
         if limit is not None:
             return results[:limit]
         return results
 
     def get_pending(self) -> List[MagnetItem]:
-        return [i for i in self._items.values() if i.status == TaskStatus.pending and i.category]
+        with self._lock:
+            return [i for i in self._items.values() if i.status == TaskStatus.pending and i.category]
 
     def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         """支持通过 hash 前缀查找完整 hash（Agent 用）"""
         p = prefix.lower()
-        return [h for h in list(self._items.keys()) if h.lower().startswith(p)]
+        with self._lock:
+            return [h for h in self._items.keys() if h.lower().startswith(p)]
 
     # ── 统计 ──────────────────────────────
 
@@ -308,6 +313,12 @@ class SQLiteItemStore:
                 )
                 db.commit()
                 return db.total_changes > 0
+            except sqlite3.IntegrityError:
+                log.debug("sqlite: add(%s) 重复键", item.hash[:16])
+                return False
+            except sqlite3.OperationalError:
+                log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
+                return False
             except Exception:
                 log.warning("sqlite: add(%s) 失败", item.hash[:16], exc_info=True)
                 return False
@@ -484,6 +495,10 @@ class SQLiteItemStore:
                     )
                     if cur.rowcount > 0:
                         added += 1
+                except sqlite3.IntegrityError:
+                    log.debug("sqlite: add_batch 条目 %s 重复键", item.hash[:16] if item.hash else "?")
+                except sqlite3.OperationalError:
+                    log.error("sqlite: add_batch 条目 %s 数据库损坏", item.hash[:16] if item.hash else "?", exc_info=True)
                 except Exception:
                     log.warning("sqlite: add_batch 条目 %s 失败", item.hash[:16] if item.hash else "?", exc_info=True)
             db.commit()

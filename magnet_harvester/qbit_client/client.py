@@ -98,9 +98,9 @@ class QBittorrentClient:
     def _client(self):
         return self._transport._client
 
-    @_client.setter
-    def _client(self, value):
-        self._transport._client = value
+    async def replace_client(self) -> None:
+        """关闭旧的 httpx client，下次请求时传输层会惰性重建。"""
+        await self._transport.close()
 
     async def close(self):
         await self._transport.close()
@@ -248,7 +248,14 @@ class QBittorrentClient:
         # 对同一分类串行化，防止并发创建/编辑竞态；LRU 清理防无限增长
         if name not in self._category_locks:
             if len(self._category_locks) >= self.MAX_CATEGORY_LOCKS:
-                self._category_locks.popitem(last=False)
+                oldest_key, oldest_lock = next(iter(self._category_locks.items()))
+                if not oldest_lock.locked():
+                    self._category_locks.popitem(last=False)
+                else:
+                    log.warning(
+                        "分类锁 LRU 已达上限 (%d)，最旧锁 [%s] 仍被持有，跳过弹出",
+                        self.MAX_CATEGORY_LOCKS, oldest_key,
+                    )
             self._category_locks[name] = asyncio.Lock()
         self._category_locks.move_to_end(name)
         lock = self._category_locks[name]
