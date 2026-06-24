@@ -9,11 +9,15 @@ Used by HarvestPipeline during crawl→classify→download orchestration.
 
 from __future__ import annotations
 
+import logging
+
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
 from magnet_harvester.utils.serializers import item_payload
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
+
+log = logging.getLogger(__name__)
 
 
 class MagnetItemTransitions:
@@ -241,4 +245,6 @@ class MagnetItemTransitions:
         count = self._store.count
         self._store.clear()
         await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
+        if self._store.count > 0:
+            log.warning("cleared() 清空后 store 仍有 %d 个条目（并发写入）", self._store.count)
         return count

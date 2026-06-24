@@ -78,15 +78,17 @@ class InMemoryItemStore:
 
     def __init__(self):
         self._items: Dict[str, MagnetItem] = {}
+        self._lock = threading.Lock()
 
     # ── 核心操作 ──────────────────────────────
 
     def add(self, item: MagnetItem) -> bool:
         """添加条目，已存在返回 False（全局去重）"""
-        if item.hash in self._items:
-            return False
-        self._items[item.hash] = item
-        return True
+        with self._lock:
+            if item.hash in self._items:
+                return False
+            self._items[item.hash] = item
+            return True
 
     def get(self, hash_key: str) -> Optional[MagnetItem]:
         return self._items.get(hash_key)
@@ -97,30 +99,32 @@ class InMemoryItemStore:
         通过 Pydantic model_validate 重新验证，保持类型安全。
         如果任何字段非法或不存在，返回 False 且不修改原对象。
         """
-        item = self._items.get(hash_key)
-        if not item:
-            return False
+        with self._lock:
+            item = self._items.get(hash_key)
+            if not item:
+                return False
 
-        # 拒绝未知字段
-        unknown = [k for k in fields if k not in MagnetItem.model_fields]
-        if unknown:
-            return False
+            # 拒绝未知字段
+            unknown = [k for k in fields if k not in MagnetItem.model_fields]
+            if unknown:
+                return False
 
-        data = item.model_dump()
-        data.update(fields)
-        try:
-            new_item = MagnetItem.model_validate(data)
-        except ValidationError:
-            return False
+            data = item.model_dump()
+            data.update(fields)
+            try:
+                new_item = MagnetItem.model_validate(data)
+            except ValidationError:
+                return False
 
-        self._items[hash_key] = new_item
-        return True
+            self._items[hash_key] = new_item
+            return True
 
     def remove(self, hash_key: str) -> bool:
-        if hash_key in self._items:
-            del self._items[hash_key]
-            return True
-        return False
+        with self._lock:
+            if hash_key in self._items:
+                del self._items[hash_key]
+                return True
+            return False
 
     # ── 查询 ──────────────────────────────
 
@@ -169,34 +173,38 @@ class InMemoryItemStore:
 
     @property
     def count(self) -> int:
-        return len(self._items)
+        with self._lock:
+            return len(self._items)
 
     def stats(self) -> StoreStats:
-        s = StoreStats()
-        for item in self._items.values():
-            s.total += 1
-            cat = item.category or "未分类"
-            s.by_category[cat] = s.by_category.get(cat, 0) + 1
-            st = item.status.value
-            s.by_status[st] = s.by_status.get(st, 0) + 1
-            if item.status == TaskStatus.pending:
-                s.pending_count += 1
-        return s
+        with self._lock:
+            s = StoreStats()
+            for item in self._items.values():
+                s.total += 1
+                cat = item.category or "未分类"
+                s.by_category[cat] = s.by_category.get(cat, 0) + 1
+                st = item.status.value
+                s.by_status[st] = s.by_status.get(st, 0) + 1
+                if item.status == TaskStatus.pending:
+                    s.pending_count += 1
+            return s
 
     # ── 批量操作 ──────────────────────────────
 
     def add_batch(self, items: List[MagnetItem]) -> int:
         """批量添加，返回新增数量"""
-        pending: dict[str, MagnetItem] = {}
-        for item in items:
-            if item.hash in self._items or item.hash in pending:
-                continue
-            pending[item.hash] = item
-        self._items.update(pending)
-        return len(pending)
+        with self._lock:
+            pending: dict[str, MagnetItem] = {}
+            for item in items:
+                if item.hash in self._items or item.hash in pending:
+                    continue
+                pending[item.hash] = item
+            self._items.update(pending)
+            return len(pending)
 
     def clear(self):
-        self._items.clear()
+        with self._lock:
+            self._items.clear()
 
 
 # FakeStore — 测试用别名，与 InMemoryItemStore 逻辑相同

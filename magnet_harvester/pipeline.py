@@ -178,15 +178,21 @@ class HarvestPipeline:
 
     async def _download_items(self, hashes: List[str], concurrency: int = 3):
         semaphore = asyncio.Semaphore(concurrency)
-        await asyncio.gather(*(self._download_single_item(h, semaphore) for h in hashes))
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(self._download_single_item(h, semaphore) for h in hashes)),
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            log.warning("批量下载超时 (%d 条目)", len(hashes))
 
     async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
         item = self._store.get(hash_key)
         if not item or not item.category:
             return
         async with semaphore:
-            await self._transitions.download_submitting(hash_key)
             try:
+                await self._transitions.download_submitting(hash_key)
                 ok = await self._qbit.add_magnet(
                     item.magnet, item.category, item.save_path or ""
                 )
@@ -197,7 +203,10 @@ class HarvestPipeline:
                         hash_key, self._qbit.last_error or "qB 返回失败"
                     )
             except Exception as e:
-                await self._transitions.download_failed(hash_key, str(e))
+                try:
+                    await self._transitions.download_failed(hash_key, str(e))
+                except Exception as inner_e:
+                    log.error(f"download_failed 回调也失败: {inner_e}")
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]

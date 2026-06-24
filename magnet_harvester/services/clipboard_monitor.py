@@ -49,6 +49,7 @@ class ClipboardMonitor:
         self._poll_interval = poll_interval
         self._running = False
         self._stop_event = asyncio.Event()
+        self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._last_seen: str | None = None
         self._magnet_count: int = 0
@@ -63,11 +64,12 @@ class ClipboardMonitor:
 
     async def start(self):
         """启动剪贴板监控。"""
-        if self._running:
-            return
-        self._running = True
-        self._stop_event.clear()
-        self._task = BGTaskManager.spawn(self._run(), name="clipboard-monitor")
+        async with self._lock:
+            if self._running:
+                return
+            self._running = True
+            self._stop_event.clear()
+            self._task = BGTaskManager.spawn(self._run(), name="clipboard-monitor")
         await self._bus.emit(
             Event(
                 EventType.CLIPBOARD_STATUS,
@@ -81,17 +83,18 @@ class ClipboardMonitor:
 
     async def stop(self):
         """停止剪贴板监控。"""
-        if not self._running:
-            return
-        self._running = False
-        self._stop_event.set()
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        async with self._lock:
+            if not self._running:
+                return
+            self._running = False
+            self._stop_event.set()
+            if self._task:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+                self._task = None
         await self._bus.emit(
             Event(
                 EventType.CLIPBOARD_STATUS,
@@ -113,16 +116,21 @@ class ClipboardMonitor:
         while not self._stop_event.is_set():
             try:
                 content = await asyncio.to_thread(pyperclip.paste)
-                if content and isinstance(content, str) and content != self._last_seen:
-                    for item in self._magnet_sources.from_clipboard_text(content):
-                        if not self._running:
-                            break
-                        await self._handle_item(item)
-                    else:
-                        # 只在所有 item 处理完后才标记已处理，避免中途 stop 导致剩余 magnet 永久丢失
-                        self._last_seen = content
             except Exception as e:
-                log.debug(f"剪贴板读取异常: {e}")
+                log.warning(f"剪贴板读取异常: {e}")
+                content = None
+
+            if content and isinstance(content, str) and content != self._last_seen:
+                for item in self._magnet_sources.from_clipboard_text(content):
+                    if not self._running:
+                        break
+                    try:
+                        await self._handle_item(item)
+                    except Exception as e:
+                        log.error(f"剪贴板条目处理失败: {e}", exc_info=True)
+                else:
+                    # 只在所有 item 处理完后才标记已处理，避免中途 stop 导致剩余 magnet 永久丢失
+                    self._last_seen = content
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)

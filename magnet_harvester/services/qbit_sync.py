@@ -83,7 +83,10 @@ class QBitSyncLoop:
     async def stop(self):
         self._stop_event.set()
         if self._task:
-            await self._task
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
 
     async def replace_qbit_client(self, new_qbit: QBitSyncClient) -> None:
         """Align future sync polls with a newly committed qB adapter."""

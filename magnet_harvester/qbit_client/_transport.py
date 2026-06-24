@@ -179,13 +179,11 @@ class QBitTransport:
                     self._record_success()
                 return r
 
-            except httpx.TimeoutException as e:
+            except (httpx.TimeoutException, httpx.ConnectError,
+                    httpx.RemoteProtocolError, httpx.ReadError,
+                    httpx.WriteError) as e:
                 last_exception = e
-                await self._handle_network_retry(attempt, "请求超时", e)
-
-            except httpx.ConnectError as e:
-                last_exception = e
-                await self._handle_network_retry(attempt, "连接失败", e)
+                await self._handle_network_retry(attempt, "传输异常", e)
 
             except Exception as e:
                 last_exception = e

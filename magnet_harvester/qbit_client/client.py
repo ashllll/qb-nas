@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from typing import Dict, List, Optional
 
 import httpx
@@ -65,6 +66,8 @@ class _ClientSubmissionRecorder:
 
 
 class QBittorrentClient:
+    MAX_CATEGORY_LOCKS = 200  # 分类锁上限（qB 本身限制约 100 个）
+
     def __init__(self, config: QBitConfig):
         self._config = config
         self.host = self._config.host.rstrip("/")
@@ -80,10 +83,10 @@ class QBittorrentClient:
         self._ping_cache_ttl = 5.0
         self._last_ping_at = 0.0
         self._last_ping_result: bool | None = None
+        self._ping_lock = asyncio.Lock()
         self._cached_default_path: str | None = None
-        # 分类数量通常有限（qB 上限约 100 个），结合 ensure_category 的串行化
-        # 访问模式，_category_locks 不会无限增长，无需主动清理。
-        self._category_locks: dict[str, asyncio.Lock] = {}
+        # LRU 有界字典，防止异常/恶意分类名导致无限增长（上限 200）
+        self._category_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self.last_error: str | None = None
         self._sync_state = QBitSyncState()
         self._path_resolver = QBitPathResolver(
@@ -109,15 +112,20 @@ class QBittorrentClient:
         now = time.monotonic()
         if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
             return self._last_ping_result
-        try:
-            r = await self._req("GET", "/app/version")
-            ok = r.status_code == 200
-        except Exception as e:
-            log.warning(f"qBittorrent ping 失败: {e}")
-            ok = False
-        self._last_ping_at = time.monotonic()
-        self._last_ping_result = ok
-        return ok
+        async with self._ping_lock:
+            # 双重检查：获取锁期间缓存可能已被另一个协程填充
+            now = time.monotonic()
+            if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
+                return self._last_ping_result
+            try:
+                r = await self._req("GET", "/app/version")
+                ok = r.status_code == 200
+            except Exception as e:
+                log.warning(f"qBittorrent ping 失败: {e}")
+                ok = False
+            self._last_ping_at = time.monotonic()
+            self._last_ping_result = ok
+            return ok
 
     async def get_maindata(self, rid: int = 0) -> QBitApiObject:
         try:
@@ -229,8 +237,13 @@ class QBittorrentClient:
         return await self.get_default_save_path() or "/volume1/downloads"
 
     async def ensure_category(self, name: str, save_path: str, max_retries: int = 2):
-        # 对同一分类串行化，防止并发创建/编辑竞态
-        lock = self._category_locks.setdefault(name, asyncio.Lock())
+        # 对同一分类串行化，防止并发创建/编辑竞态；LRU 清理防无限增长
+        if name not in self._category_locks:
+            if len(self._category_locks) >= self.MAX_CATEGORY_LOCKS:
+                self._category_locks.popitem(last=False)
+            self._category_locks[name] = asyncio.Lock()
+        self._category_locks.move_to_end(name)
+        lock = self._category_locks[name]
         async with lock:
             for attempt in range(max_retries):
                 try:

@@ -74,13 +74,16 @@ def validate_crawl_url(url: str) -> bool:
     return True
 
 
-async def _resolve_host(hostname: str, port: int) -> list[str]:
+async def _resolve_host(hostname: str, port: int, timeout: float = 5.0) -> list[str]:
     loop = asyncio.get_running_loop()
-    records = await loop.getaddrinfo(
-        hostname,
-        port,
-        family=socket.AF_UNSPEC,
-        type=socket.SOCK_STREAM,
+    records = await asyncio.wait_for(
+        loop.getaddrinfo(
+            hostname,
+            port,
+            family=socket.AF_UNSPEC,
+            type=socket.SOCK_STREAM,
+        ),
+        timeout=timeout,
     )
     return list({record[4][0] for record in records})
 
