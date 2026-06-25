@@ -128,7 +128,10 @@ class WSBroadcaster:
 
     async def _send_control(self, ws: WebSocket, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, default=_json_serializer)
-        await ws.send_text(data)
+        try:
+            await ws.send_text(data)
+        except Exception:
+            pass
 
     async def _on_event(self, event: Event):
         if not self._active_ws:

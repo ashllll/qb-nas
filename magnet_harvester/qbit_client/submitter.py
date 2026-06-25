@@ -6,7 +6,9 @@ reasoned about independently of connection state and transport concerns.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Protocol
 
@@ -103,9 +105,8 @@ class MagnetSubmitter:
             log.warning("无法解析分类保存路径，使用 qB 默认路径")
 
         if self._fs_base_path:
-            (Path(self._fs_base_path) / _safe_fs_segment(category)).mkdir(
-                parents=True, exist_ok=True
-            )
+            dir_path = str(Path(self._fs_base_path) / _safe_fs_segment(category))
+            await asyncio.to_thread(os.makedirs, dir_path, exist_ok=True)
 
         try:
             category_ok = await self._gateway.ensure_category(category, category_save_path or "")

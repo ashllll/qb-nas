@@ -317,9 +317,6 @@ class SQLiteItemStore:
                 )
                 db.commit()
                 return db.total_changes > 0
-            except sqlite3.IntegrityError:
-                log.debug("sqlite: add(%s) 重复键", item.hash[:16])
-                return False
             except sqlite3.OperationalError:
                 log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
                 return False
@@ -499,8 +496,6 @@ class SQLiteItemStore:
                     )
                     if cur.rowcount > 0:
                         added += 1
-                except sqlite3.IntegrityError:
-                    log.debug("sqlite: add_batch 条目 %s 重复键", item.hash[:16] if item.hash else "?")
                 except sqlite3.OperationalError:
                     log.error("sqlite: add_batch 条目 %s 数据库损坏", item.hash[:16] if item.hash else "?", exc_info=True)
                 except Exception:
