@@ -12,7 +12,12 @@ async def require_api_key(request: Request, x_api_key: str | None = Header(None)
 
     If API_KEY is empty, authentication is disabled (backward compatible).
     """
-    ctx = request.app.state.ctx
+    ctx = getattr(request.app.state, "ctx", None)
+    if ctx is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service initializing",
+        )
     key = ctx.api_key.strip() if ctx.api_key else ""
     if not key:
         return

@@ -162,10 +162,12 @@ class QBitReplacementTarget:
             if self.qbit_sync is not None:
                 await self.qbit_sync.replace_qbit_client(new_qbit)
             self.set_qbit(new_qbit)
-            if self.pipeline is not None:
-                self.pipeline.replace_download_phase(new_qbit)
-            if old_qbit is not None:
-                await old_qbit.close()
+            try:
+                if self.pipeline is not None:
+                    self.pipeline.replace_download_phase(new_qbit)
+            finally:
+                if old_qbit is not None:
+                    await old_qbit.close()
 
 
 @dataclass

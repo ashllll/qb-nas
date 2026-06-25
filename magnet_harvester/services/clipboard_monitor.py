@@ -133,7 +133,8 @@ class ClipboardMonitor:
                             "剪贴板读取连续失败 %d 个周期，自动停止监控",
                             self._total_failure_cycles,
                         )
-                        self._running = False
+                        async with self._lock:
+                            self._running = False
                         break
                     log.error(
                         "剪贴板读取连续失败，休眠 30 秒后重试（第 %d/%d 个周期）",

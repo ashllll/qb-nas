@@ -21,7 +21,7 @@ async def test_emit_cancels_slow_subscribers():
 
     async def slow_subscriber(event):
         nonlocal slow_completed
-        await asyncio.sleep(2.0)  # 比 1s 超时更长
+        await asyncio.sleep(10.0)  # 远超 5s 超时
         slow_completed = True
 
     bus.subscribe(None, slow_subscriber)

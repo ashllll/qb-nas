@@ -51,7 +51,7 @@ Subscriber = Callable[[Event], Coroutine[object, object, None]]
 class _EventDelivery:
     """内部事件投递策略：并发 fan-out、超时取消、订阅者异常隔离。"""
 
-    def __init__(self, timeout: float = 1.0):
+    def __init__(self, timeout: float = 5.0):
         self._timeout = timeout
 
     async def deliver(
@@ -73,7 +73,7 @@ class _EventDelivery:
                 timeout=self._timeout,
             )
         except asyncio.TimeoutError:
-            log.debug("MessageBus: 订阅者处理超时，取消剩余任务")
+            log.warning("MessageBus: 订阅者处理超时（%.1fs），取消剩余任务", self._timeout)
             for task in tasks:
                 if not task.done():
                     task.cancel()

@@ -174,6 +174,7 @@ async def get_errors(
     severity: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     ctx: AppContext = Depends(get_context),
+    _=Depends(require_api_key),
 ):
     if ctx.stats is not None:
         ctx.stats.record_api_call()

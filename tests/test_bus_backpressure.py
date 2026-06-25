@@ -20,7 +20,7 @@ from magnet_harvester.bus import MessageBus, Event, EventType
 
 async def _slow_subscriber(event):
     """模拟慢订阅者"""
-    await asyncio.sleep(2.0)  # 很慢
+    await asyncio.sleep(10.0)  # 远超 5s 超时
 
 
 async def test_emit_does_not_block_on_slow_subscriber():
@@ -34,8 +34,8 @@ async def test_emit_does_not_block_on_slow_subscriber():
     await bus.emit(event)
     elapsed = time.time() - start
 
-    # 应在 1.5 秒内返回（超时机制），而不是等待慢订阅者的 2 秒
-    assert elapsed <= 1.5, f"emit() 被慢订阅者阻塞了 {elapsed:.1f} 秒"
+    # 应在 6 秒内返回（超时 5s + 缓冲），而不是等待慢订阅者的 10 秒
+    assert elapsed <= 6.0, f"emit() 被慢订阅者阻塞了 {elapsed:.1f} 秒"
 
 
 # ═══════════════════════════════════════════════════
@@ -81,7 +81,7 @@ async def test_emit_with_mixed_subscribers():
     await bus.emit(event)
     elapsed = time.time() - start
 
-    assert elapsed <= 1.5, f"emit() 被阻塞了 {elapsed:.1f} 秒"
+    assert elapsed <= 6.0, f"emit() 被阻塞了 {elapsed:.1f} 秒"
 
 
 if __name__ == "__main__":

@@ -29,6 +29,14 @@ def _item_name_key(item: MagnetItem) -> str:
     return item.name.lower()
 
 
+def _escape_like(s: str) -> str:
+    """转义 SQL LIKE 通配符 % 和 _，防止用户输入被解释为模式匹配。
+
+    ESCAPE '\\' 配合使用：先转义 \\，再转义 % 和 _。
+    """
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @dataclass
 class StoreStats:
     total: int = 0
@@ -66,7 +74,7 @@ class ItemStore(Protocol):
     def count(self) -> int: ...
     def stats(self) -> StoreStats: ...
     def add_batch(self, items: List[MagnetItem]) -> int: ...
-    def clear(self): ...
+    def clear(self) -> int: ...
 
 
 class InMemoryItemStore:
@@ -208,9 +216,11 @@ class InMemoryItemStore:
             self._items.update(pending)
             return len(pending)
 
-    def clear(self):
+    def clear(self) -> int:
         with self._lock:
+            count = len(self._items)
             self._items.clear()
+        return count
 
 
 # FakeStore — 测试用别名，与 InMemoryItemStore 逻辑相同
@@ -407,8 +417,8 @@ class SQLiteItemStore:
             return [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
 
     def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]:
-        q = f"%{query}%"
-        sql = "SELECT * FROM magnet_items WHERE LOWER(name) LIKE LOWER(?)"
+        q = f"%{_escape_like(query)}%"
+        sql = "SELECT * FROM magnet_items WHERE LOWER(name) LIKE LOWER(?) ESCAPE '\\'"
         params: tuple = (q,)
         if limit is not None:
             sql += " LIMIT ?"
@@ -503,7 +513,9 @@ class SQLiteItemStore:
             db.commit()
         return added
 
-    def clear(self):
+    def clear(self) -> int:
         with self._lock, self._connect() as db:
+            count = db.execute("SELECT COUNT(*) FROM magnet_items").fetchone()[0]
             db.execute("DELETE FROM magnet_items")
             db.commit()
+        return count

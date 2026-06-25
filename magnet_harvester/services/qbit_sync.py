@@ -18,6 +18,8 @@ from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
+_MAX_STORE_ITEMS = 50000
+
 
 class QBitSyncClient(Protocol):
     async def poll_torrent_snapshot(self) -> dict: ...
@@ -118,8 +120,8 @@ class QBitSyncLoop:
                 continue
             self._backoff.record_success()
 
-            all_items = store.list(limit=5000)
-            if len(all_items) >= 5000:
+            all_items = store.list(limit=_MAX_STORE_ITEMS)
+            if len(all_items) >= _MAX_STORE_ITEMS:
                 log.warning("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(all_items))
             tracked_items = [
                 item

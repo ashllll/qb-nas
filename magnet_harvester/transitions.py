@@ -245,14 +245,10 @@ class MagnetItemTransitions:
     async def cleared(self) -> int:
         """清空全部 + ITEMS_CLEARED
 
-        注意：count 读取和 clear() 之间存在经典 check-then-act 竞态窗口 ——
-        在 count 快照后、clear() 执行前，其他协程/线程可能并发写入新条目。
-        store 若未提供原子 clear_and_count()，此处以注释明确此已知竞态，
-        依赖后续 clear() 后的 >0 二次检查捕获漏网条目并告警。
+        store.clear() 现在原子化地返回清空前的条目数，消除了原先
+        count→clear 之间的 check-then-act 竞态窗口。
         """
-        count = self._store.count
-        log.debug("cleared() 快照 count=%d，即将执行 clear()", count)
-        self._store.clear()
+        count = self._store.clear()
         await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
         if self._store.count > 0:
             log.warning("cleared() 清空后 store 仍有 %d 个条目（并发写入）", self._store.count)
