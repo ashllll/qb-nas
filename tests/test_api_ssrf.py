@@ -9,12 +9,61 @@ import pytest
 from magnet_harvester.main import app
 from tests._client import asgi_client
 
+import magnet_harvester.assembly as assembly_module
+
+
+class _FakeCrawler:
+    """Minimal crawler double — avoids real crawl4ai/SQLite init."""
+
+    def __init__(self, config, site_auth=None):
+        self.max_depth = 3
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
+
+
+class _FakeQbit:
+    def __init__(self, config):
+        pass
+
+    async def ping(self):
+        return True
+
+    async def close(self):
+        pass
+
+    def get_stats(self):
+        return {}
+
+
+class _FakeSyncLoop:
+    def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None, poll_interval=2.0):
+        pass
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
+
+
+class _FakeBroadcaster:
+    def __init__(self, bus, store=None):
+        pass
+
 
 @pytest.fixture
 def client(monkeypatch):
     from magnet_harvester.config import settings
 
     monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
+    monkeypatch.setattr(assembly_module, "MagnetCrawler", _FakeCrawler)
+    monkeypatch.setattr(assembly_module, "QBittorrentClient", _FakeQbit)
+    monkeypatch.setattr(assembly_module, "QBitSyncLoop", _FakeSyncLoop)
+    monkeypatch.setattr(assembly_module, "WSBroadcaster", _FakeBroadcaster)
     with asgi_client(app) as c:
         yield c
 

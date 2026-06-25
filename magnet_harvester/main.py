@@ -42,13 +42,16 @@ async def lifespan(app: FastAPI):
 
     runtime = build_runtime()
     app.state.ctx = runtime.ctx
-    await runtime.start()
-    qbit_ok = await runtime.ctx.qbit.ping()
-    disk_info = settings.check_disk_space()
-    log.info(
-        f"Crawl4AI 已启动 | qB: {'在线' if qbit_ok else '离线'} "
-        f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
-    )
+    try:
+        await runtime.start()
+        qbit_ok = await runtime.ctx.qbit.ping()
+        disk_info = settings.check_disk_space()
+        log.info(
+            f"Crawl4AI 已启动 | qB: {'在线' if qbit_ok else '离线'} "
+            f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
+        )
+    except Exception:
+        log.warning("服务启动部分失败，继续以降级模式运行", exc_info=True)
 
     yield
 
