@@ -154,9 +154,13 @@ class HarvestPipeline:
         index_to_hash = {i: item.hash for i, item in enumerate(items)}
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
-        await asyncio.gather(
-            *[self._transitions.classification_started(item.hash) for item in items]
+        results = await asyncio.gather(
+            *[self._transitions.classification_started(item.hash) for item in items],
+            return_exceptions=True,
         )
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                log.error("classification_started failed for %s: %s", items[i].hash, result)
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
         result_events: list[asyncio.Task] = []
@@ -173,16 +177,25 @@ class HarvestPipeline:
 
         await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
         if result_events:
-            await asyncio.gather(*result_events)
+            results = await asyncio.gather(*result_events, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    log.error("classified result event failed: %s", result)
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
 
     async def _download_items(self, hashes: List[str], concurrency: int = 3):
         semaphore = asyncio.Semaphore(concurrency)
         try:
-            await asyncio.wait_for(
-                asyncio.gather(*(self._download_single_item(h, semaphore) for h in hashes)),
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    *(self._download_single_item(h, semaphore) for h in hashes),
+                    return_exceptions=True,
+                ),
                 timeout=60.0,
             )
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    log.error("下载失败 %s: %s", hashes[i], result)
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
 

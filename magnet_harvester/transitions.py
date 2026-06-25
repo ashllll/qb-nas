@@ -96,7 +96,7 @@ class MagnetItemTransitions:
                 EventType.CLASSIFY_DONE,
                 {
                     "hash": hash_key,
-                    "category": result["category"],
+                    "category": result.get("category", "其他"),
                     "confidence": result.get("confidence", ""),
                     "reason": result.get("reason", ""),
                 },
