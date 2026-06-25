@@ -71,6 +71,7 @@ def get_cookies_for_url(url: str, site_cookies: dict[str, str]) -> list[dict]:
     for site_domain, cookie_str in site_cookies.items():
         if not site_domain or not cookie_str:
             continue
+        site_domain = site_domain.lstrip(".")
         # 域名匹配：精确匹配或子域名匹配
         if domain == site_domain or domain.endswith("." + site_domain):
             cookies = _parse_cookie_string(cookie_str, domain)

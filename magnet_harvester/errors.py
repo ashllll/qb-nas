@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 import traceback
@@ -63,8 +64,6 @@ class ErrorHandler:
         self._lock = threading.Lock()
 
     def _generate_error_id(self, category: ErrorCategory, message: str) -> str:
-        import hashlib
-
         key = f"{category.value}:{message}"
         return hashlib.sha256(key.encode()).hexdigest()[:12]
 

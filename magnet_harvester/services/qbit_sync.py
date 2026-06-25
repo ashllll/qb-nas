@@ -118,9 +118,12 @@ class QBitSyncLoop:
                 continue
             self._backoff.record_success()
 
+            all_items = store.list(limit=5000)
+            if len(all_items) >= 5000:
+                log.warning("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(all_items))
             tracked_items = [
                 item
-                for item in store.list(limit=2000)  # 上限防全表扫描，活跃种子通常远小于此值
+                for item in all_items
                 if item.status
                 in {
                     TaskStatus.adding,

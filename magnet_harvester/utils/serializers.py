@@ -9,11 +9,13 @@ from magnet_harvester.models import MagnetItem
 
 def item_summary(item) -> dict:
     """Short form for list views — truncated hash."""
+    if item is None:
+        return {"hash": "", "name": "", "category": "", "status": ""}
     return {
-        "hash": item.hash[:16],
-        "name": item.name,
-        "category": item.category,
-        "status": item.status.value,
+        "hash": item.hash[:16] if item.hash else "",
+        "name": item.name or "",
+        "category": item.category or "",
+        "status": item.status.value if item.status else "",
     }
 
 

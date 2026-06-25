@@ -185,6 +185,8 @@ class QBitTransport:
                 last_exception = e
                 await self._handle_network_retry(attempt, "传输异常", e)
 
+            except RuntimeError:
+                raise
             except Exception as e:
                 last_exception = e
                 log.error(f"qBittorrent 请求异常: {e}")

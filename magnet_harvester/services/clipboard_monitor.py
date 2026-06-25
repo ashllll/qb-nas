@@ -31,6 +31,8 @@ log = logging.getLogger(__name__)
 class ClipboardMonitor:
     """轮询系统剪贴板，检测新磁力链接自动分类并下载。"""
 
+    MAX_CONSECUTIVE_FAILURES: int = 10
+
     def __init__(
         self,
         bus: MessageBus,
@@ -122,8 +124,8 @@ class ClipboardMonitor:
                 self._consecutive_failures = 0
             except Exception as e:
                 self._consecutive_failures += 1
-                log.warning(f"剪贴板读取异常（连续 {self._consecutive_failures}/10）: {e}")
-                if self._consecutive_failures >= 10:
+                log.warning(f"剪贴板读取异常（连续 {self._consecutive_failures}/{self.MAX_CONSECUTIVE_FAILURES}）: {e}")
+                if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
                     self._consecutive_failures = 0
                     self._total_failure_cycles += 1
                     if self._total_failure_cycles >= self._max_failure_cycles:

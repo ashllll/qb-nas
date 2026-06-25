@@ -130,7 +130,7 @@ class HarvestPipeline:
                         item = MagnetItem(**msg["item"])
                         if await self._transitions.found(item):
                             new_hashes.append(item.hash)
-                    except Exception:
+                    except Exception as exc:
                         log.exception(
                             "Crawl found handler failed for url=%s, raw_item=%s",
                             url,
@@ -160,7 +160,7 @@ class HarvestPipeline:
 
             if auto_download:
                 await self._download_items(new_hashes)
-        except Exception:
+        except Exception as exc:
             log.exception("execute() 顶层异常 url=%s depth=%d", url, depth)
             await self._bus.emit(
                 Event(
@@ -198,7 +198,7 @@ class HarvestPipeline:
 
         try:
             await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
-        except Exception:
+        except Exception as exc:
             log.exception("classify_stream_batch 失败, 取消 %d 个 spawned task", len(result_events))
             for t in result_events:
                 if not t.done():
