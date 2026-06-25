@@ -101,7 +101,8 @@ class QBitSyncLoop:
             except asyncio.TimeoutError:
                 pass
 
-            qbit = self._qbit
+            async with self._lock:
+                qbit = self._qbit
             store = self._store
             if qbit is None or store is None:
                 continue

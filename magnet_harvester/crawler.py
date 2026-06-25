@@ -235,6 +235,8 @@ class MagnetCrawler:
         seen: Set[str],
         depth: int,
     ) -> None:
+        # 保存 CrawlMetrics 引用, 防止 finally 块中 ContextVar 已被外层设为 None
+        metrics: CrawlMetrics = self._current_metrics()
         try:
             await events.put(
                 {"type": "progress", "msg": "正在爬取...", "url": root_url, "depth": depth}
@@ -250,11 +252,9 @@ class MagnetCrawler:
             raise
         except Exception as exc:
             log.exception("深爬会话异常: %s", exc)
-            metrics = self._current_metrics()
             metrics.errors += 1
             await events.put({"type": "error", "msg": str(exc), "url": root_url})
         finally:
-            metrics = self._current_metrics()
             await events.put(
                 {
                     "type": "done",

@@ -112,6 +112,7 @@ class InMemoryItemStore:
 
             data = item.model_dump()
             data.update(fields)
+            data["updated_at"] = datetime.now()
             try:
                 new_item = MagnetItem.model_validate(data)
             except ValidationError:
@@ -320,7 +321,7 @@ class SQLiteItemStore:
                 log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
                 return False
             except Exception:
-                log.warning("sqlite: add(%s) 失败", item.hash[:16], exc_info=True)
+                log.exception("sqlite: add(%s) 未知错误", item.hash[:16])
                 return False
 
     def get(self, hash_key: str) -> Optional[MagnetItem]:
@@ -500,7 +501,7 @@ class SQLiteItemStore:
                 except sqlite3.OperationalError:
                     log.error("sqlite: add_batch 条目 %s 数据库损坏", item.hash[:16] if item.hash else "?", exc_info=True)
                 except Exception:
-                    log.warning("sqlite: add_batch 条目 %s 失败", item.hash[:16] if item.hash else "?", exc_info=True)
+                    log.exception("sqlite: add_batch 条目 %s 未知错误", item.hash[:16] if item.hash else "?")
             db.commit()
         return added
 

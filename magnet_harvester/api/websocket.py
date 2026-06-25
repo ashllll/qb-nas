@@ -80,6 +80,15 @@ class WSBroadcaster:
                     log.info("WebSocket 空闲超时（5 分钟），关闭连接")
                     await ws.close(code=1000, reason="idle timeout")
                     break
+                except WebSocketDisconnect:
+                    break
+                except Exception as exc:
+                    log.warning(
+                        "WebSocket receive_text() 异常，断开连接: %s",
+                        exc,
+                        exc_info=True,
+                    )
+                    break
                 await self.handle_client_message(ws, raw)
         except WebSocketDisconnect:
             pass

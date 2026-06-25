@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from magnet_harvester.config import settings
 from magnet_harvester.models import TaskStatus
 
 
@@ -75,7 +76,7 @@ class ObservabilitySnapshot:
             "items_count": self._store.count,
             "tracked_downloads": tracked,
             "qbit_stats": self._qbit.get_stats(),
-            "disk_space": {},
+            "disk_space": settings.check_disk_space(),
         }
 
     async def health(self) -> dict:

@@ -54,12 +54,12 @@ class _ClientSubmissionRecorder:
     def succeeded(self) -> None:
         self._client.stats.total_success += 1
         self._client.stats.consecutive_failures = 0
-        self._client.stats.last_success_time = time.time()
+        self._client.stats.last_success_time = time.monotonic()
 
     def failed(self) -> None:
         self._client.stats.total_failed += 1
         self._client.stats.consecutive_failures += 1
-        self._client.stats.last_failure_time = time.time()
+        self._client.stats.last_failure_time = time.monotonic()
 
     def error(self, message: str | None) -> None:
         self._client.last_error = message
@@ -87,6 +87,7 @@ class QBittorrentClient:
         self._cached_default_path: str | None = None
         # LRU 有界字典，防止异常/恶意分类名导致无限增长（上限 200）
         self._category_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
+        self._category_locks_guard = asyncio.Lock()
         self.last_error: str | None = None
         self._sync_state = QBitSyncState()
         self._path_resolver = QBitPathResolver(
@@ -246,19 +247,26 @@ class QBittorrentClient:
 
     async def ensure_category(self, name: str, save_path: str, max_retries: int = 2):
         # 对同一分类串行化，防止并发创建/编辑竞态；LRU 清理防无限增长
-        if name not in self._category_locks:
-            if len(self._category_locks) >= self.MAX_CATEGORY_LOCKS:
-                oldest_key, oldest_lock = next(iter(self._category_locks.items()))
-                if not oldest_lock.locked():
-                    self._category_locks.popitem(last=False)
-                else:
-                    log.warning(
-                        "分类锁 LRU 已达上限 (%d)，最旧锁 [%s] 仍被持有，跳过弹出",
-                        self.MAX_CATEGORY_LOCKS, oldest_key,
-                    )
-            self._category_locks[name] = asyncio.Lock()
-        self._category_locks.move_to_end(name)
-        lock = self._category_locks[name]
+        async with self._category_locks_guard:
+            if name not in self._category_locks:
+                if len(self._category_locks) >= self.MAX_CATEGORY_LOCKS:
+                    # 从旧到新遍历，弹出第一个未被持有的锁
+                    evicted = False
+                    for key, lock in self._category_locks.items():
+                        if not lock.locked():
+                            del self._category_locks[key]
+                            evicted = True
+                            log.debug("LRU evicted category lock [%s]", key)
+                            break
+                    if not evicted:
+                        log.error(
+                            "分类锁 LRU 已达上限 (%d) 且全部被持有，拒绝创建 [%s]",
+                            self.MAX_CATEGORY_LOCKS, name,
+                        )
+                        return False
+                self._category_locks[name] = asyncio.Lock()
+            self._category_locks.move_to_end(name)
+            lock = self._category_locks[name]
         async with lock:
             for attempt in range(max_retries):
                 try:

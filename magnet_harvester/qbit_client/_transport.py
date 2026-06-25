@@ -76,11 +76,11 @@ class QBitTransport:
 
     def _record_success(self) -> None:
         self._stats.consecutive_failures = 0
-        self._stats.last_success_time = time.time()
+        self._stats.last_success_time = time.monotonic()
 
     def _record_failure(self) -> None:
         self._stats.consecutive_failures += 1
-        self._stats.last_failure_time = time.time()
+        self._stats.last_failure_time = time.monotonic()
 
     async def _login(self, force: bool = False) -> bool:
         if not force and self._authenticated:
@@ -181,7 +181,7 @@ class QBitTransport:
 
             except (httpx.TimeoutException, httpx.ConnectError,
                     httpx.RemoteProtocolError, httpx.ReadError,
-                    httpx.WriteError) as e:
+                    httpx.WriteError, httpx.PoolTimeout) as e:
                 last_exception = e
                 await self._handle_network_retry(attempt, "传输异常", e)
 

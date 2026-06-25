@@ -129,9 +129,9 @@ async def start_crawl(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
         log.exception("start_crawl 异常")
-        raise HTTPException(status_code=503, detail="服务暂时不可用")
+        raise HTTPException(status_code=503, detail=f"服务暂时不可用: {exc}")
     if result.get("status") == "error":
         raise HTTPException(status_code=503, detail=result.get("reason", "action failed"))
     return result

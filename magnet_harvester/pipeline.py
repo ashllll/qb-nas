@@ -79,7 +79,15 @@ class HarvestPipeline:
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     def _spawn(self, coro, *, name: str | None = None) -> asyncio.Task:
-        return BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
+        task = BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
+        # 确保 task 始终携带 task_id (UUID), 不要回退到 task.get_name()
+        if not hasattr(task, "task_id"):
+            import uuid as _uuid
+            try:
+                task.task_id = _uuid.uuid4().hex
+            except AttributeError:
+                pass
+        return task
 
     async def start_crawl(
         self,
@@ -96,12 +104,12 @@ class HarvestPipeline:
         except ValueError as exc:
             return {"status": "error", "reason": str(exc)}
 
-        effective_depth = max(1, min(int(depth), 3, self.max_crawl_depth()))
+        effective_depth = max(1, min(int(depth), self.max_crawl_depth()))
         task = self._spawn(
             self.execute(url, depth=effective_depth, auto_download=auto_download),
             name=f"crawl:{url[:40]}",
         )
-        task_id = getattr(task, "task_id", task.get_name())
+        task_id = task.task_id
         return {"status": "started", "url": url, "depth": effective_depth, "task_id": task_id}
 
     async def admit_crawl_target(self, url: str) -> str:
@@ -111,42 +119,55 @@ class HarvestPipeline:
         return self._crawler.max_depth
 
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False):
-        await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))
-        new_hashes: List[str] = []
+        try:
+            await self._bus.emit(Event(EventType.CRAWL_START, {"url": url}))
+            new_hashes: List[str] = []
 
-        async for msg in self._crawler.crawl(url, depth=depth):
-            t = msg["type"]
-            if t == "found":
-                try:
-                    item = MagnetItem(**msg["item"])
-                    if await self._transitions.found(item):
-                        new_hashes.append(item.hash)
-                except Exception:
-                    log.exception("Crawl found handler failed for url=%s", url)
-                    await self._bus.emit(
-                        Event(
-                            EventType.CRAWL_ERROR,
-                            {"error": "found_handler_failed", "url": url, "msg": msg},
+            async for msg in self._crawler.crawl(url, depth=depth):
+                t = msg["type"]
+                if t == "found":
+                    try:
+                        item = MagnetItem(**msg["item"])
+                        if await self._transitions.found(item):
+                            new_hashes.append(item.hash)
+                    except Exception:
+                        log.exception(
+                            "Crawl found handler failed for url=%s, raw_item=%s",
+                            url,
+                            msg.get("item", msg),
                         )
+                        await self._bus.emit(
+                            Event(
+                                EventType.CRAWL_ERROR,
+                                {"error": "found_handler_failed", "url": url, "msg": msg},
+                            )
+                        )
+                elif t == "progress":
+                    await self._bus.emit(Event(EventType.CRAWL_PROGRESS, msg))
+                elif t == "error":
+                    await self._bus.emit(Event(EventType.CRAWL_ERROR, msg))
+                elif t == "done":
+                    await self._bus.emit(
+                        Event(EventType.CRAWL_DONE, {"total": msg["total"], "url": msg["url"]})
                     )
-            elif t == "progress":
-                await self._bus.emit(Event(EventType.CRAWL_PROGRESS, msg))
-            elif t == "error":
-                await self._bus.emit(Event(EventType.CRAWL_ERROR, msg))
-            elif t == "done":
-                await self._bus.emit(
-                    Event(EventType.CRAWL_DONE, {"total": msg["total"], "url": msg["url"]})
+
+            if not new_hashes:
+                return
+
+            items = [self._store.get(h) for h in new_hashes]
+            items = [i for i in items if i is not None]
+            await self._stream_classify(items)
+
+            if auto_download:
+                await self._download_items(new_hashes)
+        except Exception:
+            log.exception("execute() 顶层异常 url=%s depth=%d", url, depth)
+            await self._bus.emit(
+                Event(
+                    EventType.CRAWL_ERROR,
+                    {"error": "pipeline_execute_failed", "url": url, "depth": depth},
                 )
-
-        if not new_hashes:
-            return
-
-        items = [self._store.get(h) for h in new_hashes]
-        items = [i for i in items if i is not None]
-        await self._stream_classify(items)
-
-        if auto_download:
-            await self._download_items(new_hashes)
+            )
 
     async def _stream_classify(self, items: List[MagnetItem]):
         if not items:
@@ -175,7 +196,17 @@ class HarvestPipeline:
                     )
                 )
 
-        await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
+        try:
+            await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
+        except Exception:
+            log.exception("classify_stream_batch 失败, 取消 %d 个 spawned task", len(result_events))
+            for t in result_events:
+                if not t.done():
+                    t.cancel()
+            # 等待已取消的 task 完成, 避免资源泄漏
+            if result_events:
+                await asyncio.gather(*result_events, return_exceptions=True)
+            raise
         if result_events:
             results = await asyncio.gather(*result_events, return_exceptions=True)
             for result in results:

@@ -54,6 +54,8 @@ class ClipboardMonitor:
         self._last_seen: str | None = None
         self._magnet_count: int = 0
         self._consecutive_failures: int = 0
+        self._total_failure_cycles: int = 0
+        self._max_failure_cycles: int = 5
 
     @property
     def is_running(self) -> bool:
@@ -122,12 +124,21 @@ class ClipboardMonitor:
                 self._consecutive_failures += 1
                 log.warning(f"剪贴板读取异常（连续 {self._consecutive_failures}/10）: {e}")
                 if self._consecutive_failures >= 10:
+                    self._consecutive_failures = 0
+                    self._total_failure_cycles += 1
+                    if self._total_failure_cycles >= self._max_failure_cycles:
+                        log.error(
+                            "剪贴板读取连续失败 %d 个周期，自动停止监控",
+                            self._total_failure_cycles,
+                        )
+                        self._running = False
+                        break
                     log.error(
-                        "剪贴板读取连续失败 %d 次，休眠 30 秒后重试",
-                        self._consecutive_failures,
+                        "剪贴板读取连续失败，休眠 30 秒后重试（第 %d/%d 个周期）",
+                        self._total_failure_cycles,
+                        self._max_failure_cycles,
                     )
                     await asyncio.sleep(30)
-                    self._consecutive_failures = 0
                 content = None
 
             if content and isinstance(content, str) and content != self._last_seen:
