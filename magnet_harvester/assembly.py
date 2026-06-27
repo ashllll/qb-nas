@@ -49,11 +49,26 @@ class AppRuntime:
         await self.sync_loop.start()
 
     async def stop(self):
-        await self.sync_loop.stop()
+        try:
+            await self.sync_loop.stop()
+        except Exception as e:
+            log.error("sync_loop 关闭失败: %s", e)
+
         if self.ctx.bg_manager is not None:
-            await self.ctx.bg_manager.shutdown()
-        await self.ctx.crawler.stop()
-        await self.ctx.qbit.close()
+            try:
+                await self.ctx.bg_manager.shutdown()
+            except Exception as e:
+                log.error("bg_manager 关闭失败: %s", e)
+
+        try:
+            await self.ctx.crawler.stop()
+        except Exception as e:
+            log.error("crawler 关闭失败: %s", e)
+
+        try:
+            await self.ctx.qbit.close()
+        except Exception as e:
+            log.error("qbit 关闭失败: %s", e)
 
 
 # ── Sub-builders ────────────────────────────────

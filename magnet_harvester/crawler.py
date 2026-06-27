@@ -288,7 +288,10 @@ class MagnetCrawler:
         items = self._extract_page_items(result, source_url=result_url)
         new_count = 0
         for item in items:
-            hash_key = item["hash"]
+            hash_key = item.get("hash")
+            if hash_key is None:
+                log.warning("跳过缺少 hash 字段的 item: %s", item)
+                continue
             async with self._seen_lock:
                 if hash_key in seen:
                     continue

@@ -96,9 +96,11 @@ class ClipboardMonitor:
             if self._task:
                 self._task.cancel()
                 try:
-                    await self._task
+                    await asyncio.wait_for(self._task, timeout=5.0)
                 except asyncio.CancelledError:
                     pass
+                except asyncio.TimeoutError:
+                    log.warning("剪贴板监控任务未能在 5 秒内取消，继续关闭流程")
                 self._task = None
         await self._bus.emit(
             Event(
