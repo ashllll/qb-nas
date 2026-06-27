@@ -104,6 +104,12 @@ class MagnetItemTransitions:
         )
         await self._emit_item_changed(hash_key)
 
+    async def classification_failed(self, hash_key: str, error_msg: str):
+        """分类失败时回退状态到 pending，以便后续重试。"""
+        if not self._store.update(hash_key, status=TaskStatus.pending, error_msg=error_msg):
+            return
+        await self._emit_item_changed(hash_key)
+
     async def download_submitting(self, hash_key: str):
         item = self._store.get(hash_key)
         if item is None:

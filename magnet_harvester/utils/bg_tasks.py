@@ -89,8 +89,12 @@ class BGTaskManager:
                 )
             except asyncio.TimeoutError:
                 log.error(
-                    "后台任务关闭超时（%d 个任务未在 10 秒内完成），强制跳过", len(tasks)
+                    "后台任务关闭超时（%d 个任务未在 10 秒内完成），强制取消并等待", len(tasks)
                 )
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     def _on_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)

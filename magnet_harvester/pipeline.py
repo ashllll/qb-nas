@@ -185,8 +185,10 @@ class HarvestPipeline:
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
         result_events: list[asyncio.Task] = []
+        received_indices: set[int] = set()
 
         def on_result(index: int, result: dict):
+            received_indices.add(index)
             h = index_to_hash.get(index)
             if h:
                 result_events.append(
@@ -206,6 +208,17 @@ class HarvestPipeline:
             # 等待已取消的 task 完成, 避免资源泄漏
             if result_events:
                 await asyncio.gather(*result_events, return_exceptions=True)
+            # 对未收到分类回调的 item 回退到 pending 状态，避免永久停留在 classifying
+            for i, item in enumerate(items):
+                if i not in received_indices:
+                    try:
+                        await self._transitions.classification_failed(item.hash, str(exc))
+                    except Exception as rollback_exc:
+                        log.error(
+                            "classification_failed rollback 失败 for %s: %s",
+                            item.hash,
+                            rollback_exc,
+                        )
             raise
         if result_events:
             results = await asyncio.gather(*result_events, return_exceptions=True)
@@ -225,8 +238,12 @@ class HarvestPipeline:
                 timeout=60.0,
             )
             for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    log.error("下载失败 %s: %s", hashes[i], result)
+                if isinstance(result, BaseException):
+                    if isinstance(result, asyncio.CancelledError):
+                        log.warning("下载取消 %s，回退状态", hashes[i])
+                        await self._transitions.download_failed(hashes[i], "下载被取消")
+                    else:
+                        log.error("下载失败 %s: %s", hashes[i], result)
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
 

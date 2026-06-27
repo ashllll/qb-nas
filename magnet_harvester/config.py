@@ -170,11 +170,11 @@ class Settings(BaseSettings):
 
     def update_qbit(
         self, host: str | None = None, username: str | None = None, password: str | None = None
-    ):
+    ) -> Optional[str]:
         """动态更新 qB 配置（由前端配置面板调用）
 
         返回:
-            True — 更新成功
+            None — 更新成功
             str  — 错误信息（验证失败）
         """
         try:
@@ -182,7 +182,7 @@ class Settings(BaseSettings):
         except ValueError as exc:
             return str(exc)
         self.commit_qbit_config(candidate)
-        return True
+        return None
 
     def build_qbit_config(
         self,

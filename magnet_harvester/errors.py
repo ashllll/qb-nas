@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import logging
 import threading
@@ -126,7 +127,7 @@ class ErrorHandler:
         limit: int = 50,
     ) -> List[ErrorRecord]:
         with self._lock:
-            errors = list(self._errors.values())
+            errors = [copy.copy(e) for e in self._errors.values()]
         if category:
             errors = [e for e in errors if e.category == category]
         if severity:

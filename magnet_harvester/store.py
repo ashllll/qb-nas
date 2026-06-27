@@ -317,7 +317,7 @@ class SQLiteItemStore:
         with self._lock, self._connect() as db:
             row = self._item_to_row(item)
             try:
-                db.execute(
+                cursor = db.execute(
                     """INSERT OR IGNORE INTO magnet_items
                        (hash, name, magnet, size, source_url, category, save_path,
                         status, progress, torrent_state, error_msg, created_at, updated_at)
@@ -326,7 +326,7 @@ class SQLiteItemStore:
                     row,
                 )
                 db.commit()
-                return db.total_changes > 0
+                return cursor.rowcount > 0
             except sqlite3.OperationalError:
                 log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
                 return False

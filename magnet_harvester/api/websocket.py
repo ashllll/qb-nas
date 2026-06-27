@@ -131,7 +131,7 @@ class WSBroadcaster:
         try:
             await ws.send_text(data)
         except Exception:
-            pass
+            log.debug("_send_control send_text 失败（连接可能已断开）", exc_info=True)
 
     async def _on_event(self, event: Event):
         if not self._active_ws:
@@ -164,8 +164,25 @@ class WSBroadcaster:
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    ctx = getattr(getattr(ws, "app", None), "state", None)
-    broadcaster = getattr(getattr(ctx, "ctx", None), "broadcaster", None)
+    app = getattr(ws, "app", None)
+    if app is None:
+        log.error("WebSocket 连接被拒绝：ws.app 缺失")
+        await ws.accept()
+        await ws.close(code=1011, reason="app not available")
+        return
+    app_state = getattr(app, "state", None)
+    if app_state is None:
+        log.error("WebSocket 连接被拒绝：app.state 缺失")
+        await ws.accept()
+        await ws.close(code=1011, reason="app.state not available")
+        return
+    ctx = getattr(app_state, "ctx", None)
+    if ctx is None:
+        log.error("WebSocket 连接被拒绝：ctx 缺失")
+        await ws.accept()
+        await ws.close(code=1011, reason="context not available")
+        return
+    broadcaster = getattr(ctx, "broadcaster", None)
     if broadcaster:
         await broadcaster.handle_connection(ws)
     else:
