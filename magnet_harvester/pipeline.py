@@ -208,9 +208,10 @@ class HarvestPipeline:
             # 等待已取消的 task 完成, 避免资源泄漏
             if result_events:
                 await asyncio.gather(*result_events, return_exceptions=True)
-            # 对所有 item 回退到 pending 状态，避免永久停留在 classifying
-            # classification_failed 对非 classifying 状态是幂等的，因此无条件调用
+            # 只回退尚未完成分类回调的条目，避免覆盖已完成条目的 error_msg
             for i, item in enumerate(items):
+                if i < len(result_events) and result_events[i].done() and not result_events[i].exception():
+                    continue
                 try:
                     await self._transitions.classification_failed(item.hash, str(exc))
                 except Exception as rollback_exc:
@@ -247,11 +248,17 @@ class HarvestPipeline:
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
             for h in hashes:
-                await self._transitions.download_failed(h, "下载超时")
+                item = self._store.get(h)
+                if item and item.status in {TaskStatus.pending, TaskStatus.adding}:
+                    await self._transitions.download_failed(h, "下载超时")
 
     async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
         item = self._store.get(hash_key)
-        if not item or not item.category:
+        if not item:
+            return
+        if not item.category:
+            log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
+            await self._transitions.download_failed(hash_key, "分类结果缺少 category")
             return
         async with semaphore:
             try:
@@ -278,6 +285,7 @@ class HarvestPipeline:
             if i is not None and i.status not in {
                 TaskStatus.adding, TaskStatus.queued,
                 TaskStatus.downloading, TaskStatus.success,
+                TaskStatus.classifying,
             }
         ]
         if not items:

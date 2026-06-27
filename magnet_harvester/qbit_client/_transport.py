@@ -184,7 +184,7 @@ class QBitTransport:
                     await asyncio.sleep(delay)
                     continue
 
-                if r.status_code < 400:
+                if r.status_code == 200:
                     self._record_success()
                 return r
 

@@ -24,6 +24,8 @@ from magnet_harvester.utils.auth import require_api_key
 
 log = logging.getLogger(__name__)
 
+VALID_CATEGORIES = {"电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"}
+
 router = APIRouter()
 
 
@@ -96,6 +98,11 @@ async def get_items(
                 detail=f"Invalid status: {status}. "
                 f"Valid values: {[v.value for v in TaskStatus]}",
             )
+    if category is not None and category not in VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid category: {category}. Valid values: {sorted(VALID_CATEGORIES)}",
+        )
     if ctx.stats is not None:
         ctx.stats.record_api_call()
     return _item_queries(ctx).page_items(
@@ -227,7 +234,7 @@ async def update_config(
         )
     except ValueError as exc:
         log.error("配置验证失败: %s", exc)
-        raise HTTPException(status_code=422, detail="配置验证失败") from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except OSError as exc:
         log.error("qBittorrent 配置持久化失败: %s", exc)
         raise HTTPException(status_code=500, detail="qBittorrent 配置持久化失败") from exc

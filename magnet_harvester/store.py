@@ -308,7 +308,9 @@ class SQLiteItemStore:
             if "updated_at" in d and isinstance(d["updated_at"], str):
                 d["updated_at"] = datetime.fromisoformat(d["updated_at"])
             return MagnetItem(**d)
-        except (ValidationError, ValueError, TypeError):
+        except (ValidationError, ValueError, TypeError) as e:
+            hash_val = d.get("hash", "unknown")
+            log.error("sqlite 行反序列化失败 hash=%s: %s", hash_val, e)
             return None
 
     # ── 核心操作 ──────────────────────────────

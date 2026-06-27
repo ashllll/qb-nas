@@ -75,15 +75,15 @@ class ClipboardMonitor:
             self._running = True
             self._stop_event.clear()
             self._task = BGTaskManager.spawn(self._run(), name="clipboard-monitor")
-        await self._bus.emit(
-            Event(
-                EventType.CLIPBOARD_STATUS,
-                {
-                    "running": True,
-                    "magnet_count": self._magnet_count,
-                },
+            await self._bus.emit(
+                Event(
+                    EventType.CLIPBOARD_STATUS,
+                    {
+                        "running": True,
+                        "magnet_count": self._magnet_count,
+                    },
+                )
             )
-        )
         log.info("剪贴板监控已启动")
 
     async def stop(self):
@@ -102,15 +102,15 @@ class ClipboardMonitor:
                 except asyncio.TimeoutError:
                     log.warning("剪贴板监控任务未能在 5 秒内取消，继续关闭流程")
                 self._task = None
-        await self._bus.emit(
-            Event(
-                EventType.CLIPBOARD_STATUS,
-                {
-                    "running": False,
-                    "magnet_count": self._magnet_count,
-                },
+            await self._bus.emit(
+                Event(
+                    EventType.CLIPBOARD_STATUS,
+                    {
+                        "running": False,
+                        "magnet_count": self._magnet_count,
+                    },
+                )
             )
-        )
         log.info("剪贴板监控已停止")
 
     async def shutdown(self):
