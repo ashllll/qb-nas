@@ -19,7 +19,7 @@ from magnet_harvester.api.routes import router
 from magnet_harvester.api.websocket import router as ws_router, WSBroadcaster
 from magnet_harvester.bus import MessageBus as RealMessageBus, NullBus, Event, EventType
 from magnet_harvester.classifier.local_classifier import LocalClassifier
-from magnet_harvester.context.app_context import AppContext
+from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.services.item_queries import ItemQueryExecutor
@@ -246,19 +246,25 @@ def make_test_app(
     _broadcaster = WSBroadcaster(bus=_bus, store=_store)
 
     ctx = AppContext(
-        store=_store,
-        bus=_bus,
-        pipeline=_pipeline,
-        crawler=_crawler,
-        classifier=_classifier,
-        qbit=_qbit,
-        bg_manager=_bg_manager,
-        action_executor=_action_executor,
-        broadcaster=_broadcaster,
-        item_queries=ItemQueryExecutor(store=_store),
-        item_transitions=_transitions,
-        error_handler=_error_handler,
-        stats=stats or FakeStats(),
+        core=CoreServices(
+            store=_store,
+            bus=_bus,
+            pipeline=_pipeline,
+            crawler=_crawler,
+            classifier=_classifier,
+            qbit=_qbit,
+        ),
+        app_services=AppServices(
+            action_executor=_action_executor,
+            broadcaster=_broadcaster,
+            item_queries=ItemQueryExecutor(store=_store),
+        ),
+        runtime=RuntimeState(
+            bg_manager=_bg_manager,
+            item_transitions=_transitions,
+            error_handler=_error_handler,
+            stats=stats or FakeStats(),
+        ),
     )
     app = FastAPI()
     app.state.ctx = ctx

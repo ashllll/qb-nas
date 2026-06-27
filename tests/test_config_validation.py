@@ -116,7 +116,7 @@ def test_security_posture_allows_explicit_insecure_development_override():
 
 async def test_replace_qbit_closes_old_client():
     """替换 qBittorrent 客户端时，旧客户端应被关闭"""
-    from magnet_harvester.context.app_context import AppContext, RuntimeContext
+    from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, RuntimeState
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.config import QBitConfig
 
@@ -126,13 +126,15 @@ async def test_replace_qbit_closes_old_client():
 
     # 创建最小 AppContext
     ctx = AppContext(
-        store=None,
-        bus=None,
-        pipeline=None,
-        crawler=None,
-        classifier=None,
-        qbit=old_qbit,
-        stats=None,
+        core=CoreServices(
+            store=None,
+            bus=None,
+            pipeline=None,
+            crawler=None,
+            classifier=None,
+            qbit=old_qbit,
+        ),
+        runtime=RuntimeState(stats=None),
     )
     runtime = RuntimeContext(ctx)
 
@@ -144,7 +146,7 @@ async def test_replace_qbit_closes_old_client():
 
 
 async def test_replace_qbit_updates_download_state_sync():
-    from magnet_harvester.context.app_context import AppContext, RuntimeContext
+    from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, RuntimeState
 
     class FakeQbit:
         def __init__(self):
@@ -164,13 +166,15 @@ async def test_replace_qbit_updates_download_state_sync():
     new_qbit = FakeQbit()
     sync = FakeSync()
     ctx = AppContext(
-        store=None,
-        bus=None,
-        pipeline=None,
-        crawler=None,
-        classifier=None,
-        qbit=old_qbit,
-        qbit_sync=sync,
+        core=CoreServices(
+            store=None,
+            bus=None,
+            pipeline=None,
+            crawler=None,
+            classifier=None,
+            qbit=old_qbit,
+        ),
+        runtime=RuntimeState(qbit_sync=sync),
     )
 
     await RuntimeContext(ctx).replace_qbit(new_qbit)

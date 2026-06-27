@@ -14,7 +14,13 @@ from magnet_harvester.api.websocket import WSBroadcaster
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.classifier import LocalClassifier
 from magnet_harvester.config import settings
-from magnet_harvester.context.app_context import AppContext, QBitRuntime
+from magnet_harvester.context.app_context import (
+    AppContext,
+    AppServices,
+    CoreServices,
+    QBitRuntime,
+    RuntimeState,
+)
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.errors import error_handler
 from magnet_harvester.transitions import MagnetItemTransitions
@@ -159,24 +165,30 @@ def build_runtime() -> AppRuntime:
     )
 
     ctx = AppContext(
-        store=store,
-        bus=bus,
-        pipeline=pipeline,
-        crawler=crawler,
-        classifier=classifier,
-        qbit=qbit,
-        api_key=settings.API_KEY,
-        stats=stats,
-        bg_manager=bg_manager,
-        broadcaster=broadcaster,
-        action_executor=action_executor,
-        qbit_sync=sync_loop,
-        qbit_lock=qbit_lock,
-        clipboard_monitor=clipboard_monitor,
-        error_handler=error_handler,
-        item_transitions=transitions,
-        observability=observability,
-        item_queries=queries,
+        core=CoreServices(
+            store=store,
+            bus=bus,
+            pipeline=pipeline,
+            crawler=crawler,
+            classifier=classifier,
+            qbit=qbit,
+        ),
+        app_services=AppServices(
+            action_executor=action_executor,
+            observability=observability,
+            item_queries=queries,
+            clipboard_monitor=clipboard_monitor,
+            broadcaster=broadcaster,
+        ),
+        runtime=RuntimeState(
+            api_key=settings.API_KEY,
+            stats=stats,
+            bg_manager=bg_manager,
+            qbit_lock=qbit_lock,
+            error_handler=error_handler,
+            item_transitions=transitions,
+            qbit_sync=sync_loop,
+        ),
     )
     # QBitRuntime 持有 ctx 回引用，与 AppContext 形成循环引用。
     # 这是已知的刻意设计：QBitRuntime 需要访问 AppContext 的运行时组件

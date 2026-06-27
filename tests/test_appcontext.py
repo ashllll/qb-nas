@@ -16,7 +16,7 @@ from tests._client import asgi_client
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem
-from magnet_harvester.context.app_context import AppContext, RuntimeContext, get_context
+from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, get_context
 
 
 def _make_test_context() -> AppContext:
@@ -37,7 +37,9 @@ def _make_test_context() -> AppContext:
         crawler=crawler, classifier=classifier, qbit=qbit, store=store, bus=bus
     )
     return AppContext(
-        store=store, bus=bus, pipeline=pipeline, crawler=crawler, classifier=classifier, qbit=qbit
+        core=CoreServices(
+            store=store, bus=bus, pipeline=pipeline, crawler=crawler, classifier=classifier, qbit=qbit
+        ),
     )
 
 
@@ -330,10 +332,17 @@ def test_main_module_does_not_expose_legacy_runtime_globals():
 
 
 def test_appcontext_runtime_service_slots_are_not_typed_as_any():
-    hints = AppContext.__annotations__
+    from magnet_harvester.context.app_context import RuntimeState, AppServices
 
-    for field_name in ("stats", "bg_manager", "broadcaster", "action_executor", "qbit_lock"):
-        assert "Any" not in str(hints[field_name]), field_name
+    # 运行时状态字段在 RuntimeState 上
+    runtime_hints = RuntimeState.__annotations__
+    for field_name in ("stats", "bg_manager", "qbit_lock"):
+        assert "Any" not in str(runtime_hints[field_name]), f"RuntimeState.{field_name}"
+
+    # 用户面向服务字段在 AppServices 上
+    app_hints = AppServices.__annotations__
+    for field_name in ("broadcaster", "action_executor"):
+        assert "Any" not in str(app_hints[field_name]), f"AppServices.{field_name}"
 
 
 def test_runtime_service_constructor_contracts_are_not_typed_as_any():

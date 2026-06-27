@@ -14,7 +14,7 @@ from tests._client import asgi_client
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
 from magnet_harvester.config import QBitConfig
-from magnet_harvester.context.app_context import AppContext, QBitRuntime
+from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState, QBitRuntime
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
@@ -205,19 +205,25 @@ def _make_app():
             self.config = config
 
     ctx = AppContext(
-        store=store,
-        bus=NullBus(),
-        pipeline=pipeline,
-        crawler=None,
-        classifier=classifier,
-        qbit=qbit,
-        stats=stats,
-        bg_manager=bg_manager,
-        action_executor=action_executor,
-        error_handler=error_handler,
-        item_transitions=transitions,
-        observability=observability,
-        item_queries=item_queries,
+        core=CoreServices(
+            store=store,
+            bus=NullBus(),
+            pipeline=pipeline,
+            crawler=None,
+            classifier=classifier,
+            qbit=qbit,
+        ),
+        app_services=AppServices(
+            action_executor=action_executor,
+            observability=observability,
+            item_queries=item_queries,
+        ),
+        runtime=RuntimeState(
+            stats=stats,
+            bg_manager=bg_manager,
+            error_handler=error_handler,
+            item_transitions=transitions,
+        ),
     )
     ctx.qbit_runtime = QBitRuntime(
         ctx=ctx,

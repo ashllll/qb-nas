@@ -9,12 +9,14 @@ import sys
 import os
 import asyncio
 
+import httpx
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import QBitConfig
-from magnet_harvester.context.app_context import AppContext, QBitReplacementTarget, QBitRuntime
+from magnet_harvester.context.app_context import AppContext, CoreServices, QBitReplacementTarget, QBitRuntime, RuntimeState
+from magnet_harvester.qbit_client._transport import QBitTransport
 
 
 class FakeQbit:
@@ -74,13 +76,15 @@ class FakeSync:
 
 def _make_runtime(*, old_qbit=None, settings=None, factory=None):
     ctx = AppContext(
-        store=None,
-        bus=None,
-        pipeline=FakePipeline(),
-        crawler=None,
-        classifier=None,
-        qbit=old_qbit,
-        qbit_sync=FakeSync(),
+        core=CoreServices(
+            store=None,
+            bus=None,
+            pipeline=FakePipeline(),
+            crawler=None,
+            classifier=None,
+            qbit=old_qbit,
+        ),
+        runtime=RuntimeState(qbit_sync=FakeSync()),
     )
     return QBitRuntime(
         ctx=ctx,
@@ -279,6 +283,88 @@ async def test_replacement_target_works_without_app_context():
     assert sync.qbit is new_qbit
     assert pipeline.replaced_qbit is new_qbit
     assert old_qbit.closed is True
+
+
+async def test_replace_tolerates_close_failure():
+    """旧客户端 close() 抛出异常时，replace() 仍成功完成。"""
+    class BrokenQbit(FakeQbit):
+        async def close(self) -> None:
+            raise RuntimeError("close failed")
+
+    old_qbit = BrokenQbit(QBitConfig(host="http://old:8080"))
+    new_qbit = FakeQbit(QBitConfig(host="http://new:8080"))
+    holder = {"qbit": old_qbit}
+    sync = FakeSync()
+    pipeline = FakePipeline()
+
+    target = QBitReplacementTarget(
+        get_qbit=lambda: holder["qbit"],
+        set_qbit=lambda value: holder.update(qbit=value),
+        qbit_sync=sync,
+        pipeline=pipeline,
+    )
+
+    await target.replace(new_qbit)
+
+    assert holder["qbit"] is new_qbit
+    assert sync.qbit is new_qbit
+    assert pipeline.replaced_qbit is new_qbit
+
+
+async def test_replace_with_same_instance_does_not_close():
+    """自替换守卫：传入同一个客户端实例时不会调用 close()。"""
+    qbit = FakeQbit(QBitConfig(host="http://same:8080"))
+    holder = {"qbit": qbit}
+    sync = FakeSync()
+    pipeline = FakePipeline()
+
+    target = QBitReplacementTarget(
+        get_qbit=lambda: holder["qbit"],
+        set_qbit=lambda value: holder.update(qbit=value),
+        qbit_sync=sync,
+        pipeline=pipeline,
+    )
+
+    await target.replace(qbit)
+
+    assert holder["qbit"] is qbit
+    assert sync.qbit is qbit
+    assert pipeline.replaced_qbit is qbit
+    assert qbit.closed is False  # 不应被关闭
+
+
+async def test_transport_close_clears_client_on_aclose_failure():
+    """即使 aclose() 抛出异常，_client 也应被置为 None。"""
+    class BrokenClient:
+        is_closed = False
+        cookies = httpx.Cookies()
+
+        async def aclose(self):
+            raise RuntimeError("network error")
+
+        async def post(self, url, **kw):
+            raise NotImplementedError
+
+        async def request(self, method, url, **kw):
+            raise NotImplementedError
+
+    class DummyStats:
+        consecutive_failures = 0
+        last_success_time = 0
+        last_failure_time = 0
+
+    transport = QBitTransport(
+        host="http://localhost:8080",
+        username="user",
+        password="pass",
+        stats=DummyStats(),
+    )
+    transport._client = BrokenClient()
+
+    await transport.close()
+
+    assert transport._client is None
+    assert transport._authenticated is False
 
 
 if __name__ == "__main__":
