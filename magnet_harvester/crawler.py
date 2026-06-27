@@ -143,9 +143,11 @@ class MagnetCrawler:
         return max(1, min(int(depth), self._config.max_depth))
 
     def _current_metrics(self) -> CrawlMetrics:
-        metrics = self._session_metrics.get() or self._metrics
+        # 若 session_metrics 为 None（如 finally 块中 ContextVar 已清理），返回默认值。
+        metrics = self._session_metrics.get()
         if metrics is None:
-            raise RuntimeError("crawl metrics are only available during a Crawl session")
+            log.warning("crawl metrics unavailable outside Crawl session, using defaults")
+            return CrawlMetrics()
         return metrics
 
     async def start(self):
@@ -233,6 +235,8 @@ class MagnetCrawler:
         seen: Set[str],
         depth: int,
     ) -> None:
+        # 保存 CrawlMetrics 引用, 防止 finally 块中 ContextVar 已被外层设为 None
+        metrics: CrawlMetrics = self._current_metrics()
         try:
             await events.put(
                 {"type": "progress", "msg": "正在爬取...", "url": root_url, "depth": depth}
@@ -248,11 +252,9 @@ class MagnetCrawler:
             raise
         except Exception as exc:
             log.exception("深爬会话异常: %s", exc)
-            metrics = self._current_metrics()
             metrics.errors += 1
             await events.put({"type": "error", "msg": str(exc), "url": root_url})
         finally:
-            metrics = self._current_metrics()
             await events.put(
                 {
                     "type": "done",

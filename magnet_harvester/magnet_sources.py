@@ -10,6 +10,8 @@ from magnet_harvester.magnet_parser import extract_from_text
 def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
     """Filter crawler results to the configured resolution keywords."""
     allowed_lower = {a.lower() for a in allowed if a}
+    if not allowed_lower:
+        return items
     return [it for it in items if any(ar in it.get("name", "").lower() for ar in allowed_lower)]
 
 
@@ -35,9 +37,11 @@ class MagnetSourceExtractor:
     @staticmethod
     def _content_sources(contents: Iterable[object | None]) -> list[str]:
         sources: list[str] = []
+        seen: set[str] = set()
         for content in contents:
             if content:
                 content_text = str(content)
-                if content_text not in sources:
+                if content_text not in seen:
+                    seen.add(content_text)
                     sources.append(content_text)
         return sources

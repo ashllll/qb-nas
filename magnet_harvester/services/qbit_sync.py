@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
-from magnet_harvester.bus import MessageBus
+from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import TaskStatus
 from magnet_harvester.store import ItemStore
@@ -17,6 +17,8 @@ from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
+
+_MAX_STORE_ITEMS = 50000
 
 
 class QBitSyncClient(Protocol):
@@ -83,7 +85,10 @@ class QBitSyncLoop:
     async def stop(self):
         self._stop_event.set()
         if self._task:
-            await self._task
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
 
     async def replace_qbit_client(self, new_qbit: QBitSyncClient) -> None:
         """Align future sync polls with a newly committed qB adapter."""
@@ -98,28 +103,42 @@ class QBitSyncLoop:
             except asyncio.TimeoutError:
                 pass
 
-            qbit = self._qbit
+            async with self._lock:
+                qbit = self._qbit
             store = self._store
             if qbit is None or store is None:
                 continue
 
-            async with self._lock:
-                if qbit is not self._qbit:
-                    continue
-                try:
-                    snapshot = await qbit.poll_torrent_snapshot()
-                    removed_hashes = qbit.take_recently_removed()
-                except Exception as e:
-                    self._backoff.record_failure()
-                    log.debug(
-                        "qB 状态同步失败，将退避到 %.1fs 后重试: %s", self._backoff.next_delay(), e
-                    )
-                    continue
-                self._backoff.record_success()
+            try:
+                snapshot = await qbit.poll_torrent_snapshot()
+                removed_hashes = qbit.take_recently_removed()
+            except Exception as e:
+                self._backoff.record_failure()
+                log.debug(
+                    "qB 状态同步失败，将退避到 %.1fs 后重试: %s", self._backoff.next_delay(), e
+                )
+                continue
+            self._backoff.record_success()
 
+            all_items = store.list(limit=_MAX_STORE_ITEMS)
+            if len(all_items) >= _MAX_STORE_ITEMS:
+                log.error("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(all_items))
+                await self._bus.emit(
+                    Event(
+                        EventType.ERROR,
+                        {
+                            "error": "store_limit_reached",
+                            "message": (
+                                f"tracked items 达到截断上限 {_MAX_STORE_ITEMS}，"
+                                "超过上限的 item 将不被同步"
+                            ),
+                            "count": len(all_items),
+                        },
+                    )
+                )
             tracked_items = [
                 item
-                for item in store.list(limit=store.count)
+                for item in all_items
                 if item.status
                 in {
                     TaskStatus.adding,

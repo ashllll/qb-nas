@@ -31,6 +31,8 @@ log = logging.getLogger(__name__)
 class ClipboardMonitor:
     """轮询系统剪贴板，检测新磁力链接自动分类并下载。"""
 
+    MAX_CONSECUTIVE_FAILURES: int = 10
+
     def __init__(
         self,
         bus: MessageBus,
@@ -49,9 +51,13 @@ class ClipboardMonitor:
         self._poll_interval = poll_interval
         self._running = False
         self._stop_event = asyncio.Event()
+        self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._last_seen: str | None = None
         self._magnet_count: int = 0
+        self._consecutive_failures: int = 0
+        self._total_failure_cycles: int = 0
+        self._max_failure_cycles: int = 5
 
     @property
     def is_running(self) -> bool:
@@ -63,11 +69,12 @@ class ClipboardMonitor:
 
     async def start(self):
         """启动剪贴板监控。"""
-        if self._running:
-            return
-        self._running = True
-        self._stop_event.clear()
-        self._task = BGTaskManager.spawn(self._run(), name="clipboard-monitor")
+        async with self._lock:
+            if self._running:
+                return
+            self._running = True
+            self._stop_event.clear()
+            self._task = BGTaskManager.spawn(self._run(), name="clipboard-monitor")
         await self._bus.emit(
             Event(
                 EventType.CLIPBOARD_STATUS,
@@ -81,17 +88,18 @@ class ClipboardMonitor:
 
     async def stop(self):
         """停止剪贴板监控。"""
-        if not self._running:
-            return
-        self._running = False
-        self._stop_event.set()
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        async with self._lock:
+            if not self._running:
+                return
+            self._running = False
+            self._stop_event.set()
+            if self._task:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+                self._task = None
         await self._bus.emit(
             Event(
                 EventType.CLIPBOARD_STATUS,
@@ -113,14 +121,40 @@ class ClipboardMonitor:
         while not self._stop_event.is_set():
             try:
                 content = await asyncio.to_thread(pyperclip.paste)
-                if content and isinstance(content, str) and content != self._last_seen:
-                    self._last_seen = content
-                    for item in self._magnet_sources.from_clipboard_text(content):
-                        if not self._running:
-                            break
-                        await self._handle_item(item)
+                self._consecutive_failures = 0
             except Exception as e:
-                log.debug(f"剪贴板读取异常: {e}")
+                self._consecutive_failures += 1
+                log.warning(f"剪贴板读取异常（连续 {self._consecutive_failures}/{self.MAX_CONSECUTIVE_FAILURES}）: {e}")
+                if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    self._consecutive_failures = 0
+                    self._total_failure_cycles += 1
+                    if self._total_failure_cycles >= self._max_failure_cycles:
+                        log.error(
+                            "剪贴板读取连续失败 %d 个周期，自动停止监控",
+                            self._total_failure_cycles,
+                        )
+                        async with self._lock:
+                            self._running = False
+                        break
+                    log.error(
+                        "剪贴板读取连续失败，休眠 30 秒后重试（第 %d/%d 个周期）",
+                        self._total_failure_cycles,
+                        self._max_failure_cycles,
+                    )
+                    await asyncio.sleep(30)
+                content = None
+
+            if content and isinstance(content, str) and content != self._last_seen:
+                for item in self._magnet_sources.from_clipboard_text(content):
+                    if not self._running:
+                        break
+                    try:
+                        await self._handle_item(item)
+                    except Exception as e:
+                        log.error(f"剪贴板条目处理失败: {e}", exc_info=True)
+                else:
+                    # 只在所有 item 处理完后才标记已处理，避免中途 stop 导致剩余 magnet 永久丢失
+                    self._last_seen = content
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)

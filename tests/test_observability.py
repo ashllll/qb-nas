@@ -6,6 +6,7 @@ from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.services.observability import ObservabilitySnapshot
 from magnet_harvester.services.stats import SystemStats
 from magnet_harvester.store import FakeStore
+from tests.fixtures import FakeClassifier
 
 
 class FakeQbit:
@@ -68,10 +69,17 @@ def test_api_stats_combines_stats_with_runtime_context():
 
 
 def test_health_reports_qbit_connectivity():
-    snapshot = ObservabilitySnapshot(store=FakeStore(), qbit=FakeQbit(online=False))
+    snapshot = ObservabilitySnapshot(
+        store=FakeStore(), qbit=FakeQbit(online=False), classifier=FakeClassifier()
+    )
 
     import asyncio
 
     result = asyncio.run(snapshot.health())
 
     assert result == {"healthy": False, "qbittorrent": False, "classifier": True}
+
+    # 无 classifier 时应报告 classifier: False
+    snapshot_no_classifier = ObservabilitySnapshot(store=FakeStore(), qbit=FakeQbit(online=False))
+    result2 = asyncio.run(snapshot_no_classifier.health())
+    assert result2["classifier"] is False

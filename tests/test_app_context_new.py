@@ -10,19 +10,21 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
-from magnet_harvester.context.app_context import AppContext, RuntimeContext, get_context
+from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, get_context
 
 
 def test_appcontext_holds_all_deps():
     store = FakeStore()
     bus = NullBus()
     ctx = AppContext(
-        store=store,
-        bus=bus,
-        pipeline=None,
-        crawler=None,
-        classifier=None,
-        qbit=None,
+        core=CoreServices(
+            store=store,
+            bus=bus,
+            pipeline=None,
+            crawler=None,
+            classifier=None,
+            qbit=None,
+        ),
     )
     assert ctx.store is store
     assert ctx.bus is bus
@@ -39,12 +41,14 @@ def test_get_context_from_request():
 
     store = FakeStore()
     ctx = AppContext(
-        store=store,
-        bus=NullBus(),
-        pipeline=None,
-        crawler=None,
-        classifier=None,
-        qbit=None,
+        core=CoreServices(
+            store=store,
+            bus=NullBus(),
+            pipeline=None,
+            crawler=None,
+            classifier=None,
+            qbit=None,
+        ),
     )
 
     req = FakeRequest()
@@ -75,12 +79,14 @@ def test_runtime_context_replace_qbit_updates_pipeline():
     pipeline._qbit = old_qbit
 
     app_ctx = AppContext(
-        store=FakeStore(),
-        bus=NullBus(),
-        pipeline=pipeline,
-        crawler=None,
-        classifier=None,
-        qbit=old_qbit,
+        core=CoreServices(
+            store=FakeStore(),
+            bus=NullBus(),
+            pipeline=pipeline,
+            crawler=None,
+            classifier=None,
+            qbit=old_qbit,
+        ),
     )
     runtime = RuntimeContext(ctx=app_ctx)
 

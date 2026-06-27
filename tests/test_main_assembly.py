@@ -22,7 +22,7 @@ def test_runtime_shutdown_waits_for_tasks_before_closing_resources():
     import asyncio
 
     from magnet_harvester.assembly import AppRuntime
-    from magnet_harvester.context.app_context import AppContext
+    from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeState
 
     order = []
 
@@ -43,13 +43,15 @@ def test_runtime_shutdown_waits_for_tasks_before_closing_resources():
             order.append("qbit")
 
     ctx = AppContext(
-        store=None,
-        bus=None,
-        pipeline=None,
-        crawler=Crawler(),
-        classifier=None,
-        qbit=Qbit(),
-        bg_manager=Tasks(),
+        core=CoreServices(
+            store=None,
+            bus=None,
+            pipeline=None,
+            crawler=Crawler(),
+            classifier=None,
+            qbit=Qbit(),
+        ),
+        runtime=RuntimeState(bg_manager=Tasks()),
     )
 
     asyncio.run(AppRuntime(ctx=ctx, sync_loop=SyncLoop()).stop())

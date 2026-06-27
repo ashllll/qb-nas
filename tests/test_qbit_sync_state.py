@@ -81,7 +81,8 @@ async def test_poll_tracks_removed_torrents_and_drops_them_from_snapshot():
 
 
 @pytest.mark.asyncio
-async def test_poll_clears_recently_removed_when_no_removals():
+async def test_poll_preserves_recently_removed_when_no_new_removals():
+    """Accumulated removals must not be lost when a poll returns zero new removals."""
     state = QBitSyncState()
     state._recently_removed = {"old"}
 
@@ -90,7 +91,8 @@ async def test_poll_clears_recently_removed_when_no_removals():
 
     await state.poll(fetch)
 
-    assert state.take_recently_removed() == set()
+    # Old removals are preserved — only take_recently_removed() clears them.
+    assert state.take_recently_removed() == {"old"}
 
 
 def test_take_recently_removed_returns_and_clears():

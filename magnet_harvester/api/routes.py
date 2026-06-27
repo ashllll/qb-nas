@@ -4,6 +4,7 @@ REST routes backed by AppContext dependency injection.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,8 +19,10 @@ from magnet_harvester.context.app_context import (
     get_context,
 )
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity
-from magnet_harvester.models import CrawlRequest, DownloadRequest
+from magnet_harvester.models import CrawlRequest, DownloadRequest, QBitConfigUpdate, TaskStatus
 from magnet_harvester.utils.auth import require_api_key
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -51,7 +54,7 @@ def _item_queries(ctx: AppContext) -> ItemQueryLike:
 def _task_snapshot(ctx: AppContext, task_id: str) -> dict:
     task_manager = ctx.bg_manager
     get_task = getattr(task_manager, "get_task", None)
-    if get_task is None:
+    if not callable(get_task):
         raise HTTPException(status_code=500, detail="Background task manager not configured")
     snapshot = get_task(task_id)
     if snapshot is None:
@@ -84,6 +87,15 @@ async def get_items(
     offset: int = Query(0, ge=0),
     ctx: AppContext = Depends(get_context),
 ):
+    if status is not None:
+        try:
+            TaskStatus(status)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid status: {status}. "
+                f"Valid values: {[v.value for v in TaskStatus]}",
+            )
     if ctx.stats is not None:
         ctx.stats.record_api_call()
     return _item_queries(ctx).page_items(
@@ -107,7 +119,7 @@ async def search_items(
 
 @router.post("/api/crawl")
 async def start_crawl(
-    req: CrawlRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
+    req: CrawlRequest, _=Depends(require_api_key), ctx: AppContext = Depends(get_context)
 ):
     try:
         result = await _actions(ctx).start_crawl(
@@ -115,6 +127,11 @@ async def start_crawl(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("start_crawl 异常: %s", exc)
+        raise HTTPException(status_code=503, detail="服务暂时不可用")
     if result.get("status") == "error":
         raise HTTPException(status_code=503, detail=result.get("reason", "action failed"))
     return result
@@ -123,8 +140,8 @@ async def start_crawl(
 @router.get("/api/tasks/{task_id}")
 async def get_task_status(
     task_id: str,
-    ctx: AppContext = Depends(get_context),
     _=Depends(require_api_key),
+    ctx: AppContext = Depends(get_context),
 ):
     return _task_snapshot(ctx, task_id)
 
@@ -157,11 +174,18 @@ async def get_errors(
     severity: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     ctx: AppContext = Depends(get_context),
+    _=Depends(require_api_key),
 ):
     if ctx.stats is not None:
         ctx.stats.record_api_call()
-    cat = ErrorCategory(category) if category else None
-    sev = ErrorSeverity(severity) if severity else None
+    try:
+        cat = ErrorCategory(category) if category else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid error category: {category}")
+    try:
+        sev = ErrorSeverity(severity) if severity else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid error severity: {severity}")
     eh = ctx.error_handler
     if eh is None:
         return {"errors": [], "stats": {}}
@@ -191,17 +215,21 @@ async def get_config(_=Depends(require_api_key)):
 
 @router.put("/api/config")
 async def update_config(
-    data: dict, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
+    data: QBitConfigUpdate,
+    _=Depends(require_api_key),
+    ctx: AppContext = Depends(get_context),
 ):
     try:
         return await _qbit_runtime(ctx).replace_qbit_config(
-            host=data.get("qbit_host"),
-            username=data.get("qbit_username"),
-            password=data.get("qbit_password"),
+            host=data.qbit_host,
+            username=data.qbit_username,
+            password=data.qbit_password,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        log.error("配置验证失败: %s", exc)
+        raise HTTPException(status_code=422, detail="配置验证失败") from exc
     except OSError as exc:
+        log.error("qBittorrent 配置持久化失败: %s", exc)
         raise HTTPException(status_code=500, detail="qBittorrent 配置持久化失败") from exc
 
 

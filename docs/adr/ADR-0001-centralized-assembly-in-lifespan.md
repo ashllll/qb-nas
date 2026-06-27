@@ -17,7 +17,7 @@ Accepted
 - Item serialization helpers
 - Application lifespan (startup/shutdown)
 
-The graphify knowledge graph showed `main.py` as a supernode with 170+ connected nodes spanning 8 communities. This centralization created three problems:
+Architecture analysis showed `main.py` as a supernode with 170+ connected nodes spanning 8 communities. This centralization created three problems:
 
 1. **No real seams** — Services like `_qbit_sync_loop` and `_ws_broadcast` accessed global variables directly, making them untestable without monkeypatching.
 2. **Tight coupling across community boundaries** — Community 5 (FastAPI Server) absorbed nodes from Community 0 (Event Bus) and Community 1 (qBittorrent Integration) because `main.py` imported from both.
@@ -94,7 +94,7 @@ Split `main.py` into multiple files but keep `_store`, `_bus`, etc. as module-le
 
 - Does not create real seams — the new files still depend on `main.py` internals.
 - Tests would still require monkeypatching.
-- Does not solve the graphify community overlap problem.
+- Does not solve the community overlap problem.
 
 ## Related
 

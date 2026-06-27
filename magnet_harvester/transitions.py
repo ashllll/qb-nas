@@ -9,11 +9,15 @@ Used by HarvestPipeline during crawl→classify→download orchestration.
 
 from __future__ import annotations
 
+import logging
+
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
 from magnet_harvester.utils.serializers import item_payload
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
+
+log = logging.getLogger(__name__)
 
 
 class MagnetItemTransitions:
@@ -40,6 +44,8 @@ class MagnetItemTransitions:
         item = self._store.get(hash_key)
         if item is None:
             return
+        if previous_status is not None and previous_status == item.status:
+            return  # 状态未变化，跳过重复事件
         is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
         is_new_phase = previous_status in {
             TaskStatus.pending,
@@ -70,25 +76,27 @@ class MagnetItemTransitions:
         return True
 
     async def classification_started(self, hash_key: str):
-        self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None)
+        if not self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None):
+            return
         await self._emit_item_changed(hash_key)
 
     async def classified(self, hash_key: str, result: dict):
-        self._store.update(
+        if not self._store.update(
             hash_key,
-            category=result["category"],
-            save_path=result["save_path"],
+            category=result.get("category", "其他"),
+            save_path=result.get("save_path", ""),
             status=TaskStatus.pending,
             progress=0.0,
             torrent_state=None,
             error_msg=None,
-        )
+        ):
+            return
         await self._bus.emit(
             Event(
                 EventType.CLASSIFY_DONE,
                 {
                     "hash": hash_key,
-                    "category": result["category"],
+                    "category": result.get("category", "其他"),
                     "confidence": result.get("confidence", ""),
                     "reason": result.get("reason", ""),
                 },
@@ -96,33 +104,42 @@ class MagnetItemTransitions:
         )
         await self._emit_item_changed(hash_key)
 
+    async def classification_failed(self, hash_key: str, error_msg: str):
+        """分类失败时回退状态到 pending，以便后续重试。"""
+        if not self._store.update(hash_key, status=TaskStatus.pending, error_msg=error_msg):
+            return
+        await self._emit_item_changed(hash_key)
+
     async def download_submitting(self, hash_key: str):
         item = self._store.get(hash_key)
         if item is None:
             return
-        self._store.update(
+        if not self._store.update(
             hash_key,
             status=TaskStatus.adding,
             progress=0.0,
             torrent_state="submitting",
             error_msg=None,
-        )
+        ):
+            return
         await self._emit_item_changed(hash_key)
         await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
 
     async def download_submitted(self, hash_key: str):
-        self._store.update(
+        if not self._store.update(
             hash_key,
             status=TaskStatus.queued,
             torrent_state="submitted",
             progress=0.0,
             error_msg=None,
-        )
+        ):
+            return
         await self._emit_item_changed(hash_key)
         await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
     async def download_failed(self, hash_key: str, error_msg: str):
-        self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg)
+        if not self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg):
+            return
         await self._emit_item_changed(hash_key)
         await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
@@ -155,12 +172,13 @@ class MagnetItemTransitions:
 
     async def download_removed(self, hash_key: str, previous_status: TaskStatus | None):
         """种子已从 qBittorrent 中消失"""
-        self._store.update(
+        if not self._store.update(
             hash_key,
             status=TaskStatus.error,
             error_msg="种子已从 qBittorrent 中消失",
             torrent_state="removed",
-        )
+        ):
+            return
         await self.download_state_changed(hash_key, previous_status)
 
     async def download_status_changed(
@@ -231,8 +249,13 @@ class MagnetItemTransitions:
         return False
 
     async def cleared(self) -> int:
-        """清空全部 + ITEMS_CLEARED"""
-        count = self._store.count
-        self._store.clear()
+        """清空全部 + ITEMS_CLEARED
+
+        store.clear() 现在原子化地返回清空前的条目数，消除了原先
+        count→clear 之间的 check-then-act 竞态窗口。
+        """
+        count = self._store.clear()
         await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
+        if self._store.count > 0:
+            log.warning("cleared() 清空后 store 仍有 %d 个条目（并发写入）", self._store.count)
         return count

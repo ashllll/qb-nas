@@ -99,7 +99,7 @@ class FallbackRule:
             for pattern, category in LOCAL_RULES
         ]
 
-    def apply(self, name: str) -> ClassificationResult | None:
+    def apply(self, name: str) -> ClassificationResult:
         for pattern, category in self._compiled_rules:
             if pattern.search(name):
                 return ClassificationResult(

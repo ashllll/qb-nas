@@ -54,17 +54,19 @@ def test_error_handler_instances_are_independent():
 
 def test_appcontext_accepts_error_handler():
     """AppContext.error_handler field works — no import of module-level singleton."""
-    from magnet_harvester.context.app_context import AppContext
+    from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeState
 
     eh = ErrorHandler()
     ctx = AppContext(
-        store=FakeStore(),
-        bus=NullBus(),
-        pipeline=None,
-        crawler=None,
-        classifier=None,
-        qbit=None,
-        error_handler=eh,
+        core=CoreServices(
+            store=FakeStore(),
+            bus=NullBus(),
+            pipeline=None,
+            crawler=None,
+            classifier=None,
+            qbit=None,
+        ),
+        runtime=RuntimeState(error_handler=eh),
     )
     assert ctx.error_handler is eh
     # Verify the field is usable through context

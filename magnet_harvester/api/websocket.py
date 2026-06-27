@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Protocol
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 def _json_serializer(obj: Any) -> str:
-    if isinstance(obj, datetime):
+    if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
@@ -57,7 +57,7 @@ class WSBroadcaster:
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store:
-            items = [item_payload(i) for i in self._store.list(limit=10000)]
+            items = [item_payload(i) for i in self._store.list(limit=500)]
             await self.send_init(ws, items)
         else:
             await self.send_init(ws, [])
@@ -68,8 +68,28 @@ class WSBroadcaster:
         self.add(ws)
         try:
             await self.send_init_from_store(ws)
+            # 服务端不做主动 keep-alive ping；由客户端负责发送 ping 帧
+            # （handle_client_message 已响应 "ping" → "pong"）。
+            # 若客户端长时间无消息，反向代理/OS 可能断开空闲连接，
+            # 客户端应自行维护定时 ping 间隔（推荐 30s）。
             while True:
-                await self.handle_client_message(ws, await ws.receive_text())
+                try:
+                    raw = await asyncio.wait_for(ws.receive_text(), timeout=300)
+                except asyncio.TimeoutError:
+                    # 5 分钟无消息 → 僵尸连接，主动关闭
+                    log.info("WebSocket 空闲超时（5 分钟），关闭连接")
+                    await ws.close(code=1000, reason="idle timeout")
+                    break
+                except WebSocketDisconnect:
+                    break
+                except Exception as exc:
+                    log.warning(
+                        "WebSocket receive_text() 异常，断开连接: %s",
+                        exc,
+                        exc_info=True,
+                    )
+                    break
+                await self.handle_client_message(ws, raw)
         except WebSocketDisconnect:
             pass
         finally:
@@ -108,7 +128,10 @@ class WSBroadcaster:
 
     async def _send_control(self, ws: WebSocket, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, default=_json_serializer)
-        await ws.send_text(data)
+        try:
+            await ws.send_text(data)
+        except Exception:
+            log.debug("_send_control send_text 失败（连接可能已断开）", exc_info=True)
 
     async def _on_event(self, event: Event):
         if not self._active_ws:
@@ -141,7 +164,28 @@ class WSBroadcaster:
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    ctx = getattr(getattr(ws, "app", None), "state", None)
-    broadcaster = getattr(getattr(ctx, "ctx", None), "broadcaster", None)
+    app = getattr(ws, "app", None)
+    if app is None:
+        log.error("WebSocket 连接被拒绝：ws.app 缺失")
+        await ws.accept()
+        await ws.close(code=1011, reason="app not available")
+        return
+    app_state = getattr(app, "state", None)
+    if app_state is None:
+        log.error("WebSocket 连接被拒绝：app.state 缺失")
+        await ws.accept()
+        await ws.close(code=1011, reason="app.state not available")
+        return
+    ctx = getattr(app_state, "ctx", None)
+    if ctx is None:
+        log.error("WebSocket 连接被拒绝：ctx 缺失")
+        await ws.accept()
+        await ws.close(code=1011, reason="context not available")
+        return
+    broadcaster = getattr(ctx, "broadcaster", None)
     if broadcaster:
         await broadcaster.handle_connection(ws)
+    else:
+        log.error("WebSocket 连接被拒绝：broadcaster 未初始化")
+        await ws.accept()
+        await ws.close(code=1011, reason="broadcaster not ready")

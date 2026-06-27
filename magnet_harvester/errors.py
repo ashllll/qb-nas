@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import logging
+import threading
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -59,12 +62,11 @@ class ErrorHandler:
     def __init__(self):
         self._errors: dict[str, ErrorRecord] = {}
         self._max_errors = 1000
+        self._lock = threading.Lock()
 
     def _generate_error_id(self, category: ErrorCategory, message: str) -> str:
-        import hashlib
-
         key = f"{category.value}:{message}"
-        return hashlib.md5(key.encode()).hexdigest()[:12]
+        return hashlib.sha256(key.encode()).hexdigest()[:12]
 
     def record(
         self,
@@ -76,26 +78,28 @@ class ErrorHandler:
     ) -> str:
         error_id = self._generate_error_id(category, message)
 
-        if error_id in self._errors:
-            record = self._errors[error_id]
-            record.count += 1
-            record.details.update(details or {})
-            record.timestamp = datetime.now()
-            if exc:
-                record.traceback = traceback.format_exc()
-        else:
-            record = ErrorRecord(
-                error_id=error_id,
-                category=category,
-                severity=severity,
-                message=message,
-                details=details or {},
-                traceback=traceback.format_exc() if exc else None,
-            )
-            self._errors[error_id] = record
+        with self._lock:
+            if error_id in self._errors:
+                record = self._errors[error_id]
+                record.count += 1
+                record.details.update(details or {})
+                record.timestamp = datetime.now()
+                # BUG-26: 只在第一次出现时记录 traceback，重复时不覆盖
+                if exc and record.traceback is None:
+                    record.traceback = traceback.format_exc()
+            else:
+                record = ErrorRecord(
+                    error_id=error_id,
+                    category=category,
+                    severity=severity,
+                    message=message,
+                    details=details or {},
+                    traceback=traceback.format_exc() if exc else None,
+                )
+                self._errors[error_id] = record
 
-            if len(self._errors) > self._max_errors:
-                self._cleanup_old_errors()
+                if len(self._errors) > self._max_errors:
+                    self._cleanup_old_errors()
 
         if severity == ErrorSeverity.ERROR:
             log.error(
@@ -110,6 +114,7 @@ class ErrorHandler:
         return error_id
 
     def _cleanup_old_errors(self):
+        """调用方必须已持有 self._lock"""
         sorted_errors = sorted(self._errors.items(), key=lambda x: x[1].timestamp)
         to_remove = max(0, len(self._errors) - self._max_errors)
         for error_id, _ in sorted_errors[:to_remove]:
@@ -121,7 +126,8 @@ class ErrorHandler:
         severity: Optional[ErrorSeverity] = None,
         limit: int = 50,
     ) -> List[ErrorRecord]:
-        errors = list(self._errors.values())
+        with self._lock:
+            errors = [copy.copy(e) for e in self._errors.values()]
         if category:
             errors = [e for e in errors if e.category == category]
         if severity:
@@ -130,24 +136,27 @@ class ErrorHandler:
         return errors[:limit]
 
     def get_error_stats(self) -> dict:
+        with self._lock:
+            records = list(self._errors.values())
         by_category = {}
         by_severity = {}
-        for record in self._errors.values():
+        for record in records:
             cat = record.category.value
             sev = record.severity.value
             by_category[cat] = by_category.get(cat, 0) + record.count
             by_severity[sev] = by_severity.get(sev, 0) + record.count
         return {
-            "total_errors": sum(r.count for r in self._errors.values()),
-            "unique_errors": len(self._errors),
+            "total_errors": sum(r.count for r in records),
+            "unique_errors": len(records),
             "by_category": by_category,
             "by_severity": by_severity,
         }
 
     def clear_resolved(self):
-        resolved = [eid for eid, r in self._errors.items() if r.resolved]
-        for eid in resolved:
-            del self._errors[eid]
+        with self._lock:
+            resolved = [eid for eid, r in self._errors.items() if r.resolved]
+            for eid in resolved:
+                del self._errors[eid]
         log.info(f"已清理 {len(resolved)} 个已解决的错误记录")
 
 

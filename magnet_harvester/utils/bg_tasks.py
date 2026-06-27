@@ -51,7 +51,10 @@ class BGTaskManager:
         task_name = name or "background-task"
         task = asyncio.create_task(coro, name=task_name)
         task_id = uuid.uuid4().hex
-        task.task_id = task_id
+        try:
+            task.task_id = task_id
+        except AttributeError:
+            pass  # 非 CPython 运行时可能不支持 Task 动态属性
         self._tasks.add(task)
         self._task_ids[task] = task_id
         self._snapshots[task_id] = TaskSnapshot(
@@ -79,7 +82,19 @@ class BGTaskManager:
             if not task.done():
                 task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=10.0,
+                )
+            except asyncio.TimeoutError:
+                log.error(
+                    "后台任务关闭超时（%d 个任务未在 10 秒内完成），强制取消并等待", len(tasks)
+                )
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     def _on_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)

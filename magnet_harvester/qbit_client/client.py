@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from typing import Dict, List, Optional
 
 import httpx
@@ -53,18 +54,20 @@ class _ClientSubmissionRecorder:
     def succeeded(self) -> None:
         self._client.stats.total_success += 1
         self._client.stats.consecutive_failures = 0
-        self._client.stats.last_success_time = time.time()
+        self._client.stats.last_success_time = time.monotonic()
 
     def failed(self) -> None:
         self._client.stats.total_failed += 1
         self._client.stats.consecutive_failures += 1
-        self._client.stats.last_failure_time = time.time()
+        self._client.stats.last_failure_time = time.monotonic()
 
     def error(self, message: str | None) -> None:
         self._client.last_error = message
 
 
 class QBittorrentClient:
+    MAX_CATEGORY_LOCKS = 200  # 分类锁上限（qB 本身限制约 100 个）
+
     def __init__(self, config: QBitConfig):
         self._config = config
         self.host = self._config.host.rstrip("/")
@@ -80,8 +83,11 @@ class QBittorrentClient:
         self._ping_cache_ttl = 5.0
         self._last_ping_at = 0.0
         self._last_ping_result: bool | None = None
+        self._ping_lock = asyncio.Lock()
         self._cached_default_path: str | None = None
-        self._category_locks: dict[str, asyncio.Lock] = {}
+        # LRU 有界字典，防止异常/恶意分类名导致无限增长（上限 200）
+        self._category_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
+        self._category_locks_guard = asyncio.Lock()
         self.last_error: str | None = None
         self._sync_state = QBitSyncState()
         self._path_resolver = QBitPathResolver(
@@ -93,9 +99,9 @@ class QBittorrentClient:
     def _client(self):
         return self._transport._client
 
-    @_client.setter
-    def _client(self, value):
-        self._transport._client = value
+    async def replace_client(self) -> None:
+        """关闭旧的 httpx client，下次请求时传输层会惰性重建。"""
+        await self._transport.close()
 
     async def close(self):
         await self._transport.close()
@@ -104,27 +110,36 @@ class QBittorrentClient:
         return await self._transport.request(method, path, **kw)
 
     async def ping(self) -> bool:
-        now = time.time()
+        now = time.monotonic()
         if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
             return self._last_ping_result
-        try:
-            r = await self._req("GET", "/app/version")
-            ok = r.status_code == 200
-        except Exception as e:
-            log.warning(f"qBittorrent ping 失败: {e}")
-            ok = False
-        self._last_ping_at = time.time()
-        self._last_ping_result = ok
-        return ok
+        async with self._ping_lock:
+            # 双重检查：获取锁期间缓存可能已被另一个协程填充
+            now = time.monotonic()
+            if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
+                return self._last_ping_result
+            try:
+                r = await self._req("GET", "/app/version")
+                ok = r.status_code == 200
+            except Exception as e:
+                log.warning(f"qBittorrent ping 失败: {e}")
+                ok = False
+            self._last_ping_at = time.monotonic()
+            self._last_ping_result = ok
+            return ok
 
     async def get_maindata(self, rid: int = 0) -> QBitApiObject:
         try:
             r = await self._req("GET", f"/sync/maindata?rid={rid}")
             if r.status_code == 200:
                 return r.json()
+            log.warning(f"get_maindata 返回非 200: {r.status_code}")
+            return {}
+        except httpx.TransportError as e:
+            log.error(f"get_maindata 网络异常: {e}")
             return {}
         except Exception as e:
-            log.warning(f"get_maindata 失败: {e}")
+            log.error(f"get_maindata 未知异常: {e}", exc_info=True)
             return {}
 
     async def poll_torrent_snapshot(self) -> Dict[str, dict]:
@@ -155,8 +170,11 @@ class QBittorrentClient:
                 log.warning(f"get_categories 返回 {r.status_code}")
                 return {}
             return r.json()
+        except httpx.TransportError as e:
+            log.error(f"get_categories 网络异常: {e}")
+            return {}
         except Exception as e:
-            log.warning(f"get_categories 异常: {e}")
+            log.error(f"get_categories 未知异常: {e}", exc_info=True)
             return {}
 
     async def _find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
@@ -191,8 +209,8 @@ class QBittorrentClient:
         （如 /var/apps/qBittorrent/.../Download），而非 NAS 真实路径。
         因此优先从已存在的分类 / torrent 的 savePath 获取真实路径。
         """
-        if self._cached_default_path:
-            return self._cached_default_path
+        if self._cached_default_path is not None:
+            return self._cached_default_path or None
 
         # 1-2. 从已有分类/种子推断（通过 QBitPathResolver）
         path = await self._path_resolver.resolve()
@@ -215,6 +233,7 @@ class QBittorrentClient:
         except Exception as e:
             log.warning(f"get_default_save_path 异常: {e}")
 
+        self._cached_default_path = ""  # 负缓存：避免重复网络请求
         return None
 
     def clear_cached_path(self):
@@ -227,8 +246,27 @@ class QBittorrentClient:
         return await self.get_default_save_path() or "/volume1/downloads"
 
     async def ensure_category(self, name: str, save_path: str, max_retries: int = 2):
-        # 对同一分类串行化，防止并发创建/编辑竞态
-        lock = self._category_locks.setdefault(name, asyncio.Lock())
+        # 对同一分类串行化，防止并发创建/编辑竞态；LRU 清理防无限增长
+        async with self._category_locks_guard:
+            if name not in self._category_locks:
+                if len(self._category_locks) >= self.MAX_CATEGORY_LOCKS:
+                    # 从旧到新遍历，弹出第一个未被持有的锁
+                    evicted = False
+                    for key, lock in self._category_locks.items():
+                        if not lock.locked():
+                            del self._category_locks[key]
+                            evicted = True
+                            log.debug("LRU evicted category lock [%s]", key)
+                            break
+                    if not evicted:
+                        log.error(
+                            "分类锁 LRU 已达上限 (%d) 且全部被持有，拒绝创建 [%s]",
+                            self.MAX_CATEGORY_LOCKS, name,
+                        )
+                        return False
+                self._category_locks[name] = asyncio.Lock()
+            self._category_locks.move_to_end(name)
+            lock = self._category_locks[name]
         async with lock:
             for attempt in range(max_retries):
                 try:

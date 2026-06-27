@@ -43,7 +43,7 @@ class QBitTransport:
         self.username = username
         self.password = password
         self._stats = stats
-        self._cookie = None
+        self._authenticated: bool = False
         self._client: AsyncHttpClientLike | None = None
         self._client_factory = client_factory or self._build_client
         self._retry_config = {
@@ -64,25 +64,30 @@ class QBitTransport:
     async def _get_client(self) -> AsyncHttpClientLike:
         if self._client is None or self._client.is_closed:
             self._client = self._client_factory()
+            self._authenticated = False  # 新 client，强制重新登录
         return self._client
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
-            self._client.cookies.clear()
-            await self._client.aclose()
-            self._client = None
-        self._cookie = None
+            try:
+                self._client.cookies.clear()
+                await self._client.aclose()
+            except Exception:
+                log.exception("关闭 HTTP 客户端时出错")
+            finally:
+                self._client = None
+        self._authenticated = False
 
     def _record_success(self) -> None:
         self._stats.consecutive_failures = 0
-        self._stats.last_success_time = time.time()
+        self._stats.last_success_time = time.monotonic()
 
     def _record_failure(self) -> None:
         self._stats.consecutive_failures += 1
-        self._stats.last_failure_time = time.time()
+        self._stats.last_failure_time = time.monotonic()
 
     async def _login(self, force: bool = False) -> bool:
-        if not force and self._cookie:
+        if not force and self._authenticated:
             return True
 
         try:
@@ -96,7 +101,7 @@ class QBitTransport:
 
             if r.text.strip() == "Ok.":
                 client.cookies = r.cookies
-                self._cookie = client.cookies
+                self._authenticated = True
                 self._record_success()
                 log.info("qBittorrent 登录成功")
                 return True
@@ -117,7 +122,7 @@ class QBitTransport:
                 f"qBittorrent Session 过期（已重试{max_auth_retries}次）"
             )
         log.warning("qBittorrent Session 过期，重新登录...")
-        self._cookie = None
+        self._authenticated = False
         client.cookies.clear()
         count = auth_retry_count + 1
         ok = await self._login(force=True)
@@ -149,7 +154,7 @@ class QBitTransport:
 
         for attempt in range(config["max_retries"]):
             try:
-                if not self._cookie:
+                if not self._authenticated:
                     ok = await self._login()
                     if not ok:
                         raise RuntimeError("qBittorrent 登录失败")
@@ -178,14 +183,14 @@ class QBitTransport:
                     self._record_success()
                 return r
 
-            except httpx.TimeoutException as e:
+            except (httpx.TimeoutException, httpx.ConnectError,
+                    httpx.RemoteProtocolError, httpx.ReadError,
+                    httpx.WriteError, httpx.PoolTimeout) as e:
                 last_exception = e
-                await self._handle_network_retry(attempt, "请求超时", e)
+                await self._handle_network_retry(attempt, "传输异常", e)
 
-            except httpx.ConnectError as e:
-                last_exception = e
-                await self._handle_network_retry(attempt, "连接失败", e)
-
+            except RuntimeError:
+                raise
             except Exception as e:
                 last_exception = e
                 log.error(f"qBittorrent 请求异常: {e}")

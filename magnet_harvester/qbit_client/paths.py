@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import posixpath
 import re
 from typing import Callable, Awaitable, Optional
 
@@ -14,7 +15,7 @@ log = logging.getLogger(__name__)
 
 def _safe_fs_segment(name: str) -> str:
     """把分类名压成单个本地路径段，避免 FS_BASE_PATH 下目录穿越。"""
-    safe = re.sub(r"[\\/:\0]+", "_", name).strip().strip(".")
+    safe = re.sub(r'[\\/:\0<>"|?*]+', "_", name).strip().strip(".")
     safe = re.sub(r"\s+", " ", safe)
     return safe or "uncategorized"
 
@@ -27,6 +28,7 @@ def _extract_base_from_path(save_path: str) -> Optional[str]:
     """
     if not save_path or save_path.startswith("/var/"):
         return None
+    save_path = posixpath.normpath(save_path)
     stripped = save_path.strip("/")
     if "/" in stripped:
         return "/" + "/".join(stripped.split("/")[:-1])

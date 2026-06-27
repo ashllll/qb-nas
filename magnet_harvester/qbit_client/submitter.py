@@ -6,7 +6,9 @@ reasoned about independently of connection state and transport concerns.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Protocol
 
@@ -97,18 +99,22 @@ class MagnetSubmitter:
             if base:
                 category_save_path = f"{base}/{category_save_path}"
         if not category_save_path:
-            category_save_path = save_path
+            category_save_path = await self._gateway.get_base_save_path() or ""
+
+        if not category_save_path:
+            log.warning("无法解析分类保存路径，使用 qB 默认路径")
 
         if self._fs_base_path:
-            (Path(self._fs_base_path) / _safe_fs_segment(category)).mkdir(
-                parents=True, exist_ok=True
-            )
+            dir_path = str(Path(self._fs_base_path) / _safe_fs_segment(category))
+            await asyncio.to_thread(os.makedirs, dir_path, exist_ok=True)
 
         try:
-            if category_save_path:
-                category_ok = await self._gateway.ensure_category(category, category_save_path)
-                if not category_ok:
-                    log.warning(f"分类 [{category}] 创建失败")
+            category_ok = await self._gateway.ensure_category(category, category_save_path or "")
+            if not category_ok:
+                log.warning(f"分类 [{category}] 创建失败")
+                self._recorder.error(f"分类 [{category}] 创建失败")
+                self._recorder.failed()
+                return False
 
             r = await self._gateway.request(
                 "POST",

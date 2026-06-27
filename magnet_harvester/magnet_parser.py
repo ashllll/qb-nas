@@ -106,6 +106,10 @@ def _decode_candidate(candidate: str) -> str | None:
     if not BASE64_VALID_RE.match(candidate):
         return None
     try:
+        # 补全 Base64 填充，避免缺少 '=' 导致 binascii.Error
+        missing_padding = len(candidate) % 4
+        if missing_padding:
+            candidate += "=" * (4 - missing_padding)
         decoded_bytes = base64.b64decode(candidate)
     except (binascii.Error, ValueError):
         log.debug("Base64 解码失败 (非磁力内容)")
