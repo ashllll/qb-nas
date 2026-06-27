@@ -22,8 +22,21 @@ class FakeCookieProvider:
 
 
 @pytest.mark.asyncio
-async def test_crawler_start_stop():
+async def test_crawler_start_stop(monkeypatch):
     """验证 crawler 使用 crawl4ai 能正常启动和关闭"""
+
+    class FakeAsyncWebCrawler:
+        def __init__(self, config):
+            pass
+
+        async def start(self):
+            pass
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr("magnet_harvester.crawler.AsyncWebCrawler", FakeAsyncWebCrawler)
+
     config = CrawlerConfig(headless=True, timeout=10)
     crawler = MagnetCrawler(config=config)
 
@@ -71,8 +84,21 @@ async def test_crawler_start_uses_injected_site_cookies(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_crawler_context_manager():
+async def test_crawler_context_manager(monkeypatch):
     """验证 async with 用法（通过 start/stop 模拟）"""
+
+    class FakeAsyncWebCrawler:
+        def __init__(self, config):
+            pass
+
+        async def start(self):
+            pass
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr("magnet_harvester.crawler.AsyncWebCrawler", FakeAsyncWebCrawler)
+
     config = CrawlerConfig(headless=True, timeout=10)
     crawler = MagnetCrawler(config=config)
 
