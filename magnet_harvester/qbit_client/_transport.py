@@ -196,6 +196,7 @@ class QBitTransport:
                     httpx.RemoteProtocolError, httpx.ReadError,
                     httpx.WriteError, httpx.PoolTimeout) as e:
                 last_exception = e
+                self._record_failure()
                 await self._handle_network_retry(attempt, "传输异常", e)
 
             except RuntimeError:
@@ -207,4 +208,5 @@ class QBitTransport:
 
         if last_exception is not None:
             raise last_exception
+        self._record_failure()
         raise RuntimeError("qBittorrent 请求失败")

@@ -31,6 +31,8 @@ class QBitSyncState:
         self._maindata_rid = data.get("rid", self._maindata_rid)
 
         torrents = data.get("torrents", {}) or {}
+        if not isinstance(torrents, dict):
+            torrents = {}
         for hash_key, info in torrents.items():
             self._torrent_snapshot[hash_key.lower()] = info
 

@@ -168,19 +168,28 @@ async def websocket_endpoint(ws: WebSocket):
     if app is None:
         log.error("WebSocket 连接被拒绝：ws.app 缺失")
         await ws.accept()
-        await ws.close(code=1011, reason="app not available")
+        try:
+            await ws.close(code=1011, reason="app not available")
+        except Exception:
+            pass
         return
     app_state = getattr(app, "state", None)
     if app_state is None:
         log.error("WebSocket 连接被拒绝：app.state 缺失")
         await ws.accept()
-        await ws.close(code=1011, reason="app.state not available")
+        try:
+            await ws.close(code=1011, reason="app.state not available")
+        except Exception:
+            pass
         return
     ctx = getattr(app_state, "ctx", None)
     if ctx is None:
         log.error("WebSocket 连接被拒绝：ctx 缺失")
         await ws.accept()
-        await ws.close(code=1011, reason="context not available")
+        try:
+            await ws.close(code=1011, reason="context not available")
+        except Exception:
+            pass
         return
     broadcaster = getattr(ctx, "broadcaster", None)
     if broadcaster:
@@ -188,4 +197,7 @@ async def websocket_endpoint(ws: WebSocket):
     else:
         log.error("WebSocket 连接被拒绝：broadcaster 未初始化")
         await ws.accept()
-        await ws.close(code=1011, reason="broadcaster not ready")
+        try:
+            await ws.close(code=1011, reason="broadcaster not ready")
+        except Exception:
+            pass
