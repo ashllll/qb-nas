@@ -33,6 +33,7 @@ def test_clipboard_accepts_non_2160p_magnet():
     items = extract_from_text(magnet)
     assert len(items) == 1
 
+    monitor._running = True  # 模拟监控运行中，_handle_item 需要此标志
     asyncio.run(monitor._handle_item(items[0]))
 
     item = store.get("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -58,6 +59,7 @@ def test_clipboard_accepts_base64_encoded_magnet():
     items = extract_from_text(content)
     assert len(items) == 1, f"应从 Base64 中解析出 1 个磁力，实际 {len(items)}"
 
+    monitor._running = True  # 模拟监控运行中，_handle_item 需要此标志
     asyncio.run(monitor._handle_item(items[0]))
 
     item = store.get("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
@@ -81,6 +83,7 @@ def test_clipboard_accepts_html_escaped_and_quoted_magnet():
     items = extract_from_text(content)
     assert len(items) == 1
 
+    monitor._running = True  # 模拟监控运行中，_handle_item 需要此标志
     asyncio.run(monitor._handle_item(items[0]))
 
     item = store.get("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")

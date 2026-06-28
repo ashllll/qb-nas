@@ -86,7 +86,10 @@ class HarvestPipeline:
             try:
                 task.task_id = _uuid.uuid4().hex
             except AttributeError:
-                pass
+                log.warning(
+                    "无法在 task 上设置 task_id 动态属性，task 类型: %s",
+                    type(task).__name__,
+                )
         return task
 
     async def start_crawl(
@@ -109,7 +112,10 @@ class HarvestPipeline:
             self.execute(url, depth=effective_depth, auto_download=auto_download),
             name=f"crawl:{url[:40]}",
         )
-        task_id = task.task_id
+        task_id = getattr(task, "task_id", None)
+        if task_id is None:
+            import uuid as _uuid
+            task_id = _uuid.uuid4().hex
         return {"status": "started", "url": url, "depth": effective_depth, "task_id": task_id}
 
     async def admit_crawl_target(self, url: str) -> str:
@@ -184,33 +190,32 @@ class HarvestPipeline:
                 log.error("classification_started failed for %s: %s", items[i].hash, result)
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
-        result_events: list[asyncio.Task] = []
+        result_events: dict[int, asyncio.Task] = {}
         received_indices: set[int] = set()
 
         def on_result(index: int, result: dict):
             received_indices.add(index)
             h = index_to_hash.get(index)
             if h:
-                result_events.append(
-                    self._spawn(
-                        self._transitions.classified(h, result),
-                        name=f"classify:{h}",
-                    )
+                result_events[index] = self._spawn(
+                    self._transitions.classified(h, result),
+                    name=f"classify:{h}",
                 )
 
         try:
             await self._classifier.classify_stream_batch(classify_input, on_result=on_result)
         except Exception as exc:
             log.exception("classify_stream_batch 失败, 取消 %d 个 spawned task", len(result_events))
-            for t in result_events:
+            for t in result_events.values():
                 if not t.done():
                     t.cancel()
             # 等待已取消的 task 完成, 避免资源泄漏
             if result_events:
-                await asyncio.gather(*result_events, return_exceptions=True)
+                await asyncio.gather(*result_events.values(), return_exceptions=True)
             # 只回退尚未完成分类回调的条目，避免覆盖已完成条目的 error_msg
             for i, item in enumerate(items):
-                if i < len(result_events) and result_events[i].done() and not result_events[i].exception():
+                t = result_events.get(i)
+                if t is not None and t.done() and not t.exception():
                     continue
                 try:
                     await self._transitions.classification_failed(item.hash, str(exc))
@@ -222,7 +227,7 @@ class HarvestPipeline:
                     )
             raise
         if result_events:
-            results = await asyncio.gather(*result_events, return_exceptions=True)
+            results = await asyncio.gather(*result_events.values(), return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
                     log.error("classified result event failed: %s", result)

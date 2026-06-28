@@ -321,7 +321,7 @@ class Settings(BaseSettings):
         left, _, _ = stripped.partition("=")
         parts = left.strip().split()
         key = parts[-1] if parts else ""
-        if not key or not key.replace("_", "").isalnum() or key[0].isdigit():
+        if not key or not key.replace("_", "").isalnum():
             return None
         return key
 
