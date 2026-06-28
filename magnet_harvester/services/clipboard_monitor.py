@@ -18,6 +18,7 @@ import pyperclip
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
+from magnet_harvester.context.app_context import UserActionExecutorLike
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.magnet_sources import MagnetSourceExtractor
 from magnet_harvester.models import MagnetItem, TaskStatus
@@ -39,6 +40,7 @@ class ClipboardMonitor:
         store: ItemStore,
         classifier: LocalClassifier,
         pipeline: "HarvestPipeline | None" = None,
+        action_executor: UserActionExecutorLike | None = None,
         poll_interval: float = 1.0,
         transitions: MagnetItemTransitions | None = None,
     ):
@@ -46,6 +48,7 @@ class ClipboardMonitor:
         self._store = store
         self._classifier = classifier
         self._pipeline = pipeline
+        self._action_executor = action_executor
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
         self._magnet_sources = MagnetSourceExtractor()
         self._poll_interval = poll_interval
@@ -194,7 +197,11 @@ class ClipboardMonitor:
 
         log.info(f"剪贴板捕获磁力: {name[:50]} → {category}")
 
-        # 自动发送到 qBittorrent
-        if self._pipeline:
+        # 自动发送到 qBittorrent（通过 action_executor 统一入口，确保 stats 计数和未来保护措施生效）
+        if self._action_executor:
+            await self._action_executor.download([magnet_item.hash], task_name="clipboard_download")
+            log.info(f"剪贴板自动下载: {name[:40]}")
+        elif self._pipeline:
+            # 向后兼容：未注入 action_executor 时回退到 pipeline
             await self._pipeline.download([magnet_item.hash])
             log.info(f"剪贴板自动下载: {name[:40]}")
