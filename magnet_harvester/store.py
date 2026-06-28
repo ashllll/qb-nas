@@ -371,7 +371,7 @@ class SQLiteItemStore:
                 return False
 
             row_data = self._item_to_row(new_item)
-            db.execute(
+            cursor = db.execute(
                 """UPDATE magnet_items SET
                    name=:name, magnet=:magnet, size=:size, source_url=:source_url,
                    category=:category, save_path=:save_path, status=:status,
@@ -381,7 +381,7 @@ class SQLiteItemStore:
                 row_data,
             )
             db.commit()
-            return db.total_changes > 0
+            return cursor.rowcount > 0
 
     def remove(self, hash_key: str) -> bool:
         with self._lock, self._connect() as db:
