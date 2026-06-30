@@ -212,19 +212,7 @@ class HarvestPipeline:
             # 等待已取消的 task 完成, 避免资源泄漏
             if result_events:
                 await asyncio.gather(*result_events.values(), return_exceptions=True)
-            # 只回退尚未完成分类回调的条目，避免覆盖已完成条目的 error_msg
-            for i, item in enumerate(items):
-                t = result_events.get(i)
-                if t is not None and t.done() and not t.exception():
-                    continue
-                try:
-                    await self._transitions.classification_failed(item.hash, str(exc))
-                except Exception as rollback_exc:
-                    log.error(
-                        "classification_failed rollback 失败 for %s: %s",
-                        item.hash,
-                        rollback_exc,
-                    )
+            await self._rollback_unclassified(items, result_events, str(exc))
             raise
         if result_events:
             results = await asyncio.gather(*result_events.values(), return_exceptions=True)
@@ -232,6 +220,26 @@ class HarvestPipeline:
                 if isinstance(result, Exception):
                     log.error("classified result event failed: %s", result)
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
+
+    async def _rollback_unclassified(
+        self,
+        items: List[MagnetItem],
+        result_events: dict[int, asyncio.Task],
+        error_msg: str,
+    ) -> None:
+        """回退未完成分类回调的条目到 pending 状态。"""
+        for i, item in enumerate(items):
+            t = result_events.get(i)
+            if t is not None and t.done() and not t.exception():
+                continue
+            try:
+                await self._transitions.classification_failed(item.hash, error_msg)
+            except Exception as rollback_exc:
+                log.error(
+                    "classification_failed rollback 失败 for %s: %s",
+                    item.hash,
+                    rollback_exc,
+                )
 
     async def _download_items(self, hashes: List[str], concurrency: int = 3):
         semaphore = asyncio.Semaphore(concurrency)

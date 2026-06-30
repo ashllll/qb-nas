@@ -27,53 +27,55 @@ log = logging.getLogger(__name__)
 # ── 共享事件发射辅助 ──────────────────────────
 
 
-async def _emit_item_changed(store: ItemStore, bus: MessageBus, hash_key: str) -> None:
-    """发射 STORE_CHANGED 事件（如果 item 存在）。"""
-    item = store.get(hash_key)
-    if item is not None:
-        await bus.emit(Event(EventType.STORE_CHANGED, {"item": item_payload(item)}))
+class _TransitionBase:
+    """域对象基类：封装 store/bus 依赖和事件发射辅助方法。"""
 
+    def __init__(self, store: ItemStore, bus: MessageBus):
+        self._store = store
+        self._bus = bus
 
-async def _emit_download_result(
-    store: ItemStore, bus: MessageBus, hash_key: str, previous_status: TaskStatus | None = None
-) -> None:
-    """发射 DOWNLOAD_RESULT 事件（状态变化或进入终态时）。"""
-    item = store.get(hash_key)
-    if item is None:
-        return
-    if previous_status is not None and previous_status == item.status:
-        return  # 状态未变化，跳过重复事件
-    is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
-    is_new_phase = previous_status in {
-        TaskStatus.pending,
-        TaskStatus.adding,
-        TaskStatus.classifying,
-        None,
-    }
-    if is_terminal or is_new_phase:
-        await bus.emit(
-            Event(
-                EventType.DOWNLOAD_RESULT,
-                {
-                    "hash": hash_key,
-                    "status": item.status.value,
-                    "error_msg": item.error_msg,
-                    "progress": item.progress,
-                    "torrent_state": item.torrent_state,
-                },
+    async def _emit_item_changed(self, hash_key: str) -> None:
+        """发射 STORE_CHANGED 事件（如果 item 存在）。"""
+        item = self._store.get(hash_key)
+        if item is not None:
+            await self._bus.emit(Event(EventType.STORE_CHANGED, {"item": item_payload(item)}))
+
+    async def _emit_download_result(
+        self, hash_key: str, previous_status: TaskStatus | None = None
+    ) -> None:
+        """发射 DOWNLOAD_RESULT 事件（状态变化或进入终态时）。"""
+        item = self._store.get(hash_key)
+        if item is None:
+            return
+        if previous_status is not None and previous_status == item.status:
+            return  # 状态未变化，跳过重复事件
+        is_terminal = item.status in {TaskStatus.success, TaskStatus.error}
+        is_new_phase = previous_status in {
+            TaskStatus.pending,
+            TaskStatus.adding,
+            TaskStatus.classifying,
+            None,
+        }
+        if is_terminal or is_new_phase:
+            await self._bus.emit(
+                Event(
+                    EventType.DOWNLOAD_RESULT,
+                    {
+                        "hash": hash_key,
+                        "status": item.status.value,
+                        "error_msg": item.error_msg,
+                        "progress": item.progress,
+                        "torrent_state": item.torrent_state,
+                    },
+                )
             )
-        )
 
 
 # ── 域对象 ────────────────────────────────────
 
 
-class DiscoveryTransitions:
+class DiscoveryTransitions(_TransitionBase):
     """发现域：磁力链接发现相关的状态转换。"""
-
-    def __init__(self, store: ItemStore, bus: MessageBus):
-        self._store = store
-        self._bus = bus
 
     async def found(self, item: MagnetItem) -> bool:
         if not self._store.add(item):
@@ -85,21 +87,17 @@ class DiscoveryTransitions:
         """found + emit_item_changed（剪贴板入口专用）"""
         if not await self.found(item):
             return False
-        await _emit_item_changed(self._store, self._bus, item.hash)
+        await self._emit_item_changed(item.hash)
         return True
 
 
-class ClassificationTransitions:
+class ClassificationTransitions(_TransitionBase):
     """分类域：分类生命周期相关的状态转换。"""
-
-    def __init__(self, store: ItemStore, bus: MessageBus):
-        self._store = store
-        self._bus = bus
 
     async def started(self, hash_key: str):
         if not self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None):
             return
-        await _emit_item_changed(self._store, self._bus, hash_key)
+        await self._emit_item_changed(hash_key)
 
     async def classified(self, hash_key: str, result: dict):
         category = result.get("category", "其他")
@@ -124,13 +122,13 @@ class ClassificationTransitions:
                 },
             )
         )
-        await _emit_item_changed(self._store, self._bus, hash_key)
+        await self._emit_item_changed(hash_key)
 
     async def failed(self, hash_key: str, error_msg: str):
         """分类失败时回退状态到 pending，以便后续重试。"""
         if not self._store.update(hash_key, status=TaskStatus.pending, error_msg=error_msg):
             return
-        await _emit_item_changed(self._store, self._bus, hash_key)
+        await self._emit_item_changed(hash_key)
 
     async def manually_classified(self, hash_key: str, category: str) -> bool:
         """手动分类：更新 + CLASSIFY_DONE + emit_item_changed"""
@@ -147,16 +145,12 @@ class ClassificationTransitions:
                 },
             )
         )
-        await _emit_item_changed(self._store, self._bus, hash_key)
+        await self._emit_item_changed(hash_key)
         return True
 
 
-class DownloadTransitions:
+class DownloadTransitions(_TransitionBase):
     """下载域：下载生命周期相关的状态转换。"""
-
-    def __init__(self, store: ItemStore, bus: MessageBus):
-        self._store = store
-        self._bus = bus
 
     async def submitting(self, hash_key: str):
         item = self._store.get(hash_key)
@@ -170,7 +164,7 @@ class DownloadTransitions:
             error_msg=None,
         ):
             return
-        await _emit_item_changed(self._store, self._bus, hash_key)
+        await self._emit_item_changed(hash_key)
         await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
 
     async def submitted(self, hash_key: str):
@@ -182,14 +176,14 @@ class DownloadTransitions:
             error_msg=None,
         ):
             return
-        await _emit_item_changed(self._store, self._bus, hash_key)
-        await _emit_download_result(self._store, self._bus, hash_key, previous_status=TaskStatus.adding)
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
     async def failed(self, hash_key: str, error_msg: str):
         if not self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg):
             return
-        await _emit_item_changed(self._store, self._bus, hash_key)
-        await _emit_download_result(self._store, self._bus, hash_key, previous_status=TaskStatus.adding)
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
     async def removed(self, hash_key: str, previous_status: TaskStatus | None):
         """种子已从 qBittorrent 中消失"""
@@ -222,8 +216,8 @@ class DownloadTransitions:
         previous_status: TaskStatus | None = None,
     ):
         """emit_item_changed + 有条件 emit_download_result"""
-        await _emit_item_changed(self._store, self._bus, hash_key)
-        await _emit_download_result(self._store, self._bus, hash_key, previous_status)
+        await self._emit_item_changed(hash_key)
+        await self._emit_download_result(hash_key, previous_status)
 
     async def reconcile_snapshot(
         self,
