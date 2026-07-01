@@ -8,6 +8,7 @@ import asyncio
 import logging
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ class TaskSnapshot:
 
 class BGTaskManager:
     """Owns detached tasks from creation through application shutdown."""
+
+    MAX_COMPLETED_SNAPSHOTS: int = 500
 
     def __init__(self):
         self._tasks: set[asyncio.Task] = set()
@@ -106,6 +109,7 @@ class BGTaskManager:
         if task.cancelled():
             if snapshot is not None:
                 snapshot.status = "cancelled"
+            self._cleanup_snapshots()
             return
 
         exc = task.exception()
@@ -114,10 +118,26 @@ class BGTaskManager:
                 snapshot.status = "failed"
                 snapshot.error = str(exc)
             log.error(f"后台任务 [{task.get_name()}] 异常: {exc}", exc_info=exc)
+            self._cleanup_snapshots()
             return
 
         if snapshot is not None:
             snapshot.status = "completed"
+        self._cleanup_snapshots()
+
+    def _cleanup_snapshots(self) -> None:
+        """Remove oldest completed/failed/cancelled snapshots when exceeding limit."""
+        if len(self._snapshots) <= self.MAX_COMPLETED_SNAPSHOTS:
+            return
+        # 收集已完成的 snapshot，按 finished_at 排序，删除最旧的
+        finished = [
+            (sid, s) for sid, s in self._snapshots.items()
+            if s.finished_at is not None
+        ]
+        finished.sort(key=lambda x: x[1].finished_at or 0)
+        to_remove = len(self._snapshots) - self.MAX_COMPLETED_SNAPSHOTS
+        for sid, _ in finished[:to_remove]:
+            self._snapshots.pop(sid, None)
 
     @staticmethod
     def spawn(coro, *, task_manager=None, name: str | None = None) -> asyncio.Task:

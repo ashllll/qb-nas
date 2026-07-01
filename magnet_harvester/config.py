@@ -182,6 +182,15 @@ class Settings(BaseSettings):
         except ValueError as exc:
             return str(exc)
         self.commit_qbit_config(candidate)
+        try:
+            self.persist_qbit_config(candidate)
+        except Exception as exc:
+            # 持久化失败：回滚内存配置
+            rollback = self.build_qbit_config(
+                host=self.QBIT_HOST, username=self.QBIT_USERNAME, password=self.QBIT_PASSWORD
+            )
+            self.commit_qbit_config(rollback)
+            return f"配置已回滚，持久化失败: {exc}"
         return None
 
     def build_qbit_config(

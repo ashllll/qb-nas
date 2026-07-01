@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import threading
 import time
 from collections.abc import Callable
@@ -151,9 +152,10 @@ class QBitTransport:
             log.error("qBittorrent %s（已重试%d次）", label, self._retry_config["max_retries"])
 
     def _backoff_delay(self, attempt: int) -> float:
-        """指数退避延迟，无抖动。"""
+        """指数退避延迟，带随机抖动防止惊群。"""
         cfg = self._retry_config
-        return min(cfg["max_delay"], cfg["base_delay"] * (2**attempt))
+        base = min(cfg["max_delay"], cfg["base_delay"] * (2**attempt))
+        return base * (0.5 + random.random())
 
     async def request(self, method: str, path: str, **kw) -> httpx.Response:
         config = self._retry_config
@@ -182,11 +184,16 @@ class QBitTransport:
                     )
                     continue
 
-                if r.status_code in config["retry_on"] and attempt < config["max_retries"] - 1:
-                    delay = self._backoff_delay(attempt)
-                    log.warning(f"qBittorrent 请求失败 ({r.status_code})，{delay:.1f}秒后重试...")
-                    await asyncio.sleep(delay)
-                    continue
+                if r.status_code in config["retry_on"]:
+                    last_exception = RuntimeError(f"qBittorrent HTTP {r.status_code}")
+                    if attempt < config["max_retries"] - 1:
+                        delay = self._backoff_delay(attempt)
+                        log.warning(f"qBittorrent 请求失败 ({r.status_code})，{delay:.1f}秒后重试...")
+                        await asyncio.sleep(delay)
+                        continue
+                    # 最后一次重试仍失败，记录并跳出由底部抛出
+                    self._record_failure()
+                    break
 
                 if r.status_code == 200:
                     self._record_success()

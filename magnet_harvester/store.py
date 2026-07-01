@@ -440,7 +440,7 @@ class SQLiteItemStore:
             return [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
 
     def get_hashes_by_prefix(self, prefix: str) -> List[str]:
-        p = f"{prefix}%"
+        p = f"{_escape_like(prefix)}%"
         with self._lock, self._connect() as db:
             cursor = db.execute(
                 "SELECT hash FROM magnet_items WHERE hash LIKE ?",
@@ -496,6 +496,7 @@ class SQLiteItemStore:
             return 0
         added = 0
         with self._lock, self._connect() as db:
+            db.execute("SAVEPOINT add_batch")
             for item in items:
                 row = self._item_to_row(item)
                 try:
@@ -511,9 +512,16 @@ class SQLiteItemStore:
                         added += 1
                 except sqlite3.OperationalError:
                     log.error("sqlite: add_batch 条目 %s 数据库损坏", item.hash[:16] if item.hash else "?", exc_info=True)
+                    db.execute("ROLLBACK TO SAVEPOINT add_batch")
+                    db.execute("RELEASE SAVEPOINT add_batch")
                 except Exception:
                     log.exception("sqlite: add_batch 条目 %s 未知错误", item.hash[:16] if item.hash else "?")
+                    db.execute("ROLLBACK TO SAVEPOINT add_batch")
+                    db.execute("RELEASE SAVEPOINT add_batch")
+            db.execute("RELEASE SAVEPOINT add_batch")
             db.commit()
+        if added < len(items):
+            log.warning("sqlite: add_batch 部分成功 %d/%d", added, len(items))
         return added
 
     def clear(self) -> int:

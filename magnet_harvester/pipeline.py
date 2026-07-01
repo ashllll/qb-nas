@@ -271,7 +271,6 @@ class HarvestPipeline:
             return
         if not item.category:
             log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
-            await self._transitions.download_submitting(hash_key)
             await self._transitions.download_failed(hash_key, "分类结果缺少 category")
             return
         async with semaphore:
