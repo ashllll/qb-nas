@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-import threading
 import time
 from collections.abc import Callable
 from typing import Protocol
@@ -48,7 +47,7 @@ class QBitTransport:
         self._authenticated: bool = False
         self._client: AsyncHttpClientLike | None = None
         self._client_lock = asyncio.Lock()
-        self._closing = threading.Event()
+        self._closing = asyncio.Event()
         self._client_factory = client_factory or self._build_client
         self._max_auth_retries = 2
         self._retry_config = {

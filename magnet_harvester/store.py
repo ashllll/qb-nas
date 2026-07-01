@@ -539,9 +539,9 @@ class SQLiteItemStore:
             return 0
         added = 0
         with self._lock, self._connect() as db:
-            db.execute("SAVEPOINT add_batch")
             for item in items:
                 row = self._item_to_row(item)
+                db.execute("SAVEPOINT add_item")
                 try:
                     cur = db.execute(
                         """INSERT OR IGNORE INTO magnet_items
@@ -553,15 +553,15 @@ class SQLiteItemStore:
                     )
                     if cur.rowcount > 0:
                         added += 1
+                    db.execute("RELEASE SAVEPOINT add_item")
                 except sqlite3.OperationalError:
                     log.error("sqlite: add_batch 条目 %s 数据库损坏", item.hash[:16] if item.hash else "?", exc_info=True)
-                    db.execute("ROLLBACK TO SAVEPOINT add_batch")
-                    db.execute("RELEASE SAVEPOINT add_batch")
+                    db.execute("ROLLBACK TO SAVEPOINT add_item")
+                    db.execute("RELEASE SAVEPOINT add_item")
                 except Exception:
                     log.exception("sqlite: add_batch 条目 %s 未知错误", item.hash[:16] if item.hash else "?")
-                    db.execute("ROLLBACK TO SAVEPOINT add_batch")
-                    db.execute("RELEASE SAVEPOINT add_batch")
-            db.execute("RELEASE SAVEPOINT add_batch")
+                    db.execute("ROLLBACK TO SAVEPOINT add_item")
+                    db.execute("RELEASE SAVEPOINT add_item")
             db.commit()
         if added < len(items):
             log.warning("sqlite: add_batch 部分成功 %d/%d", added, len(items))

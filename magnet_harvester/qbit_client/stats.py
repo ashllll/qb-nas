@@ -16,9 +16,6 @@ class QBittorrentStats:
     last_success_time: Optional[float] = None
     last_failure_time: Optional[float] = None
     start_time: float = field(default_factory=time.monotonic)
-    _wall_offset: float = field(
-        default_factory=lambda: time.time() - time.monotonic()
-    )
 
     @property
     def success_rate(self) -> float:
@@ -31,7 +28,7 @@ class QBittorrentStats:
             """Convert monotonic timestamp back to approximate wall-clock time."""
             if mono is None:
                 return None
-            return mono + self._wall_offset
+            return mono + (time.time() - time.monotonic())
 
         return {
             "total_added": self.total_added,

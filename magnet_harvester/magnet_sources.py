@@ -37,11 +37,10 @@ class MagnetSourceExtractor:
     @staticmethod
     def _content_sources(contents: Iterable[object | None]) -> list[str]:
         sources: list[str] = []
-        seen: set[str] = set()
+        seen: set[int] = set()
         for content in contents:
             if content:
-                content_text = str(content)
-                if content_text not in seen:
-                    seen.add(content_text)
-                    sources.append(content_text)
+                if id(content) not in seen:
+                    seen.add(id(content))
+                    sources.append(str(content))
         return sources

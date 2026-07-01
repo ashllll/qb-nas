@@ -55,7 +55,7 @@ def build_browser_cookies(site_cookies: dict[str, str]) -> list[dict]:
 
 
 def get_cookies_for_url(url: str, site_cookies: dict[str, str]) -> list[dict]:
-    """返回匹配目标 URL 域名的 cookie 列表（Playwright 格式）。"""
+    """返回匹配目标 URL 域名的 cookie 列表（Playwright 格式），精确匹配优先。"""
     if not site_cookies:
         return []
 
@@ -68,18 +68,22 @@ def get_cookies_for_url(url: str, site_cookies: dict[str, str]) -> list[dict]:
         log.warning("get_cookies_for_url 非预期异常: %s", e)
         return []
 
+    exact_cookies: list[dict] = []
+    wildcard_cookies: list[dict] = []
     for site_domain, cookie_str in site_cookies.items():
         if not site_domain or not cookie_str:
             continue
         site_domain = site_domain.lstrip(".")
         # 域名匹配：精确匹配或子域名匹配
-        if domain == site_domain or domain.endswith("." + site_domain):
-            cookies = _parse_cookie_string(cookie_str, domain)
-            if cookies:
-                log.info(f"已注入 {len(cookies)} 个 cookie 到 {domain}（匹配 {site_domain}）")
-                return cookies
+        if domain == site_domain:
+            exact_cookies.extend(_parse_cookie_string(cookie_str, domain))
+        elif domain.endswith("." + site_domain):
+            wildcard_cookies.extend(_parse_cookie_string(cookie_str, domain))
 
-    return []
+    cookies = exact_cookies + wildcard_cookies
+    if cookies:
+        log.info(f"已注入 {len(cookies)} 个 cookie 到 {domain}")
+    return cookies
 
 
 def _parse_cookie_string(raw: str, domain: str) -> list[dict]:

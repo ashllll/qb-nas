@@ -110,8 +110,22 @@ class CrawlTargetAdmission:
         max_redirects: int = 5,
     ):
         self._resolver = resolver or _resolve_host
-        self._redirect_probe = redirect_probe or _probe_redirect
         self._max_redirects = max_redirects
+        self._client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=REDIRECT_PROBE_TIMEOUT_SEC,
+        )
+        self._redirect_probe = redirect_probe or self._default_probe
+
+    async def _default_probe(self, url: str) -> str | None:
+        response = await self._client.head(url)
+        if response.is_redirect:
+            location = response.headers.get("location")
+            return urljoin(url, location) if location else None
+        return None
+
+    async def close(self) -> None:
+        await self._client.aclose()
 
     async def admit(self, url: str) -> str:
         candidate = url.strip()

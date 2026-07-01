@@ -115,10 +115,9 @@ class ErrorHandler:
 
     def _cleanup_old_errors(self):
         """调用方必须已持有 self._lock"""
-        sorted_errors = sorted(self._errors.items(), key=lambda x: x[1].timestamp)
-        to_remove = max(0, len(self._errors) - self._max_errors)
-        for error_id, _ in sorted_errors[:to_remove]:
-            del self._errors[error_id]
+        while len(self._errors) > self._max_errors:
+            oldest_id = min(self._errors, key=lambda eid: self._errors[eid].timestamp)
+            del self._errors[oldest_id]
 
     def get_recent_errors(
         self,
