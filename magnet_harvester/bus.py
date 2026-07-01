@@ -78,7 +78,14 @@ class _EventDelivery:
                 if not task.done():
                     task.cancel()
             # 等待取消完成，忽略 CancelledError
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=3.0,
+                )
+            except asyncio.TimeoutError:
+                log.error("MessageBus: 取消后仍有 %d 个任务未响应",
+                          sum(1 for t in tasks if not t.done()))
 
     @staticmethod
     async def _safe_call(cb: Subscriber, event: Event) -> None:

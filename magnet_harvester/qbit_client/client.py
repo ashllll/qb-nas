@@ -137,10 +137,10 @@ class QBittorrentClient:
             return {}
         except httpx.TransportError as e:
             log.error(f"get_maindata 网络异常: {e}")
-            return {}
+            raise
         except Exception as e:
             log.error(f"get_maindata 未知异常: {e}", exc_info=True)
-            return {}
+            raise
 
     async def poll_torrent_snapshot(self) -> Dict[str, dict]:
         """增量同步 qB torrent 状态，并缓存当前快照。"""
