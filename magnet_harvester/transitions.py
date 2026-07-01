@@ -57,6 +57,10 @@ class _TransitionBase:
             None,
         }
         if is_terminal or is_new_phase:
+            # 在 emit 前再次获取最新状态，减少 TOCTOU 窗口
+            item = self._store.get(hash_key)
+            if item is None:
+                return
             await self._bus.emit(
                 Event(
                     EventType.DOWNLOAD_RESULT,

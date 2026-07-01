@@ -139,8 +139,24 @@ class WSBroadcaster:
         try:
             data = json.dumps(event.as_dict(), ensure_ascii=False, default=_json_serializer)
         except Exception as e:
-            log.warning("WebSocket JSON 序列化失败: %s — %s", event.type.value, e, exc_info=True)
-            return
+            log.warning(
+                "WebSocket JSON 序列化失败: %s — %s，对 data 字段做安全降级",
+                event.type.value, e, exc_info=True,
+            )
+            safe_dict: dict[str, object] = {"type": event.type.value}
+            for k, v in event.data.items():
+                try:
+                    json.dumps(v, ensure_ascii=False, default=_json_serializer)
+                    safe_dict[k] = v
+                except Exception:
+                    safe_dict[k] = repr(v)
+            try:
+                data = json.dumps(safe_dict, ensure_ascii=False, default=_json_serializer)
+            except Exception:
+                log.error(
+                    "WebSocket JSON 降级序列化仍然失败: %s", event.type.value, exc_info=True,
+                )
+                return
         dead = set()
 
         async def _send(ws: WebSocket):

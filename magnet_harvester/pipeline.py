@@ -299,6 +299,12 @@ class HarvestPipeline:
                     await self._transitions.download_failed(hash_key, str(e))
                 except Exception as inner_e:
                     log.error(f"download_failed 回调也失败: {inner_e}")
+                    # 兜底：直接通过 store 更新状态，防止条目永久卡在 adding
+                    self._store.update(
+                        hash_key,
+                        status=TaskStatus.error,
+                        error_msg=str(e),
+                    )
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]

@@ -1,5 +1,21 @@
 # qb-nas BUG 扫描记录
 
+## 2026-07-02 03:12 (第六轮 — 已修复 9 个)
+基线: 428 passed, 0 failed。1 HIGH + 9 MEDIUM，全部修复（跳过7 LOW）。
+
+### 本轮修复
+- ✅ qbit_sync.py: classifying条目竞态错误 → 移除classifying + _stop_event守卫
+- ✅ crawler.py: 单页异常终止session → per-page try/except
+- ✅ pipeline.py: download_failed卡adding → 兜底store.update
+- ✅ transitions.py: _emit_download_result TOCTOU → emit前重新get
+- ✅ store.py: get_hashes_by_prefix缺ESCAPE → 添加ESCAPE子句
+- ✅ user_actions.py: download()虚假started → _spawn返回bool
+- ✅ bg_tasks.py: shutdown二轮gather无超时 → wait_for 5s
+- ✅ websocket.py: 序列化失败静默丢广播 → 字段安全降级
+
+### 跳过
+- LOW: 7项 / MEDIUM(item_queries TOCTOU): 1项
+
 ## 2026-06-28 09:20 (第五轮 — 已修复 8 个)
 基线: 428 passed, 0 failed。并行扫描发现 5 HIGH + 3 MEDIUM。全部自动修复。
 
@@ -23,14 +39,6 @@
 - MEDIUM: routes.py start_crawl 错误码混用（需人工判断）
 - MEDIUM: app_context.py replace_qbit_config 状态不一致（需架构讨论）
 
-## 2026-06-28 07:05 (第四轮 — 已修复 10 个)
-基线: 428 passed。修复 pipeline/store/routes/_transport/config/clipboard_monitor 共 10 项。
-
-## 2026-06-28 04:51 (第三轮 — 已修复 6 个)
-基线: 428 passed。修复 2 HIGH + 4 MEDIUM。
-
-## 2026-06-25 04:19 (第二轮 — 已修复 13 个)
-基线: 425 passed。修复 5 HIGH + 8 MEDIUM。
-
-## 2026-06-25 02:08 (首次 — 未修复，超过阈值)
-基线: 425 passed。发现 18 CRITICAL+HIGH，超阈值未自动修复。
+## 往期 (R2-R4)
+R2 2026-06-25: 13修复 / R3 2026-06-28: 6修复 / R4 2026-06-28: 10修复
+R1 2026-06-25 首次: 18 CRITICAL+HIGH，超阈值未自动修复。

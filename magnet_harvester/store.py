@@ -464,7 +464,7 @@ class SQLiteItemStore:
         p = f"{_escape_like(prefix)}%"
         with self._lock, self._connect() as db:
             cursor = db.execute(
-                "SELECT hash FROM magnet_items WHERE hash LIKE ?",
+                "SELECT hash FROM magnet_items WHERE hash LIKE ? ESCAPE '\\'",
                 (p,),
             )
             return [r[0] for r in cursor.fetchall()]

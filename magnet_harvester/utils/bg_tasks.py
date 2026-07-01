@@ -97,7 +97,13 @@ class BGTaskManager:
                 for task in tasks:
                     if not task.done():
                         task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=5.0,
+                    )
+                except asyncio.TimeoutError:
+                    log.error("强制取消后仍有 %d 个任务未在 5 秒内完成，放弃等待", len(tasks))
 
     def _on_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)

@@ -145,29 +145,18 @@ class QBitSyncLoop:
                     TaskStatus.queued,
                     TaskStatus.downloading,
                     TaskStatus.error,
-                    TaskStatus.classifying,
                 }
             ]
             if not tracked_items:
                 continue
 
             for item in tracked_items:
+                if self._stop_event.is_set():
+                    break
+
                 hash_key = item.hash
                 torrent = snapshot.get(hash_key.lower())
                 is_removed = hash_key.lower() in removed_hashes
-
-                # classifying items that never reached qBittorrent: treat as stuck
-                # and fall back to error so they aren't orphaned forever
-                if item.status == TaskStatus.classifying and torrent is None:
-                    log.warning(
-                        "classifying item %s has no qBittorrent torrent, marking as error",
-                        hash_key,
-                    )
-                    await self._transitions.download_removed(
-                        hash_key,
-                        item.status,
-                    )
-                    continue
 
                 await self._transitions.reconcile_download_snapshot(
                     hash_key,

@@ -242,12 +242,26 @@ class MagnetCrawler:
                 {"type": "progress", "msg": "正在爬取...", "url": root_url, "depth": depth}
             )
             async for result in self._fetch_deep_stream(root_url, depth):
-                await self._handle_crawl_result(
-                    result=result,
-                    source_url=getattr(result, "url", root_url) or root_url,
-                    events=events,
-                    seen=seen,
-                )
+                try:
+                    await self._handle_crawl_result(
+                        result=result,
+                        source_url=getattr(result, "url", root_url) or root_url,
+                        events=events,
+                        seen=seen,
+                    )
+                except Exception as exc:
+                    metrics.errors += 1
+                    log.exception(
+                        "处理页面结果失败: %s",
+                        getattr(result, "url", root_url) or root_url,
+                    )
+                    await events.put(
+                        {
+                            "type": "error",
+                            "msg": str(exc),
+                            "url": getattr(result, "url", root_url) or root_url,
+                        }
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

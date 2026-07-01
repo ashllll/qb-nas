@@ -30,11 +30,12 @@ class UserActionExecutor:
         self._transitions = transitions
         self._stats = stats
 
-    def _spawn(self, coro, *, name: str):
+    def _spawn(self, coro, *, name: str) -> bool:
         if self._task_manager is None:
             log.warning("task_manager 未配置，跳过后台任务: %s", name)
-            return
-        return BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
+            return False
+        BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
+        return True
 
     async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False) -> dict:
         if self._pipeline is None:
@@ -55,7 +56,8 @@ class UserActionExecutor:
 
         if self._stats is not None:
             self._stats.record_download()
-        self._spawn(self._pipeline.download(hashes), name=task_name)
+        if not self._spawn(self._pipeline.download(hashes), name=task_name):
+            return {"status": "error", "reason": "task manager unavailable"}
         return {"status": "started", "count": len(hashes)}
 
     async def download_pending(self) -> dict:
@@ -67,7 +69,8 @@ class UserActionExecutor:
         if self._pipeline is None:
             return {"status": "error", "reason": "pipeline unavailable"}
 
-        self._spawn(self._pipeline.reclassify(hashes), name="reclassify")
+        if not self._spawn(self._pipeline.reclassify(hashes), name="reclassify"):
+            return {"status": "error", "reason": "task manager unavailable"}
         return {"status": "started"}
 
     async def manually_reclassify(self, hash_prefix: str, category: str) -> dict:
