@@ -25,6 +25,11 @@ class FakeQbitClient:
     async def poll_torrent_snapshot(self):
         return dict(self._snapshot)
 
+    async def poll_torrent_snapshot_with_removed(self):
+        removed = set(self._removed)
+        self._removed.clear()
+        return dict(self._snapshot), removed
+
     def take_recently_removed(self):
         removed = set(self._removed)
         self._removed.clear()
@@ -54,6 +59,11 @@ class SnapshotOnlyQbitClient:
     async def poll_torrent_snapshot(self):
         return dict(self._snapshot)
 
+    async def poll_torrent_snapshot_with_removed(self):
+        removed = set(self._removed)
+        self._removed.clear()
+        return dict(self._snapshot), removed
+
     def take_recently_removed(self):
         removed = set(self._removed)
         self._removed.clear()
@@ -65,6 +75,10 @@ class FailingQbitClient:
         self.poll_calls = 0
 
     async def poll_torrent_snapshot(self):
+        self.poll_calls += 1
+        raise RuntimeError("qB offline")
+
+    async def poll_torrent_snapshot_with_removed(self):
         self.poll_calls += 1
         raise RuntimeError("qB offline")
 

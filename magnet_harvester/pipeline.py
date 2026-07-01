@@ -227,10 +227,19 @@ class HarvestPipeline:
         result_events: dict[int, asyncio.Task],
         error_msg: str,
     ) -> None:
-        """回退未完成分类回调的条目到 pending 状态。"""
+        """回退未完成分类回调的条目到 pending 状态。
+
+        竞态安全：调用方已 await 所有 task，故 store 状态已是最终态。
+        仅回退状态仍为 classifying 的条目——已完成的 classified() 回调
+        会将状态改为 pending+category，不应被覆盖。
+        """
         for i, item in enumerate(items):
             t = result_events.get(i)
             if t is not None and t.done() and not t.exception():
+                continue
+            # 前置状态检查：仅回退仍处于 classifying 的条目
+            current = self._store.get(item.hash)
+            if current is None or current.status != TaskStatus.classifying:
                 continue
             try:
                 await self._transitions.classification_failed(item.hash, error_msg)

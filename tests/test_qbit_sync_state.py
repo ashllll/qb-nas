@@ -22,9 +22,10 @@ async def test_poll_updates_snapshot_and_rid():
             "torrents": {"ABC": {"state": "downloading", "progress": 0.5}},
         }
 
-    snapshot = await state.poll(fetch)
+    snapshot, removed = await state.poll(fetch)
 
     assert snapshot == {"abc": {"state": "downloading", "progress": 0.5}}
+    assert removed == set()
     assert state._maindata_rid == 1
 
 
@@ -38,7 +39,7 @@ async def test_poll_lowercases_hashes():
             "torrents": {"MiXeD": {"state": "uploading", "progress": 1.0}},
         }
 
-    snapshot = await state.poll(fetch)
+    snapshot, _removed = await state.poll(fetch)
 
     assert "mixed" in snapshot
     assert "MiXeD" not in snapshot
@@ -53,9 +54,10 @@ async def test_poll_returns_cached_snapshot_when_fetch_fails():
     async def fetch(_rid: int) -> dict:
         return {}
 
-    snapshot = await state.poll(fetch)
+    snapshot, removed = await state.poll(fetch)
 
     assert snapshot == {"keep": {"state": "pausedUP", "progress": 1.0}}
+    assert removed == set()
     assert state._maindata_rid == 5
 
 
@@ -73,10 +75,11 @@ async def test_poll_tracks_removed_torrents_and_drops_them_from_snapshot():
             "torrents_removed": ["GONE"],
         }
 
-    snapshot = await state.poll(fetch)
+    snapshot, removed = await state.poll(fetch)
 
     assert "gone" not in snapshot
     assert "stay" in snapshot
+    assert removed == {"gone"}
     assert state.take_recently_removed() == {"gone"}
 
 

@@ -50,6 +50,7 @@ class QBitTransport:
         self._client_lock = asyncio.Lock()
         self._closing = threading.Event()
         self._client_factory = client_factory or self._build_client
+        self._max_auth_retries = 2
         self._retry_config = {
             "max_retries": 3,
             "base_delay": 1.0,
@@ -161,7 +162,7 @@ class QBitTransport:
         config = self._retry_config
         last_exception = None
         auth_retry_count = 0
-        max_auth_retries = 2
+        max_auth_retries = self._max_auth_retries
 
         for attempt in range(config["max_retries"]):
             try:

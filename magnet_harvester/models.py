@@ -12,7 +12,6 @@ from magnet_harvester.utils.url_validator import URLValidationError, validate_cr
 
 class TaskStatus(str, Enum):
     pending = "pending"
-    crawling = "crawling"
     classifying = "classifying"
     adding = "adding"
     queued = "queued"

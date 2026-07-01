@@ -8,7 +8,7 @@ snapshot/removed logic can be unit tested without network I/O.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Dict
+from typing import Dict, Tuple
 
 
 FetchMaindata = Callable[[int], Awaitable[dict]]
@@ -22,11 +22,16 @@ class QBitSyncState:
         self._torrent_snapshot: Dict[str, dict] = {}
         self._recently_removed: set[str] = set()
 
-    async def poll(self, fetch: FetchMaindata) -> Dict[str, dict]:
-        """Fetch the next delta, update the snapshot, and return a copy of it."""
+    async def poll(self, fetch: FetchMaindata) -> Tuple[Dict[str, dict], set[str]]:
+        """Fetch the next delta, update the snapshot, and return it atomically.
+
+        Returns ``(snapshot_copy, removed_hashes)`` where *removed_hashes* is the
+        set of torrent hashes that were removed in **this** poll cycle.  Callers
+        that only need the snapshot can ignore the second element.
+        """
         data = await fetch(self._maindata_rid)
         if not data:
-            return dict(self._torrent_snapshot)
+            return dict(self._torrent_snapshot), set()
 
         self._maindata_rid = data.get("rid", self._maindata_rid)
 
@@ -42,10 +47,14 @@ class QBitSyncState:
             for hash_key in removed:
                 self._torrent_snapshot.pop(hash_key, None)
 
-        return dict(self._torrent_snapshot)
+        return dict(self._torrent_snapshot), removed
 
     def take_recently_removed(self) -> set[str]:
-        """Return the set of recently removed hashes and clear it."""
+        """Return the set of recently removed hashes and clear it.
+
+        Kept for backward compatibility.  Prefer the second element of
+        :meth:`poll` for race-free access.
+        """
         removed = set(self._recently_removed)
         self._recently_removed.clear()
         return removed

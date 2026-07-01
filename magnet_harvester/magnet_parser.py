@@ -171,8 +171,11 @@ def deduplicate_magnets(items: List[dict]) -> List[dict]:
     seen: Set[str] = set()
     result: List[dict] = []
     for item in items:
-        if item["hash"] not in seen:
-            seen.add(item["hash"])
+        h = item.get("hash")
+        if h is None:
+            continue
+        if h not in seen:
+            seen.add(h)
             result.append(item)
     return result
 

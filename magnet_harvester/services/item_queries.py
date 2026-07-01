@@ -39,8 +39,9 @@ class ItemQueryExecutor:
         offset: int = 0,
     ) -> dict:
         offset = min(offset, 10000)  # 硬上限，防止大 offset 导致内存 DoS
-        items = self._store.list(category=category, status=status, limit=10000)
-        total = len(items)  # 真实总数，而非被 limit 截断后的页面长度
+        total = self._store.count_items(category=category, status=status)
+        # 只加载 offset+limit 条，而非全量 10000 条
+        items = self._store.list(category=category, status=status, limit=offset + limit)
         return {
             "total": total,
             "limit": limit,

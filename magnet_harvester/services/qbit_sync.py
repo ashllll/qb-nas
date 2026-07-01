@@ -23,6 +23,7 @@ _MAX_STORE_ITEMS = 50000
 
 class QBitSyncClient(Protocol):
     async def poll_torrent_snapshot(self) -> dict: ...
+    async def poll_torrent_snapshot_with_removed(self) -> tuple[dict, set[str]]: ...
     def take_recently_removed(self) -> set[str]: ...
 
 
@@ -110,8 +111,7 @@ class QBitSyncLoop:
                 continue
 
             try:
-                snapshot = await qbit.poll_torrent_snapshot()
-                removed_hashes = qbit.take_recently_removed()
+                snapshot, removed_hashes = await qbit.poll_torrent_snapshot_with_removed()
             except Exception as e:
                 self._backoff.record_failure()
                 log.debug(

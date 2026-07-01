@@ -43,12 +43,14 @@ class ClipboardMonitor:
         action_executor: UserActionExecutorLike | None = None,
         poll_interval: float = 1.0,
         transitions: MagnetItemTransitions | None = None,
+        task_manager: BGTaskManager | None = None,
     ):
         self._bus = bus
         self._store = store
         self._classifier = classifier
         self._pipeline = pipeline
         self._action_executor = action_executor
+        self._task_manager = task_manager
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
         self._magnet_sources = MagnetSourceExtractor()
         self._poll_interval = poll_interval
@@ -77,7 +79,9 @@ class ClipboardMonitor:
                 return
             self._running = True
             self._stop_event.clear()
-            self._task = BGTaskManager.spawn(self._run(), name="clipboard-monitor")
+            self._task = BGTaskManager.spawn(
+                self._run(), task_manager=self._task_manager, name="clipboard-monitor"
+            )
             await self._bus.emit(
                 Event(
                     EventType.CLIPBOARD_STATUS,

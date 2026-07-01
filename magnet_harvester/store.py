@@ -73,6 +73,11 @@ class ItemStore(Protocol):
     def get_hashes_by_prefix(self, prefix: str) -> List[str]: ...
     @property
     def count(self) -> int: ...
+    def count_items(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int: ...
     def stats(self) -> StoreStats: ...
     def add_batch(self, items: List[MagnetItem]) -> int: ...
     def clear(self) -> int: ...
@@ -190,6 +195,19 @@ class InMemoryItemStore:
     def count(self) -> int:
         with self._lock:
             return len(self._items)
+
+    def count_items(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        with self._lock:
+            return sum(
+                1
+                for item in self._items.values()
+                if (category is None or item.category == category)
+                and (status is None or status == "all" or item.status.value == status)
+            )
 
     def stats(self) -> StoreStats:
         with self._lock:
@@ -333,9 +351,12 @@ class SQLiteItemStore:
             except sqlite3.OperationalError:
                 log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
                 return False
-            except Exception:
-                log.exception("sqlite: add(%s) 未知错误", item.hash[:16])
+            except sqlite3.IntegrityError:
+                log.debug("sqlite: add(%s) 重复插入，忽略", item.hash[:16])
                 return False
+            except (TypeError, ValueError) as e:
+                log.error("sqlite: add(%s) 数据序列化错误: %s", item.hash[:16], e, exc_info=True)
+                raise
 
     def get(self, hash_key: str) -> Optional[MagnetItem]:
         with self._lock, self._connect() as db:
@@ -454,6 +475,28 @@ class SQLiteItemStore:
     def count(self) -> int:
         with self._lock, self._connect() as db:
             cursor = db.execute("SELECT COUNT(*) FROM magnet_items")
+            row = cursor.fetchone()
+            return row[0] if row else 0
+
+    def count_items(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        conditions: list[str] = []
+        params: list[str] = []
+        if category:
+            conditions.append("category = ?")
+            params.append(category)
+        if status and status != "all":
+            conditions.append("status = ?")
+            params.append(status)
+
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        sql = f"SELECT COUNT(*) FROM magnet_items {where}"
+
+        with self._lock, self._connect() as db:
+            cursor = db.execute(sql, params)
             row = cursor.fetchone()
             return row[0] if row else 0
 

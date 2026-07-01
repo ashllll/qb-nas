@@ -321,11 +321,14 @@ class QBitReplacementTarget:
             # Phase 2: Commit — dependents first, then primary reference.
             # All three steps are trivial assignments today; if any step
             # fails the exception propagates and old_qbit stays active.
-            if self.pipeline is not None:
-                self.pipeline.replace_download_phase(new_qbit)
-            if self.qbit_sync is not None:
-                await self.qbit_sync.replace_qbit_client(new_qbit)
-            self.set_qbit(new_qbit)
+            try:
+                await asyncio.wait_for(
+                    self._commit(new_qbit),
+                    timeout=30.0,
+                )
+            except asyncio.TimeoutError:
+                log.error("热替换：commit 阶段超时（30s），中止替换")
+                return
 
             # Phase 3: Cleanup — close old transport without aborting
             # the replacement.  Never close a client that was just
@@ -333,11 +336,24 @@ class QBitReplacementTarget:
             # old and new).
             if old_qbit is not None and old_qbit is not new_qbit:
                 try:
-                    await old_qbit.close()
+                    await asyncio.wait_for(
+                        old_qbit.close(),
+                        timeout=10.0,
+                    )
+                except asyncio.TimeoutError:
+                    log.error("热替换：关闭旧 qBittorrent 客户端超时")
                 except Exception:
                     log.exception(
                         "热替换：关闭旧 qBittorrent 客户端失败"
                     )
+
+    async def _commit(self, new_qbit: QBittorrentClient) -> None:
+        """Phase 2: update dependents then primary reference."""
+        if self.pipeline is not None:
+            self.pipeline.replace_download_phase(new_qbit)
+        if self.qbit_sync is not None:
+            await self.qbit_sync.replace_qbit_client(new_qbit)
+        self.set_qbit(new_qbit)
 
 
 @dataclass

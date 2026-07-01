@@ -248,7 +248,7 @@ async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_
 @router.get("/api/categories")
 async def get_categories():
     return {
-        "categories": ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"]
+        "categories": sorted(VALID_CATEGORIES)
     }
 
 

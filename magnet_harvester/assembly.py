@@ -152,6 +152,7 @@ def _build_services(store, bus, pipeline, qbit, classifier, bg_manager, transiti
         pipeline=pipeline,
         action_executor=action_executor,
         transitions=transitions,
+        task_manager=bg_manager,
     )
     return observability, action_executor, sync_loop, clipboard_monitor, broadcaster
 

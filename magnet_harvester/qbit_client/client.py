@@ -144,6 +144,11 @@ class QBittorrentClient:
 
     async def poll_torrent_snapshot(self) -> Dict[str, dict]:
         """增量同步 qB torrent 状态，并缓存当前快照。"""
+        snapshot, _removed = await self._sync_state.poll(self.get_maindata)
+        return snapshot
+
+    async def poll_torrent_snapshot_with_removed(self) -> tuple[Dict[str, dict], set[str]]:
+        """增量同步 qB torrent 状态，原子返回快照和本轮移除的哈希。"""
         return await self._sync_state.poll(self.get_maindata)
 
     def take_recently_removed(self) -> set[str]:

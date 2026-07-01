@@ -20,6 +20,11 @@ class _SnapshotQBit:
     async def poll_torrent_snapshot(self) -> dict:
         return self._snapshot
 
+    async def poll_torrent_snapshot_with_removed(self) -> tuple[dict, set[str]]:
+        removed = set(self._removed)
+        self._removed = set()
+        return self._snapshot, removed
+
     def take_recently_removed(self) -> set[str]:
         h = self._removed
         self._removed = set()
