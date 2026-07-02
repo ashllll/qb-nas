@@ -179,6 +179,11 @@ class MagnetCrawler:
                 log.warning(f"关闭 crawl4ai 时出错: {e}")
             finally:
                 self._crawler = None
+        if self._target_admission is not None and hasattr(self._target_admission, "close"):
+            try:
+                await self._target_admission.close()
+            except Exception as e:
+                log.warning(f"关闭 CrawlTargetAdmission 时出错: {e}")
         log.info("crawl4ai 引擎已关闭")
 
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]:

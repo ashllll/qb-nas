@@ -305,6 +305,21 @@ class HarvestPipeline:
                         status=TaskStatus.error,
                         error_msg=str(e),
                     )
+                    # 兜底后发射 DOWNLOAD_RESULT，确保 WebSocket/UI 能收到状态变更通知
+                    item = self._store.get(hash_key)
+                    if item is not None:
+                        await self._bus.emit(
+                            Event(
+                                EventType.DOWNLOAD_RESULT,
+                                {
+                                    "hash": hash_key,
+                                    "status": item.status.value,
+                                    "error_msg": item.error_msg,
+                                    "progress": item.progress,
+                                    "torrent_state": item.torrent_state,
+                                },
+                            )
+                        )
 
     async def reclassify(self, hashes: List[str]):
         items = [self._store.get(h) for h in hashes]
@@ -313,7 +328,7 @@ class HarvestPipeline:
             if i is not None and i.status not in {
                 TaskStatus.adding, TaskStatus.queued,
                 TaskStatus.downloading, TaskStatus.success,
-                TaskStatus.classifying,
+                TaskStatus.classifying, TaskStatus.error,
             }
         ]
         if not items:

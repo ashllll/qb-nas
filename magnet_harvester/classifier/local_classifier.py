@@ -42,7 +42,11 @@ class LocalClassificationEngine:
     def classify_name(self, name: str) -> dict:
         """分类单个名称：按规则链优先级匹配，返回统一结果格式。"""
         for rule in self._rule_chain:
-            result = rule.apply(name)
+            try:
+                result = rule.apply(name)
+            except Exception:
+                log.exception("规则 %s 处理名称 '%s' 时出错，已跳过", type(rule).__name__, name)
+                continue
             if result is not None:
                 return {
                     "category": result.category,

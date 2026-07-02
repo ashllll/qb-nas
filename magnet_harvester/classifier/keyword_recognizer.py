@@ -25,7 +25,24 @@ def _load_keywords(rules_file: Path = KEYWORD_FILE) -> List[Dict[str, str]]:
                 if not isinstance(data, dict):
                     log.error("分类关键词配置文件格式错误：应为 JSON 对象")
                     return []
-                return data.get("keywords", [])
+                keywords = data.get("keywords", [])
+                if not isinstance(keywords, list):
+                    log.error("分类关键词配置中 'keywords' 应为数组")
+                    return []
+                valid: List[Dict[str, str]] = []
+                for i, entry in enumerate(keywords):
+                    if not isinstance(entry, dict):
+                        log.warning("分类关键词第 %d 条不是对象，已跳过", i)
+                        continue
+                    if "keyword" not in entry or "category" not in entry:
+                        log.warning(
+                            "分类关键词第 %d 条缺少 keyword 或 category 字段，已跳过: %s",
+                            i,
+                            entry,
+                        )
+                        continue
+                    valid.append(entry)
+                return valid
         log.warning(f"分类关键词配置文件不存在: {rules_file}")
         return []
     except Exception as e:
