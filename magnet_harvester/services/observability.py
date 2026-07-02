@@ -84,7 +84,7 @@ class ObservabilitySnapshot:
             "items_count": self._store.count,
             "tracked_downloads": tracked,
             "qbit_stats": qbit_stats,
-            "disk_space": settings.check_disk_space(),
+            "disk_space": await asyncio.to_thread(settings.check_disk_space),
         }
 
     async def health(self) -> dict:
@@ -92,7 +92,13 @@ class ObservabilitySnapshot:
             qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
         except (asyncio.TimeoutError, Exception):
             qbit_ok = False
-        classifier_ok = self._classifier is not None
+        classifier_ok = False
+        if self._classifier is not None:
+            try:
+                self._classifier.get_cache_stats()
+                classifier_ok = True
+            except Exception:
+                classifier_ok = False
         return {"healthy": qbit_ok and classifier_ok, "qbittorrent": qbit_ok, "classifier": classifier_ok}
 
     def api_stats(self) -> dict:

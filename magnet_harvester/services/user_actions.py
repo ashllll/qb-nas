@@ -92,7 +92,9 @@ class UserActionExecutor:
             )
 
         match = matches[0]
-        await self._transitions.manually_classified(match, category)
+        ok = await self._transitions.manually_classified(match, category)
+        if not ok:
+            return {"status": "error", "reason": "条目已被删除", "hash": match}
         return {"status": "ok", "hash": match, "new_category": category}
 
     async def clear_items(self) -> dict:

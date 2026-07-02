@@ -109,15 +109,16 @@ class ClipboardMonitor:
                 except asyncio.TimeoutError:
                     log.warning("剪贴板监控任务未能在 5 秒内取消，继续关闭流程")
                 self._task = None
-            await self._bus.emit(
-                Event(
-                    EventType.CLIPBOARD_STATUS,
-                    {
-                        "running": False,
-                        "magnet_count": self._magnet_count,
-                    },
-                )
+        # bus.emit 移到锁外执行，避免持锁期间阻塞 start()/shutdown()
+        await self._bus.emit(
+            Event(
+                EventType.CLIPBOARD_STATUS,
+                {
+                    "running": False,
+                    "magnet_count": self._magnet_count,
+                },
             )
+        )
         log.info("剪贴板监控已停止")
 
     async def shutdown(self):

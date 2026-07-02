@@ -78,6 +78,13 @@ class ItemStore(Protocol):
         category: Optional[str] = None,
         status: Optional[str] = None,
     ) -> int: ...
+    def count_and_page(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple: ...
     def stats(self) -> StoreStats: ...
     def add_batch(self, items: List[MagnetItem]) -> int: ...
     def clear(self) -> int: ...
@@ -209,6 +216,21 @@ class InMemoryItemStore:
                 and (status is None or status == "all" or item.status.value == status)
             )
 
+    def count_and_page(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple:
+        """单次持锁返回 total + 分页 items，消除 count→list 之间的 TOCTOU。"""
+        with self._lock:
+            filtered = list(self._iter_filtered_items(category=category, status=status))
+            sorted_items = heapq.nsmallest(
+                offset + limit, filtered, key=_item_name_key
+            )
+            return len(filtered), sorted_items[offset : offset + limit]
+
     def stats(self) -> StoreStats:
         with self._lock:
             s = StoreStats()
@@ -268,10 +290,14 @@ class SQLiteItemStore:
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA foreign_keys=ON")
+        except Exception:
+            conn.close()
+            raise
         return closing(conn)
 
     def _init_db(self) -> None:
@@ -496,6 +522,42 @@ class SQLiteItemStore:
             cursor = db.execute(sql, params)
             row = cursor.fetchone()
             return row[0] if row else 0
+
+    def count_and_page(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple:
+        """单次持锁+单事务返回 total + 分页 items，消除 count→list 之间的 TOCTOU。"""
+        conditions: list[str] = []
+        params: list[str] = []
+        if category:
+            conditions.append("category = ?")
+            params.append(category)
+        if status and status != "all":
+            conditions.append("status = ?")
+            params.append(status)
+
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+        with self._lock, self._connect() as db:
+            cursor = db.execute(f"SELECT COUNT(*) FROM magnet_items {where}", params)
+            row = cursor.fetchone()
+            total = row[0] if row else 0
+
+            cursor = db.execute(
+                f"SELECT * FROM magnet_items {where} ORDER BY name ASC LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            )
+            items = [
+                item
+                for r in cursor.fetchall()
+                if (item := self._row_to_item(r)) is not None
+            ]
+
+        return total, items
 
     def stats(self) -> StoreStats:
         s = StoreStats()

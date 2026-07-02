@@ -193,8 +193,7 @@ class QBitTransport:
                         log.warning(f"qBittorrent 请求失败 ({r.status_code})，{delay:.1f}秒后重试...")
                         await asyncio.sleep(delay)
                         continue
-                    # 最后一次重试仍失败，记录并跳出由底部抛出
-                    self._record_failure()
+                    # 最后一次重试仍失败，跳出由底部统一记录+抛出
                     break
 
                 if r.status_code == 200:
@@ -202,14 +201,12 @@ class QBitTransport:
                     return r
 
                 last_exception = RuntimeError(f"qBittorrent HTTP {r.status_code}: {r.text[:200]}")
-                self._record_failure()
                 break
 
             except (httpx.TimeoutException, httpx.ConnectError,
                     httpx.RemoteProtocolError, httpx.ReadError,
                     httpx.WriteError, httpx.PoolTimeout) as e:
                 last_exception = e
-                self._record_failure()
                 await self._handle_network_retry(attempt, "传输异常", e)
 
             except RuntimeError:

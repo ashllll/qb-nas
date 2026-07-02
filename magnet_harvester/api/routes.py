@@ -90,7 +90,9 @@ async def get_items(
     offset: int = Query(0, ge=0),
     ctx: AppContext = Depends(get_context),
 ):
-    if status is not None:
+    if not status:
+        status = "all"
+    if status != "all":
         try:
             TaskStatus(status)
         except ValueError:
@@ -108,7 +110,7 @@ async def get_items(
         ctx.stats.record_api_call()
     return _item_queries(ctx).page_items(
         category=category,
-        status=status or "all",
+        status=status,
         limit=limit,
         offset=offset,
     )
@@ -206,6 +208,10 @@ async def get_errors(
 ):
     if ctx.stats is not None:
         ctx.stats.record_api_call()
+    if not category:
+        category = None
+    if not severity:
+        severity = None
     try:
         cat = ErrorCategory(category) if category else None
     except ValueError:

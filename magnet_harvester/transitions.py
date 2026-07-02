@@ -117,6 +117,7 @@ class ClassificationTransitions(_TransitionBase):
             torrent_state=None,
             error_msg=None,
         ):
+            log.warning("classified update 失败 %s (条目可能已被并发删除)", hash_key)
             return
         await self._bus.emit(
             Event(

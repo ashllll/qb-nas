@@ -148,6 +148,9 @@ class FakeClassifier:
         self.reload_calls += 1
         return {"status": "reloaded", "rules_reloaded": 1}
 
+    def get_cache_stats(self):
+        return {"cache_size": 0, "hit_rate": 0.0}
+
 
 def _make_app():
     store = FakeStore()

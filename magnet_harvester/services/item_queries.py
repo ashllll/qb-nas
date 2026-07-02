@@ -39,14 +39,14 @@ class ItemQueryExecutor:
         offset: int = 0,
     ) -> dict:
         offset = min(offset, 10000)  # 硬上限，防止大 offset 导致内存 DoS
-        total = self._store.count_items(category=category, status=status)
-        # 只加载 offset+limit 条，而非全量 10000 条
-        items = self._store.list(category=category, status=status, limit=offset + limit)
+        total, items = self._store.count_and_page(
+            category=category, status=status, limit=limit, offset=offset,
+        )
         return {
             "total": total,
             "limit": limit,
             "offset": offset,
-            "items": [item_payload(item) for item in items[offset : offset + limit]],
+            "items": [item_payload(item) for item in items],
         }
 
     def search_items(self, *, query: str, limit: int = 20) -> dict:

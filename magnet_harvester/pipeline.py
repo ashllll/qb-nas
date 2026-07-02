@@ -216,9 +216,12 @@ class HarvestPipeline:
             raise
         if result_events:
             results = await asyncio.gather(*result_events.values(), return_exceptions=True)
-            for result in results:
+            for index, result in zip(result_events.keys(), results):
                 if isinstance(result, Exception):
-                    log.error("classified result event failed: %s", result)
+                    h = index_to_hash.get(index)
+                    log.error("classified result event failed for %s: %s", h, result)
+                    if h:
+                        await self._transitions.classification_failed(h, str(result))
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
 
     async def _rollback_unclassified(
@@ -261,13 +264,14 @@ class HarvestPipeline:
                 timeout=60.0,
             )
             for i, result in enumerate(results):
-                if isinstance(result, BaseException):
-                    if isinstance(result, asyncio.CancelledError):
-                        log.warning("下载取消 %s，回退状态", hashes[i])
-                        await self._transitions.download_failed(hashes[i], "下载被取消")
-                    else:
-                        log.error("下载失败 %s: %s", hashes[i], result)
-                        await self._transitions.download_failed(hashes[i], str(result))
+                if isinstance(result, asyncio.CancelledError):
+                    log.warning("下载取消 %s，回退状态", hashes[i])
+                    await self._transitions.download_failed(hashes[i], "下载被取消")
+                elif isinstance(result, Exception):
+                    log.error("下载失败 %s: %s", hashes[i], result)
+                    await self._transitions.download_failed(hashes[i], str(result))
+                elif isinstance(result, BaseException):
+                    raise result
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
             for h in hashes:
