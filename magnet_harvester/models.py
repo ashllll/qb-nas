@@ -39,8 +39,11 @@ class MagnetItem(BaseModel):
     @field_validator("progress")
     @classmethod
     def clamp_progress(cls, v: float) -> float:
-        """确保进度值在 0.0–100.0 范围内。"""
-        return max(0.0, min(float(v), 100.0))
+        """确保进度值在 0.0–100.0 范围内（含 NaN 防护）。"""
+        v = float(v)
+        if v != v:  # NaN check
+            return 0.0
+        return max(0.0, min(v, 100.0))
 
 
 class CrawlRequest(BaseModel):

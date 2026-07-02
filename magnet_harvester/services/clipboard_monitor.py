@@ -209,3 +209,5 @@ class ClipboardMonitor:
             # 向后兼容：未注入 action_executor 时回退到 pipeline
             await self._pipeline.download([magnet_item.hash])
             log.info(f"剪贴板自动下载: {name[:40]}")
+        else:
+            log.warning("剪贴板捕获了磁力但 action_executor 和 pipeline 均为 None，无法自动下载: %s", name[:50])

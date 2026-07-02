@@ -197,7 +197,11 @@ class QBitTransport:
 
                 if r.status_code == 200:
                     self._record_success()
-                return r
+                    return r
+
+                last_exception = RuntimeError(f"qBittorrent HTTP {r.status_code}: {r.text[:200]}")
+                self._record_failure()
+                break
 
             except (httpx.TimeoutException, httpx.ConnectError,
                     httpx.RemoteProtocolError, httpx.ReadError,

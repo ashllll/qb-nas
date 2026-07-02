@@ -132,7 +132,7 @@ def test_reload_rules_uses_updated_keyword_file(tmp_path):
         encoding="utf-8",
     )
 
-    assert clf.reload_rules() == {"status": "reloaded", "rules_reloaded": 1}
+    assert clf.reload_rules() == {"status": "reloaded", "rules_reloaded": 2}
     assert clf.classify_one("OldKey.Release")["category"] == "其他"
     assert clf.classify_one("NewKey.Release")["category"] == "游戏"
 

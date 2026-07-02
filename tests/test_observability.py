@@ -16,7 +16,7 @@ class FakeQbit:
     async def ping(self):
         return self.online
 
-    def get_stats(self):
+    async def get_stats(self):
         return {"total_added": 3}
 
 

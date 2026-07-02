@@ -99,6 +99,13 @@ class FallbackRule:
             for pattern, category in LOCAL_RULES
         ]
 
+    def reload(self) -> bool:
+        self._compiled_rules = [
+            (re.compile(pattern, re.IGNORECASE), category)
+            for pattern, category in LOCAL_RULES
+        ]
+        return True
+
     def apply(self, name: str) -> ClassificationResult:
         for pattern, category in self._compiled_rules:
             if pattern.search(name):

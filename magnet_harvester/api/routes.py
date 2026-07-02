@@ -181,7 +181,13 @@ async def download_selected(
 async def reclassify(
     req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
 ):
-    return await _actions(ctx).reclassify(req.hashes)
+    try:
+        return await _actions(ctx).reclassify(req.hashes)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("reclassify 异常: %s", exc)
+        raise HTTPException(status_code=503, detail="服务暂时不可用")
 
 
 @router.get("/api/errors")

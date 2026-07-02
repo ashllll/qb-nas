@@ -67,7 +67,10 @@ class WSBroadcaster:
         await ws.accept()
         self.add(ws)
         try:
-            await self.send_init_from_store(ws)
+            try:
+                await self.send_init_from_store(ws)
+            except Exception:
+                log.exception("send_init_from_store 失败")
             # 服务端不做主动 keep-alive ping；由客户端负责发送 ping 帧
             # （handle_client_message 已响应 "ping" → "pong"）。
             # 若客户端长时间无消息，反向代理/OS 可能断开空闲连接，
@@ -86,7 +89,6 @@ class WSBroadcaster:
                     log.warning(
                         "WebSocket receive_text() 异常，断开连接: %s",
                         exc,
-                        exc_info=True,
                     )
                     break
                 await self.handle_client_message(ws, raw)
@@ -132,6 +134,7 @@ class WSBroadcaster:
             await ws.send_text(data)
         except Exception:
             log.debug("_send_control send_text 失败（连接可能已断开）", exc_info=True)
+            self.remove(ws)
 
     async def _on_event(self, event: Event):
         if not self._active_ws:
