@@ -86,10 +86,12 @@ class UserActionExecutor:
             return {"status": "not_found", "hash": hash_prefix}
 
         if len(matches) > 1:
-            log.warning(
-                "hash 前缀 %r 匹配到 %d 条记录，仅操作第一条 %r",
-                hash_prefix, len(matches), matches[0],
-            )
+            return {
+                "status": "ambiguous",
+                "matches": matches,
+                "hash_prefix": hash_prefix,
+                "hint": "请提供更长的 hash 前缀以精确定位",
+            }
 
         match = matches[0]
         ok = await self._transitions.manually_classified(match, category)

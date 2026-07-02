@@ -204,8 +204,11 @@ class ClipboardMonitor:
 
         # 自动发送到 qBittorrent（通过 action_executor 统一入口，确保 stats 计数和未来保护措施生效）
         if self._action_executor:
-            await self._action_executor.download([magnet_item.hash], task_name="clipboard_download")
-            log.info(f"剪贴板自动下载: {name[:40]}")
+            result = await self._action_executor.download([magnet_item.hash], task_name="clipboard_download")
+            if result.get("status") == "started":
+                log.info(f"剪贴板自动下载: {name[:40]}")
+            else:
+                log.warning("剪贴板自动下载失败: %s, 原因: %s", name[:40], result.get("reason", "未知"))
         elif self._pipeline:
             # 向后兼容：未注入 action_executor 时回退到 pipeline
             await self._pipeline.download([magnet_item.hash])

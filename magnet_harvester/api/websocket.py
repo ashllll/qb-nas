@@ -159,7 +159,7 @@ class WSBroadcaster:
                 log.error(
                     "WebSocket JSON 降级序列化仍然失败: %s", event.type.value, exc_info=True,
                 )
-                return
+                data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
         dead = set()
 
         async def _send(ws: WebSocket):

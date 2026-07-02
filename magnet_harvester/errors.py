@@ -64,8 +64,11 @@ class ErrorHandler:
         self._max_errors = 1000
         self._lock = threading.Lock()
 
-    def _generate_error_id(self, category: ErrorCategory, message: str) -> str:
+    def _generate_error_id(self, category: ErrorCategory, message: str, details: dict[str, object] | None = None) -> str:
         key = f"{category.value}:{message}"
+        if details:
+            detail_parts = sorted(f"{k}={v!r}" for k, v in details.items())
+            key += ":" + ":".join(detail_parts)
         return hashlib.sha256(key.encode()).hexdigest()[:12]
 
     def record(
@@ -76,7 +79,7 @@ class ErrorHandler:
         details: dict[str, object] | None = None,
         exc: Optional[Exception] = None,
     ) -> str:
-        error_id = self._generate_error_id(category, message)
+        error_id = self._generate_error_id(category, message, details)
 
         with self._lock:
             if error_id in self._errors:

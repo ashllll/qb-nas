@@ -166,8 +166,9 @@ class MagnetCrawler:
             text_mode=True,
             cookies=site_cookies if site_cookies else None,
         )
-        self._crawler = AsyncWebCrawler(config=browser_cfg)
-        await self._crawler.start()
+        crawler = AsyncWebCrawler(config=browser_cfg)
+        await crawler.start()
+        self._crawler = crawler
         log.info("crawl4ai 引擎已启动")
 
     async def stop(self):

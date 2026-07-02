@@ -181,6 +181,8 @@ class DownloadTransitions(_TransitionBase):
         await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
 
     async def submitted(self, hash_key: str):
+        item = self._store.get(hash_key)
+        previous_status = item.status if item else TaskStatus.adding
         if not self._store.update(
             hash_key,
             status=TaskStatus.queued,
@@ -190,7 +192,7 @@ class DownloadTransitions(_TransitionBase):
         ):
             return
         await self._emit_item_changed(hash_key)
-        await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
+        await self._emit_download_result(hash_key, previous_status=previous_status)
 
     async def failed(self, hash_key: str, error_msg: str):
         item = self._store.get(hash_key)

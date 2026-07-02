@@ -15,6 +15,7 @@ from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
+from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 
@@ -311,9 +312,13 @@ class HarvestPipeline:
                             status=TaskStatus.error,
                             error_msg=str(e),
                         )
-                        # 兜底后发射 DOWNLOAD_RESULT，确保 WebSocket/UI 能收到状态变更通知
+                        # 发射 STORE_CHANGED 确保 UI 刷新
                         item = self._store.get(hash_key)
                         if item is not None:
+                            await self._bus.emit(
+                                Event(EventType.STORE_CHANGED, {"item": item_payload(item)})
+                            )
+                            # 兜底后发射 DOWNLOAD_RESULT，确保 WebSocket/UI 能收到状态变更通知
                             await self._bus.emit(
                                 Event(
                                     EventType.DOWNLOAD_RESULT,

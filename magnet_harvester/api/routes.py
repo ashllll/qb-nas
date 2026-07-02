@@ -190,12 +190,18 @@ async def reclassify(
     req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
 ):
     try:
-        return await _actions(ctx).reclassify(req.hashes)
+        result = await _actions(ctx).reclassify(req.hashes)
     except HTTPException:
         raise
     except Exception as exc:
         log.exception("reclassify 异常: %s", exc)
         raise HTTPException(status_code=503, detail="服务暂时不可用")
+    if not isinstance(result, dict):
+        log.error("reclassify 返回类型异常: %s, 类型: %s", result, type(result))
+        raise HTTPException(status_code=503, detail="服务内部错误")
+    if result.get("status") == "error":
+        raise HTTPException(status_code=503, detail=result.get("reason", "服务暂时不可用"))
+    return result
 
 
 @router.get("/api/errors")

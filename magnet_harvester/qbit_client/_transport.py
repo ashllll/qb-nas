@@ -47,6 +47,7 @@ class QBitTransport:
         self._authenticated: bool = False
         self._client: AsyncHttpClientLike | None = None
         self._client_lock = asyncio.Lock()
+        self._auth_lock = asyncio.Lock()
         self._closing = asyncio.Event()
         self._client_factory = client_factory or self._build_client
         self._max_auth_retries = 2
@@ -97,33 +98,53 @@ class QBitTransport:
         self._stats.last_failure_time = time.monotonic()
 
     async def _login(self, force: bool = False) -> bool:
-        if not force and self._authenticated:
-            return True
-
-        try:
-            client = await self._get_client()
-            if force:
-                client.cookies.clear()
-            r = await client.post(
-                f"{self.host}/api/v2/auth/login",
-                data={"username": self.username, "password": self.password},
-            )
-
-            if r.text.strip() == "Ok.":
-                client.cookies = r.cookies
-                self._authenticated = True
-                self._record_success()
-                log.info("qBittorrent 登录成功")
+        async with self._auth_lock:
+            if not force and self._authenticated:
                 return True
 
-            log.error(f"qBittorrent 登录失败: {r.text[:100]}")
-            self._record_failure()
-            return False
+            if force:
+                self._authenticated = False
 
-        except Exception as e:
-            if isinstance(e, RuntimeError):
-                raise
-            log.error(f"qBittorrent 登录异常: {e}")
+            last_error = None
+            for attempt in range(self._max_auth_retries + 1):
+                try:
+                    client = await self._get_client()
+                    if force or attempt > 0:
+                        client.cookies.clear()
+                    r = await client.post(
+                        f"{self.host}/api/v2/auth/login",
+                        data={"username": self.username, "password": self.password},
+                    )
+
+                    if r.text.strip() == "Ok.":
+                        client.cookies = r.cookies
+                        self._authenticated = True
+                        self._record_success()
+                        log.info("qBittorrent 登录成功")
+                        return True
+
+                    # 认证凭据错误 — 不重试，立即失败
+                    log.error("qBittorrent 登录失败: %s", r.text[:100])
+                    self._record_failure()
+                    return False
+
+                except RuntimeError:
+                    raise
+                except Exception as e:
+                    last_error = e
+                    if attempt < self._max_auth_retries:
+                        delay = self._backoff_delay(attempt)
+                        log.warning(
+                            "qBittorrent 登录网络异常，%.1f秒后重试(%d/%d): %s",
+                            delay, attempt + 1, self._max_auth_retries, e,
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        log.error(
+                            "qBittorrent 登录异常（已重试%d次）: %s",
+                            self._max_auth_retries, e,
+                        )
+
             self._record_failure()
             return False
 
@@ -134,8 +155,6 @@ class QBitTransport:
                 f"qBittorrent Session 过期（已重试{max_auth_retries}次）"
             )
         log.warning("qBittorrent Session 过期，重新登录...")
-        self._authenticated = False
-        client.cookies.clear()
         count = auth_retry_count + 1
         ok = await self._login(force=True)
         if not ok:
