@@ -351,9 +351,6 @@ class SQLiteItemStore:
             except sqlite3.OperationalError:
                 log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
                 return False
-            except sqlite3.IntegrityError:
-                log.debug("sqlite: add(%s) 重复插入，忽略", item.hash[:16])
-                return False
             except (TypeError, ValueError) as e:
                 log.error("sqlite: add(%s) 数据序列化错误: %s", item.hash[:16], e, exc_info=True)
                 raise

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Protocol
 
 from magnet_harvester.config import settings
@@ -64,7 +65,10 @@ class ObservabilitySnapshot:
         self._classifier = classifier
 
     async def system_status(self) -> dict:
-        qbit_ok = await self._qbit.ping()
+        try:
+            qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
+        except (asyncio.TimeoutError, Exception):
+            qbit_ok = False
         by_status = self._store.stats().by_status
         tracked = sum(
             by_status.get(status.value, 0)
@@ -80,7 +84,10 @@ class ObservabilitySnapshot:
         }
 
     async def health(self) -> dict:
-        qbit_ok = await self._qbit.ping()
+        try:
+            qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
+        except (asyncio.TimeoutError, Exception):
+            qbit_ok = False
         classifier_ok = self._classifier is not None
         return {"healthy": qbit_ok and classifier_ok, "qbittorrent": qbit_ok, "classifier": classifier_ok}
 

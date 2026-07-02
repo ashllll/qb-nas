@@ -54,10 +54,10 @@ class UserActionExecutor:
         if self._pipeline is None:
             return {"status": "error", "reason": "pipeline unavailable"}
 
-        if self._stats is not None:
-            self._stats.record_download()
         if not self._spawn(self._pipeline.download(hashes), name=task_name):
             return {"status": "error", "reason": "task manager unavailable"}
+        if self._stats is not None:
+            self._stats.record_download()
         return {"status": "started", "count": len(hashes)}
 
     async def download_pending(self) -> dict:

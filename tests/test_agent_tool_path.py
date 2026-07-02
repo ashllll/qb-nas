@@ -42,4 +42,4 @@ async def test_reclassify_item_updates_category_and_save_path():
 
     item = store.get("abc123def")
     assert item.category == "电影"
-    assert item.save_path == ""
+    assert item.save_path == "其他"  # 保留原有 save_path，不因手动分类而清空

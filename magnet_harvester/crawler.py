@@ -303,7 +303,7 @@ class MagnetCrawler:
         new_count = 0
         for item in items:
             hash_key = item.get("hash")
-            if hash_key is None:
+            if not hash_key:
                 log.warning("跳过缺少 hash 字段的 item: %s", item)
                 continue
             async with self._seen_lock:

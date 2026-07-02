@@ -1,37 +1,31 @@
 # qb-nas BUG 扫描记录
 
-## 2026-07-02 05:31 (第七轮 — 已修复 2 个)
-基线: 428 passed, 0 failed。扫描初报 2C+5H，验证后 2C 为误报/降级，实修 2H。
-
-### CRITICAL 误报
-- pipeline.py:237 — Task.exception() 不 raise，误报。代码行为正确。
-- crawler.py:178 → 降级 MEDIUM（实际影响低）
+## 2026-07-02 10:07 (第九轮 — 已修复 7 个)
+基线: 428 passed, 0 failed。排除已知问题后扫描发现 4H+5M+8L=17 新项。修复全部 4 HIGH + 前轮 3 个简单项(共 7 修复)。
 
 ### 本轮修复
-- ✅ bus.py:81 — deliver() 超时后二次 gather 添加 asyncio.wait_for(timeout=3.0)
-- ✅ client.py:138 — get_maindata() 网络异常不再吞为 {}，改为 raise 让同步循环走退避
+- ✅ user_actions.py:57 — record_download() 移到 _spawn() 成功后，统计不再虚高
+- ✅ routes.py:165 — download_selected 添加 try/except 包裹（对齐 start_crawl）
+- ✅ store.py:354 — 移除 INSERT OR IGNORE 后的死代码 except IntegrityError
+- ✅ crawler.py:306 — 空字符串 hash 绕过检测：`is None` → `not hash_key`
+- ✅ observability.py:67,83 — ping() 加 asyncio.wait_for(timeout=5.0) 防端点挂起
+- ✅ transitions.py:137 — manually_classified 保留原有 save_path 不再强制清空
+- ✅ transitions.py:101 — started() 加 classifying 状态检查防并发重复分类
+- 测试适配: test_agent_tool_path.py 断言更新为保留 save_path
 
-### 跳过 (MEDIUM 13 + LOW 7)
-HIGH→MEDIUM降级: _transport 异常分支/pipeline TOCTOU/qbit_sync OOM + 原 MEDIUM 10项 + crawler stop
-LOW: 7项保持不变
+### 已知未修复 (仍超阈值遗留)
+CRITICAL 3: crawler 启动竞态 / pipeline 事件绕行 / sync_state poll 竞态
+HIGH 6: site_auth Cookie 解析 / qbit_sync 全量加载 / pipeline 重复分类 CAS 增强 /
+        qbit_client 缓存TTL/假阴性/前缀碰撞 / 剪贴板 fallback 不一致(新)
+MEDIUM: ~16 项 / LOW: ~13 项
 
-## 2026-07-02 03:12 (第六轮 — 已修复 9 个)
-基线: 428 passed, 0 failed。1 HIGH + 9 MEDIUM，全部修复（跳过7 LOW）。
+### 新发现(本轮,未修)
+HIGH 0 (已全部修复) / MEDIUM 5: crawler 异常退出时资源残留 / classifier 回调异常 /
+  FallbackRule 不支持 reload / WebSocket 错误路径静默 / ping 超时已修
+LOW 8: 略
 
-### 本轮修复
-- ✅ qbit_sync.py: classifying条目竞态错误 → 移除classifying + _stop_event守卫
-- ✅ crawler.py: 单页异常终止session → per-page try/except
-- ✅ pipeline.py: download_failed卡adding → 兜底store.update
-- ✅ transitions.py: _emit_download_result TOCTOU → emit前重新get
-- ✅ store.py: get_hashes_by_prefix缺ESCAPE → 添加ESCAPE子句
-- ✅ user_actions.py: download()虚假started → _spawn返回bool
-- ✅ bg_tasks.py: shutdown二轮gather无超时 → wait_for 5s
-- ✅ websocket.py: 序列化失败静默丢广播 → 字段安全降级
+### 误报
+- bus.py:108 setdefault → Python dict 方法名正确，非 bug
 
-### 跳过
-- LOW: 7项 / MEDIUM(item_queries TOCTOU): 1项
-
-## 往期 (R1-R5)
-R5 2026-06-28: 8修复 (store连接泄漏/事务/pipeline竞态/clipboard TOCTOU/_transport锁/config)
-R4 2026-06-28: 10修复 / R3 2026-06-28: 6修复 / R2 2026-06-25: 13修复
-R1 2026-06-25 首次: 18 CRITICAL+HIGH，超阈值未自动修复。
+## 往期 (R1-R8)
+R8: 未修复(超阈值) → R7:2修复 → R6:9修复 → R5:8修复 → R4:10修复 → R3:6修复 → R2:13修复 → R1首次18C+H超阈值

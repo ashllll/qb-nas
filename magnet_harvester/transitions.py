@@ -99,6 +99,9 @@ class ClassificationTransitions(_TransitionBase):
     """分类域：分类生命周期相关的状态转换。"""
 
     async def started(self, hash_key: str):
+        item = self._store.get(hash_key)
+        if item is not None and item.status == TaskStatus.classifying:
+            return  # 已在分类中，拒绝重复调用
         if not self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None):
             return
         await self._emit_item_changed(hash_key)
@@ -136,7 +139,9 @@ class ClassificationTransitions(_TransitionBase):
 
     async def manually_classified(self, hash_key: str, category: str) -> bool:
         """手动分类：更新 + CLASSIFY_DONE + emit_item_changed"""
-        if not self._store.update(hash_key, category=category, save_path=""):
+        item = self._store.get(hash_key)
+        save_path = item.save_path if item and item.save_path else ""
+        if not self._store.update(hash_key, category=category, save_path=save_path):
             return False
         await self._bus.emit(
             Event(

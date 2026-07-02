@@ -165,7 +165,16 @@ async def reload_classifier(
 async def download_selected(
     req: DownloadRequest, ctx: AppContext = Depends(get_context), _=Depends(require_api_key)
 ):
-    return await _actions(ctx).download(req.hashes)
+    try:
+        result = await _actions(ctx).download(req.hashes)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("download_selected 异常: %s", exc)
+        raise HTTPException(status_code=503, detail="服务暂时不可用")
+    if isinstance(result, dict) and result.get("status") == "error":
+        raise HTTPException(status_code=503, detail=result.get("reason", "action failed"))
+    return result
 
 
 @router.post("/api/reclassify")
