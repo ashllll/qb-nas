@@ -8,6 +8,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from magnet_harvester.config import settings
 from magnet_harvester.context.app_context import (
@@ -139,6 +140,9 @@ async def start_crawl(
     except Exception as exc:
         log.exception("start_crawl 异常: %s", exc)
         raise HTTPException(status_code=503, detail="服务暂时不可用")
+    if not isinstance(result, dict):
+        log.error("start_crawl 返回类型异常: %s, 值: %s", type(result), result)
+        raise HTTPException(status_code=503, detail="服务内部错误")
     if result.get("status") == "error":
         raise HTTPException(status_code=503, detail=result.get("reason", "action failed"))
     return result
@@ -172,7 +176,9 @@ async def download_selected(
     except Exception as exc:
         log.exception("download_selected 异常: %s", exc)
         raise HTTPException(status_code=503, detail="服务暂时不可用")
-    if isinstance(result, dict) and result.get("status") == "error":
+    if not isinstance(result, dict):
+        return JSONResponse({"status": "error", "reason": "unexpected response"}, status_code=503)
+    if result.get("status") == "error":
         raise HTTPException(status_code=503, detail=result.get("reason", "action failed"))
     return result
 

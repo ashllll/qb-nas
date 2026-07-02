@@ -158,9 +158,16 @@ class QBitSyncLoop:
                 torrent = snapshot.get(hash_key.lower())
                 is_removed = hash_key.lower() in removed_hashes
 
-                await self._transitions.reconcile_download_snapshot(
-                    hash_key,
-                    item,
-                    torrent,
-                    was_removed=is_removed,
-                )
+                try:
+                    await self._transitions.reconcile_download_snapshot(
+                        hash_key,
+                        item,
+                        torrent,
+                        was_removed=is_removed,
+                    )
+                except Exception as e:
+                    log.error(
+                        "reconcile_download_snapshot 失败 for %s: %s",
+                        hash_key,
+                        e,
+                    )

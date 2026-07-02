@@ -165,6 +165,9 @@ class DownloadTransitions(_TransitionBase):
         item = self._store.get(hash_key)
         if item is None:
             return
+        # 前置状态检查：只允许从 pending 或 error 状态转换到 adding
+        if item.status not in {TaskStatus.pending, TaskStatus.error}:
+            return
         if not self._store.update(
             hash_key,
             status=TaskStatus.adding,
@@ -189,10 +192,12 @@ class DownloadTransitions(_TransitionBase):
         await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
     async def failed(self, hash_key: str, error_msg: str):
+        item = self._store.get(hash_key)
+        previous_status = item.status if item else TaskStatus.adding
         if not self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg):
             return
         await self._emit_item_changed(hash_key)
-        await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
+        await self._emit_download_result(hash_key, previous_status=previous_status)
 
     async def removed(self, hash_key: str, previous_status: TaskStatus | None):
         """种子已从 qBittorrent 中消失"""

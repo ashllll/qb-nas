@@ -34,8 +34,12 @@ class UserActionExecutor:
         if self._task_manager is None:
             log.warning("task_manager 未配置，跳过后台任务: %s", name)
             return False
-        BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
-        return True
+        try:
+            BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
+            return True
+        except RuntimeError as e:
+            log.warning("无法创建后台任务 %s: %s", name, e)
+            return False
 
     async def start_crawl(self, url: str, *, depth: int = 1, auto_download: bool = False) -> dict:
         if self._pipeline is None:

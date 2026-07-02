@@ -309,13 +309,17 @@ class Settings(BaseSettings):
             for key, value in remaining.items():
                 rendered.append(f"{key}={cls._format_env_value(value)}\n")
 
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        try:
-            tmp.write_text("".join(rendered), encoding="utf-8")
-            os.replace(tmp, path)  # 原子替换，避免崩溃时文件损坏
-        except OSError:
-            tmp.unlink(missing_ok=True)
-            raise
+        if not rendered:
+            with open(str(path), "a", encoding="utf-8") as f:
+                f.write("\n" + "\n".join(f"{k}={cls._format_env_value(v)}" for k, v in updates.items()) + "\n")
+        else:
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            try:
+                tmp.write_text("".join(rendered), encoding="utf-8")
+                os.replace(tmp, path)  # 原子替换，避免崩溃时文件损坏
+            except OSError:
+                tmp.unlink(missing_ok=True)
+                raise
 
     @staticmethod
     def _env_line_key(line: str) -> str | None:

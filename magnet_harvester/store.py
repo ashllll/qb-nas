@@ -13,7 +13,7 @@ import heapq
 import logging
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -272,7 +272,7 @@ class SQLiteItemStore:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        return closing(conn)
 
     def _init_db(self) -> None:
         with self._lock, self._connect() as db:

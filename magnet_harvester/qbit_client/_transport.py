@@ -121,6 +121,8 @@ class QBitTransport:
             return False
 
         except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise
             log.error(f"qBittorrent 登录异常: {e}")
             self._record_failure()
             return False
@@ -218,6 +220,6 @@ class QBitTransport:
                 break
 
         if last_exception is not None:
+            self._record_failure()
             raise last_exception
-        self._record_failure()
         raise RuntimeError("qBittorrent 请求失败")
