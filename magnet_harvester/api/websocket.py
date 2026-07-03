@@ -160,7 +160,7 @@ class WSBroadcaster:
                     "WebSocket JSON 降级序列化仍然失败: %s", event.type.value, exc_info=True,
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
-        dead = set()
+        _DEAD = b"DEAD"  # sentinel
 
         async def _send(ws: WebSocket):
             client_state = getattr(ws, "client_state", None)
@@ -168,19 +168,25 @@ class WSBroadcaster:
                 isinstance(client_state, WebSocketState)
                 and client_state != WebSocketState.CONNECTED
             ):
-                dead.add(ws)
-                return
+                return _DEAD
             try:
                 await ws.send_text(data)
             except Exception:
-                # 连接已断开或不可写 — 标记为 dead 稍后统一清理
-                dead.add(ws)
+                # 连接已断开或不可写 — 返回 sentinel 由外层统一清理
+                return _DEAD
+            return None
 
         # 使用快照避免并发 remove() 修改 _active_ws 导致迭代不一致
-        results = await asyncio.gather(*[_send(ws) for ws in set(self._active_ws)], return_exceptions=True)
-        for result in results:
-            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
-                log.error("WebSocket broadcast 异常: %s", result)
+        snapshot = list(self._active_ws)
+        results = await asyncio.gather(*[_send(ws) for ws in snapshot], return_exceptions=True)
+        dead = set()
+        for ws, result in zip(snapshot, results):
+            if isinstance(result, Exception):
+                if not isinstance(result, asyncio.CancelledError):
+                    log.error("WebSocket broadcast 异常: %s", result)
+                dead.add(ws)
+            elif result is _DEAD:
+                dead.add(ws)
         self._active_ws.difference_update(dead)
 
 
@@ -189,37 +195,33 @@ async def websocket_endpoint(ws: WebSocket):
     app = getattr(ws, "app", None)
     if app is None:
         log.error("WebSocket 连接被拒绝：ws.app 缺失")
-        await ws.accept()
         try:
             await ws.close(code=1011, reason="app not available")
         except Exception:
-            pass
+            log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
     app_state = getattr(app, "state", None)
     if app_state is None:
         log.error("WebSocket 连接被拒绝：app.state 缺失")
-        await ws.accept()
         try:
             await ws.close(code=1011, reason="app.state not available")
         except Exception:
-            pass
+            log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
     ctx = getattr(app_state, "ctx", None)
     if ctx is None:
         log.error("WebSocket 连接被拒绝：ctx 缺失")
-        await ws.accept()
         try:
             await ws.close(code=1011, reason="context not available")
         except Exception:
-            pass
+            log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
     broadcaster = getattr(ctx, "broadcaster", None)
     if broadcaster:
         await broadcaster.handle_connection(ws)
     else:
         log.error("WebSocket 连接被拒绝：broadcaster 未初始化")
-        await ws.accept()
         try:
             await ws.close(code=1011, reason="broadcaster not ready")
         except Exception:
-            pass
+            log.debug("ws.close 失败（连接可能已断开）", exc_info=True)

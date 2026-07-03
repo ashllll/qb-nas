@@ -63,6 +63,7 @@ class ClipboardMonitor:
         self._consecutive_failures: int = 0
         self._total_failure_cycles: int = 0
         self._max_failure_cycles: int = 5
+        self._processed_content: set[str] = set()
 
     @property
     def is_running(self) -> bool:
@@ -155,7 +156,8 @@ class ClipboardMonitor:
                     await asyncio.sleep(30)
                 content = None
 
-            if content and isinstance(content, str) and content != self._last_seen:
+            if content and isinstance(content, str) and content not in self._processed_content:
+                self._processed_content.add(content)
                 for item in self._magnet_sources.from_clipboard_text(content):
                     if not self._running:
                         break
@@ -164,7 +166,6 @@ class ClipboardMonitor:
                     except Exception as e:
                         log.error(f"剪贴板条目处理失败: {e}", exc_info=True)
                 else:
-                    # 只在所有 item 处理完后才标记已处理，避免中途 stop 导致剩余 magnet 永久丢失
                     self._last_seen = content
 
             try:

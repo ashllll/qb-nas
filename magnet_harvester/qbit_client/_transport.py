@@ -116,6 +116,11 @@ class QBitTransport:
                         data={"username": self.username, "password": self.password},
                     )
 
+                    if r.status_code >= 500:
+                        raise IOError(
+                            f"qBittorrent 服务暂时不可用 (HTTP {r.status_code})"
+                        )
+
                     if r.text.strip().lower() == "ok.":
                         client.cookies.update(r.cookies)
                         self._authenticated = True

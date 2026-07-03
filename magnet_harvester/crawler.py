@@ -338,7 +338,10 @@ class MagnetCrawler:
         )
 
     async def _fetch_deep_stream(self, root_url: str, depth: int):
-        result_stream = await self._crawler.arun(
+        crawler = self._crawler
+        if crawler is None:
+            raise RuntimeError("爬虫已停止")
+        result_stream = await crawler.arun(
             root_url,
             config=self._build_run_config(
                 stream=True,
