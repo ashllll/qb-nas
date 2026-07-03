@@ -134,7 +134,7 @@ class QBittorrentClient:
             if r.status_code == 200:
                 return r.json()
             log.warning(f"get_maindata 返回非 200: {r.status_code}")
-            return {}
+            raise RuntimeError(f"qB API get_maindata 异常: HTTP {r.status_code}")
         except httpx.TransportError as e:
             log.error(f"get_maindata 网络异常: {e}")
             raise

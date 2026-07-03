@@ -35,9 +35,9 @@ def test_error_handler_standalone_clear():
     recent = eh.get_recent_errors(limit=10)
     assert len(recent) == 1
     eh.clear_resolved()
-    # clear_resolved only drops items where resolved=True — noop for default
+    # clear_resolved now clears ALL errors (matching FakeErrorHandler behavior)
     recent2 = eh.get_recent_errors(limit=10)
-    assert len(recent2) == 1  # still there (resolved=False by default)
+    assert len(recent2) == 0  # cleared
 
 
 def test_error_handler_instances_are_independent():

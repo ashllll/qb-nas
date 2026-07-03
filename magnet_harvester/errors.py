@@ -156,10 +156,9 @@ class ErrorHandler:
 
     def clear_resolved(self):
         with self._lock:
-            resolved = [eid for eid, r in self._errors.items() if r.resolved]
-            for eid in resolved:
-                del self._errors[eid]
-        log.info(f"已清理 {len(resolved)} 个已解决的错误记录")
+            count = len(self._errors)
+            self._errors.clear()
+        log.info(f"已清理 {count} 个错误记录")
 
 
 # Module-level singleton

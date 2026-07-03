@@ -45,6 +45,13 @@ class WSBroadcaster:
     def remove(self, ws: WebSocket):
         self._active_ws.discard(ws)
 
+    def shutdown(self):
+        """取消 MessageBus 订阅，断开强引用以允许 GC 回收。
+
+        架构支持 Broadcaster 热替换或重载时必须调用；当前单例场景下可选。
+        """
+        self._bus.unsubscribe(None, self._on_event)
+
     @property
     def active_count(self) -> int:
         return len(self._active_ws)

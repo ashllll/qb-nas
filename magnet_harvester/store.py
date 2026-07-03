@@ -304,7 +304,10 @@ class SQLiteItemStore:
             conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("PRAGMA foreign_keys=ON")
         except Exception:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
             raise
         return closing(conn)
 
