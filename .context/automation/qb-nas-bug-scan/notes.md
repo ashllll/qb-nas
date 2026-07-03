@@ -26,7 +26,7 @@
 🟡 C3: bus.py emit() 遍历 subscribers 无锁 (R19, R22 部分缓解)
 
 ### 阻塞
-⚠️ git push 可能仍失败 (同 R21)
+✅ git push 成功 (R22 恢复推送)
 
 ### 趋势 (R14→R22)
 - 新发现 HIGH+: 7→9→2→1→3→2→10→5→4
