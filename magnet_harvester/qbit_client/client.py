@@ -298,7 +298,11 @@ class QBittorrentClient:
                             log.warning("分类 [%s] 创建后未出现在 qB 分类列表中", name)
                             return False
 
-                    if name in cats and cats[name].get("savePath", "") != save_path:
+                    cat_entry = cats.get(name, {})
+                    if not isinstance(cat_entry, dict):
+                        log.warning("分类 [%s] 返回非 dict 类型: %s，跳过路径比对", name, type(cat_entry).__name__)
+                        return False
+                    if name in cats and cat_entry.get("savePath", "") != save_path:
                         await self._req(
                             "POST",
                             "/torrents/editCategory",

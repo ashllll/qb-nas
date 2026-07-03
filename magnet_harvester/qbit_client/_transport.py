@@ -116,7 +116,7 @@ class QBitTransport:
                         data={"username": self.username, "password": self.password},
                     )
 
-                    if r.text.strip() == "Ok.":
+                    if r.text.strip().lower() == "ok.":
                         client.cookies.update(r.cookies)
                         self._authenticated = True
                         self._record_success()

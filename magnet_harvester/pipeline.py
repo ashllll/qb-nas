@@ -260,6 +260,8 @@ class HarvestPipeline:
                 )
 
     async def _download_items(self, hashes: List[str], concurrency: int = 3):
+        if not hashes:
+            return
         semaphore = asyncio.Semaphore(concurrency)
         try:
             # 按条目数动态计算超时：30s 基础 + 每条 15s
@@ -360,4 +362,6 @@ class HarvestPipeline:
 
     def replace_download_phase(self, new_qbit: DownloadPhase):
         """Hot-swap the download phase (e.g. when qBittorrent config changes)."""
+        if new_qbit is None:
+            raise ValueError("new_qbit must not be None")
         self._qbit = new_qbit

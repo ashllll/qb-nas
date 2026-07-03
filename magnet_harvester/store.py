@@ -640,18 +640,27 @@ class SQLiteItemStore:
                     db.execute("RELEASE SAVEPOINT add_item")
                 # 每 _BATCH_COMMIT 条提交一次，防止最终 commit 失败导致全部丢失
                 if (i + 1) % _BATCH_COMMIT == 0:
-                    db.commit()
+                    try:
+                        db.commit()
+                    except sqlite3.Error:
+                        db.rollback()
+                        raise
                     committed = added
             # 提交剩余条目
             if added > committed:
-                db.commit()
+                try:
+                    db.commit()
+                except sqlite3.Error:
+                    db.rollback()
+                    raise
         if added < len(items):
             log.warning("sqlite: add_batch 部分成功 %d/%d", added, len(items))
         return added
 
     def clear(self) -> int:
         with self._lock, self._connect() as db:
-            count = db.execute("SELECT COUNT(*) FROM magnet_items").fetchone()[0]
+            row = db.execute("SELECT COUNT(*) FROM magnet_items").fetchone()
+            count = row[0] if row else 0
             db.execute("DELETE FROM magnet_items")
             db.commit()
         return count

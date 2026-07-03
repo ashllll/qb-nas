@@ -126,6 +126,7 @@ class MagnetCrawler:
             default=None,
         )
         self._seen_lock = asyncio.Lock()
+        self._start_lock = asyncio.Lock()
         self._target_admission = target_admission or CrawlTargetAdmission()
         self._site_auth = site_auth or SiteAuth.from_raw(settings.SITE_COOKIES)
         self._magnet_sources = MagnetSourceExtractor(
@@ -204,7 +205,9 @@ class MagnetCrawler:
         url = await self.admit_url(url)
         await self._target_admission.admit_redirect_chain(url)
         if not self._crawler:
-            await self.start()
+            async with self._start_lock:
+                if not self._crawler:
+                    await self.start()
 
         effective_depth = self._clamp_depth(depth)
         self._session_metrics.set(CrawlMetrics())

@@ -95,7 +95,13 @@ class QBitSyncLoop:
         self._stop_event.set()
         if self._task:
             try:
-                await self._task
+                await asyncio.wait_for(self._task, timeout=10.0)
+            except asyncio.TimeoutError:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
             except asyncio.CancelledError:
                 pass
 

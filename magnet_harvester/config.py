@@ -186,12 +186,18 @@ class Settings(BaseSettings):
         try:
             self.persist_qbit_config(candidate)
         except Exception as exc:
-            # 持久化失败：回滚内存配置
-            rollback = self.build_qbit_config(
-                host=old_host, username=old_user, password=old_pass
-            )
-            self.commit_qbit_config(rollback)
-            return f"配置已回滚，持久化失败: {exc}"
+            # 持久化失败：尝试回滚内存配置
+            try:
+                rollback = self.build_qbit_config(
+                    host=old_host, username=old_user, password=old_pass
+                )
+                self.commit_qbit_config(rollback)
+                return f"配置已回滚，持久化失败: {exc}"
+            except ValueError:
+                log.critical(
+                    "持久化失败且回滚也失败，内存配置停留在 candidate 状态: %s", exc
+                )
+                return f"持久化失败且回滚也失败，配置状态不一致: {exc}"
         return None
 
     def build_qbit_config(

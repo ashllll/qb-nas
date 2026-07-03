@@ -278,7 +278,11 @@ async def update_config(
 
 @router.delete("/api/items")
 async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    return await _actions(ctx).clear_items()
+    try:
+        return await _actions(ctx).clear_items()
+    except Exception:
+        log.exception("清空 items 失败")
+        raise HTTPException(status_code=503, detail="清空 items 失败")
 
 
 @router.get("/api/categories")
@@ -301,7 +305,11 @@ async def clipboard_start(ctx: AppContext = Depends(get_context), _=Depends(requ
     monitor = ctx.clipboard_monitor
     if monitor is None:
         raise HTTPException(status_code=501, detail="Clipboard monitor not available")
-    await monitor.start()
+    try:
+        await monitor.start()
+    except Exception:
+        log.exception("剪贴板监听启动失败")
+        raise HTTPException(status_code=503, detail="剪贴板监听启动失败")
     return {"running": True}
 
 
@@ -310,5 +318,9 @@ async def clipboard_stop(ctx: AppContext = Depends(get_context), _=Depends(requi
     monitor = ctx.clipboard_monitor
     if monitor is None:
         raise HTTPException(status_code=501, detail="Clipboard monitor not available")
-    await monitor.stop()
+    try:
+        await monitor.stop()
+    except Exception:
+        log.exception("剪贴板监听停止失败")
+        raise HTTPException(status_code=503, detail="剪贴板监听停止失败")
     return {"running": False}
