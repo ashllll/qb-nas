@@ -195,6 +195,11 @@ class HarvestPipeline:
         received_indices: set[int] = set()
 
         def on_result(index: int, result: dict):
+            if index in result_events:
+                log.warning(
+                    "on_result callback 对 index=%d 重复调用，已跳过 (避免 task 泄漏)", index
+                )
+                return
             received_indices.add(index)
             h = index_to_hash.get(index)
             if h:
@@ -257,12 +262,14 @@ class HarvestPipeline:
     async def _download_items(self, hashes: List[str], concurrency: int = 3):
         semaphore = asyncio.Semaphore(concurrency)
         try:
+            # 按条目数动态计算超时：30s 基础 + 每条 15s
+            dynamic_timeout = 30.0 + len(hashes) * 15.0
             results = await asyncio.wait_for(
                 asyncio.gather(
                     *(self._download_single_item(h, semaphore) for h in hashes),
                     return_exceptions=True,
                 ),
-                timeout=60.0,
+                timeout=dynamic_timeout,
             )
             for i, result in enumerate(results):
                 if isinstance(result, asyncio.CancelledError):

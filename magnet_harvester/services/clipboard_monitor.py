@@ -145,6 +145,7 @@ class ClipboardMonitor:
                         )
                         async with self._lock:
                             self._running = False
+                        await self._bus.emit(Event(EventType.CLIPBOARD_STATUS, {"running": False}))
                         break
                     log.error(
                         "剪贴板读取连续失败，休眠 30 秒后重试（第 %d/%d 个周期）",

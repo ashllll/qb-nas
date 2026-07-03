@@ -168,7 +168,7 @@ class QBittorrentClient:
             log.warning("get_torrent_properties 异常 hash=%s: %s", hash, e)
             return {}
 
-    async def get_categories(self) -> dict:
+    async def get_categories(self) -> dict | None:
         try:
             r = await self._req("GET", "/torrents/categories")
             if r.status_code != 200:
@@ -177,10 +177,10 @@ class QBittorrentClient:
             return r.json()
         except httpx.TransportError as e:
             log.error(f"get_categories 网络异常: {e}")
-            return {}
+            return None
         except Exception as e:
             log.error(f"get_categories 未知异常: {e}", exc_info=True)
-            return {}
+            return None
 
     async def _find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
         """在 qB 种子列表中查找 hash 前缀匹配的种子（去重检测）。"""
@@ -197,15 +197,19 @@ class QBittorrentClient:
             log.debug("按前缀查找 torrent 异常: %s", e)
         return None
 
-    async def _get_torrents_list(self) -> list:
-        """辅助方法：获取种子列表（供 QBitPathResolver 使用）"""
+    async def _get_torrents_list(self) -> list | None:
+        """辅助方法：获取种子列表（供 QBitPathResolver 使用）。
+
+        异常时返回 None 与"无种子"的 [] 区分，调用方可据此判断是否网络故障。
+        """
         try:
             r = await self._req("GET", "/torrents/info")
             if r.status_code == 200:
                 return r.json()
+            log.warning(f"_get_torrents_list 返回 {r.status_code}")
         except Exception as e:
             log.debug("获取种子列表异常: %s", e)
-        return []
+        return None
 
     async def get_default_save_path(self) -> str | None:
         """获取 qBittorrent 默认保存路径（缓存）。
@@ -276,6 +280,11 @@ class QBittorrentClient:
             for attempt in range(max_retries):
                 try:
                     cats = await self.get_categories()
+                    if cats is None:
+                        log.warning("get_categories 返回 None（网络异常），跳过本轮")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1)
+                        continue
 
                     if name not in cats:
                         await self._req(
@@ -314,10 +323,12 @@ class QBittorrentClient:
         interval: float = 0.2,
     ) -> dict:
         """Poll qB until a newly created category becomes visible."""
-        cats = {}
+        cats: dict = {}
         for _ in range(checks):
             await asyncio.sleep(interval)
             cats = await self.get_categories()
+            if cats is None:
+                continue
             if name in cats:
                 return cats
         return cats

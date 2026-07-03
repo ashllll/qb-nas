@@ -45,7 +45,11 @@ class AppRuntime:
     sync_loop: QBitSyncLoop
 
     async def start(self):
-        await self.ctx.crawler.start()
+        # 爬虫和同步循环独立启动，互不阻塞
+        try:
+            await self.ctx.crawler.start()
+        except Exception as e:
+            log.error("crawler 启动失败（降级模式，爬取功能不可用）: %s", e)
         await self.sync_loop.start()
 
     async def stop(self):

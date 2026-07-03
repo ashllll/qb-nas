@@ -51,8 +51,9 @@ Subscriber = Callable[[Event], Coroutine[object, object, None]]
 class _EventDelivery:
     """内部事件投递策略：并发 fan-out、超时取消、订阅者异常隔离。"""
 
-    def __init__(self, timeout: float = 5.0):
+    def __init__(self, timeout: float = 5.0, max_concurrent: int = 32):
         self._timeout = timeout
+        self._semaphore = asyncio.Semaphore(max_concurrent)
 
     async def deliver(
         self,
@@ -61,8 +62,12 @@ class _EventDelivery:
         label: str = "event",
     ) -> None:
         """并发调用所有回调，阻塞发送方的时间不超过策略超时。"""
+        async def _throttled(cb: Subscriber) -> None:
+            async with self._semaphore:
+                await self._safe_call(cb, event)
+
         tasks: list[asyncio.Task] = [
-            BGTaskManager.spawn(self._safe_call(cb, event), name=f"bus:{label}") for cb in callbacks
+            BGTaskManager.spawn(_throttled(cb), name=f"bus:{label}") for cb in callbacks
         ]
         if not tasks:
             return

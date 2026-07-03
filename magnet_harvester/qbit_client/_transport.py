@@ -117,7 +117,7 @@ class QBitTransport:
                     )
 
                     if r.text.strip() == "Ok.":
-                        client.cookies = r.cookies
+                        client.cookies.update(r.cookies)
                         self._authenticated = True
                         self._record_success()
                         log.info("qBittorrent 登录成功")

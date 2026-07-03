@@ -74,10 +74,8 @@ class ObservabilitySnapshot:
             by_status.get(status.value, 0)
             for status in (TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading)
         )
-        try:
-            qbit_stats = await asyncio.wait_for(self._qbit.get_stats(), timeout=5.0)
-        except (asyncio.TimeoutError, Exception):
-            qbit_stats = {"error": "timeout"}
+        # get_stats() 是同步 O(1) 操作（读取 dataclass 字段），无需异步包装
+        qbit_stats = self._qbit.get_stats()
         return {
             "qbittorrent": "online" if qbit_ok else "offline",
             "classifier": "local_rules",

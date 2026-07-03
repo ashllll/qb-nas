@@ -167,7 +167,12 @@ class MagnetCrawler:
             cookies=site_cookies if site_cookies else None,
         )
         crawler = AsyncWebCrawler(config=browser_cfg)
-        await crawler.start()
+        try:
+            await crawler.start()
+        except Exception:
+            # start() 失败时关闭已创建的 crawler，防止浏览器进程泄漏
+            await crawler.close()
+            raise
         self._crawler = crawler
         log.info("crawl4ai 引擎已启动")
 
