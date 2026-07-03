@@ -265,7 +265,7 @@ class HarvestPipeline:
         semaphore = asyncio.Semaphore(concurrency)
         try:
             # 按条目数动态计算超时：30s 基础 + 每条 15s
-            dynamic_timeout = 30.0 + len(hashes) * 15.0
+            dynamic_timeout = min(30.0 + len(hashes) * 15.0, 300.0)
             results = await asyncio.wait_for(
                 asyncio.gather(
                     *(self._download_single_item(h, semaphore) for h in hashes),
@@ -280,7 +280,7 @@ class HarvestPipeline:
                 elif isinstance(result, Exception):
                     log.error("下载失败 %s: %s", hashes[i], result)
                     await self._transitions.download_failed(hashes[i], str(result))
-                elif isinstance(result, BaseException):
+                elif isinstance(result, asyncio.CancelledError):
                     raise result
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))

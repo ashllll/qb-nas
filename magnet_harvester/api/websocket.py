@@ -161,6 +161,7 @@ class WSBroadcaster:
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
         _DEAD = b"DEAD"  # sentinel
+        _SEND_TIMEOUT = 3.0   # per-client 广播超时
 
         async def _send(ws: WebSocket):
             client_state = getattr(ws, "client_state", None)
@@ -171,23 +172,36 @@ class WSBroadcaster:
                 return _DEAD
             try:
                 await ws.send_text(data)
-            except Exception:
-                # 连接已断开或不可写 — 返回 sentinel 由外层统一清理
+            except (Exception, asyncio.CancelledError):
+                # 连接已断开/取消 — 返回 sentinel 由外层统一清理
+                # 注意: asyncio.CancelledError 继承自 BaseException，
+                # 在 Starlette 版本不兼容导致 client_state 无效时，
+                # 这是最后的保护层
                 return _DEAD
             return None
 
         # 使用快照避免并发 remove() 修改 _active_ws 导致迭代不一致
         snapshot = list(self._active_ws)
-        results = await asyncio.gather(*[_send(ws) for ws in snapshot], return_exceptions=True)
-        dead = set()
-        for ws, result in zip(snapshot, results):
-            if isinstance(result, Exception):
-                if not isinstance(result, asyncio.CancelledError):
-                    log.error("WebSocket broadcast 异常: %s", result)
-                dead.add(ws)
-            elif result is _DEAD:
-                dead.add(ws)
-        self._active_ws.difference_update(dead)
+        dead: set[WebSocket] = set()
+        try:
+            results = await asyncio.gather(
+                *[asyncio.wait_for(_send(ws), timeout=_SEND_TIMEOUT) for ws in snapshot],
+                return_exceptions=True,
+            )
+            for ws, result in zip(snapshot, results):
+                if isinstance(result, Exception):
+                    if isinstance(result, asyncio.TimeoutError):
+                        log.warning(
+                            "WebSocket broadcast 单客户端超时（%.1fs），标记为 DEAD",
+                            _SEND_TIMEOUT,
+                        )
+                    elif not isinstance(result, asyncio.CancelledError):
+                        log.error("WebSocket broadcast 异常: %s", result)
+                    dead.add(ws)
+                elif result is _DEAD:
+                    dead.add(ws)
+        finally:
+            self._active_ws.difference_update(dead)
 
 
 @router.websocket("/ws")

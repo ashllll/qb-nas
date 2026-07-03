@@ -170,8 +170,9 @@ class MagnetCrawler:
         crawler = AsyncWebCrawler(config=browser_cfg)
         try:
             await crawler.start()
-        except Exception:
+        except BaseException:
             # start() 失败时关闭已创建的 crawler，防止浏览器进程泄漏
+            # BaseException 覆盖 CancelledError（它是 BaseException 而非 Exception 的子类）
             await crawler.close()
             raise
         self._crawler = crawler

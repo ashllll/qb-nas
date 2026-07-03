@@ -89,8 +89,28 @@ class _EventDelivery:
                     timeout=3.0,
                 )
             except asyncio.TimeoutError:
+                orphan_tasks = [t for t in tasks if not t.done()]
                 log.error("MessageBus: 取消后仍有 %d 个任务未响应",
-                          sum(1 for t in tasks if not t.done()))
+                          len(orphan_tasks))
+                for t in orphan_tasks:
+                    log.warning(
+                        "MessageBus: 孤儿任务泄漏 — name=%r, cancelled=%s",
+                        t.get_name(), t.cancelled(),
+                    )
+                    # 再次尝试取消，给一次极短等待
+                    t.cancel()
+                if orphan_tasks:
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(*orphan_tasks, return_exceptions=True),
+                            timeout=1.0,
+                        )
+                    except asyncio.TimeoutError:
+                        log.error(
+                            "MessageBus: 最终仍有 %d 个任务无法回收 — name=%s",
+                            sum(1 for t in orphan_tasks if not t.done()),
+                            [t.get_name() for t in orphan_tasks if not t.done()],
+                        )
 
     @staticmethod
     async def _safe_call(cb: Subscriber, event: Event) -> None:
