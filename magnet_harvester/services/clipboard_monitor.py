@@ -78,11 +78,11 @@ class ClipboardMonitor:
         async with self._lock:
             if self._running:
                 return
-            self._running = True
             self._stop_event.clear()
             self._task = BGTaskManager.spawn(
                 self._run(), task_manager=self._task_manager, name="clipboard-monitor"
             )
+            self._running = True
             await self._bus.emit(
                 Event(
                     EventType.CLIPBOARD_STATUS,
@@ -176,7 +176,12 @@ class ClipboardMonitor:
 
     async def _handle_item(self, item: dict):
         """处理单个已解析的磁力条目：分类、存储、发布事件。"""
-        name = item["name"]
+        name = item.get("name")
+        hash_val = item.get("hash")
+        magnet = item.get("magnet")
+        if not name or not hash_val or not magnet:
+            log.warning("剪贴板条目缺少必要字段（name/hash/magnet），跳过: %s", item)
+            return
 
         # 分类
         result = self._classifier.classify_one(name)
@@ -185,9 +190,9 @@ class ClipboardMonitor:
 
         # 构建 MagnetItem
         magnet_item = MagnetItem(
-            hash=item["hash"],
+            hash=hash_val,
             name=name,
-            magnet=item["magnet"],
+            magnet=magnet,
             category=category,
             save_path=save_path,
             status=TaskStatus.pending,

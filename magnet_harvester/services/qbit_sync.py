@@ -155,24 +155,42 @@ class QBitSyncLoop:
             if not tracked_items:
                 continue
 
-            for item in tracked_items:
-                if self._stop_event.is_set():
-                    break
+            try:
+                await asyncio.wait_for(
+                    self._reconcile_batch(tracked_items, snapshot, removed_hashes),
+                    timeout=60.0,
+                )
+            except asyncio.TimeoutError:
+                log.warning(
+                    "同步轮次超时（60s），已处理部分 items 后跳过剩余 %d 条",
+                    sum(1 for _ in tracked_items),
+                )
 
-                hash_key = item.hash
-                torrent = snapshot.get(hash_key.lower())
-                is_removed = hash_key.lower() in removed_hashes
+    async def _reconcile_batch(
+        self, tracked_items: list, snapshot: dict, removed_hashes: set[str]
+    ):
+        """逐条 reconcile tracked items，每次 reconcile 前后检查 stop 信号。"""
+        for item in tracked_items:
+            if self._stop_event.is_set():
+                break
 
-                try:
-                    await self._transitions.reconcile_download_snapshot(
-                        hash_key,
-                        item,
-                        torrent,
-                        was_removed=is_removed,
-                    )
-                except Exception as e:
-                    log.error(
-                        "reconcile_download_snapshot 失败 for %s: %s",
-                        hash_key,
-                        e,
-                    )
+            hash_key = item.hash
+            torrent = snapshot.get(hash_key.lower())
+            is_removed = hash_key.lower() in removed_hashes
+
+            try:
+                await self._transitions.reconcile_download_snapshot(
+                    hash_key,
+                    item,
+                    torrent,
+                    was_removed=is_removed,
+                )
+            except Exception as e:
+                log.error(
+                    "reconcile_download_snapshot 失败 for %s: %s",
+                    hash_key,
+                    e,
+                )
+
+            if self._stop_event.is_set():
+                break

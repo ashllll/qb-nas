@@ -13,6 +13,7 @@ Used by HarvestPipeline during crawl→classify→download orchestration.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from magnet_harvester.bus import Event, EventType, MessageBus
@@ -162,21 +163,26 @@ class ClassificationTransitions(_TransitionBase):
 class DownloadTransitions(_TransitionBase):
     """下载域：下载生命周期相关的状态转换。"""
 
+    def __init__(self, store: ItemStore, bus: MessageBus):
+        super().__init__(store, bus)
+        self._submit_lock = asyncio.Lock()
+
     async def submitting(self, hash_key: str):
-        item = self._store.get(hash_key)
-        if item is None:
-            return
-        # 前置状态检查：只允许从 pending 或 error 状态转换到 adding
-        if item.status not in {TaskStatus.pending, TaskStatus.error}:
-            return
-        if not self._store.update(
-            hash_key,
-            status=TaskStatus.adding,
-            progress=0.0,
-            torrent_state="submitting",
-            error_msg=None,
-        ):
-            return
+        async with self._submit_lock:
+            item = self._store.get(hash_key)
+            if item is None:
+                return
+            # 前置状态检查：只允许从 pending 或 error 状态转换到 adding
+            if item.status not in {TaskStatus.pending, TaskStatus.error}:
+                return
+            if not self._store.update(
+                hash_key,
+                status=TaskStatus.adding,
+                progress=0.0,
+                torrent_state="submitting",
+                error_msg=None,
+            ):
+                return
         await self._emit_item_changed(hash_key)
         await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
 

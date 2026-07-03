@@ -175,6 +175,7 @@ class HarvestPipeline:
                     {"error": "pipeline_execute_failed", "url": url, "depth": depth},
                 )
             )
+            raise
 
     async def _stream_classify(self, items: List[MagnetItem]):
         if not items:

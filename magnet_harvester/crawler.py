@@ -224,9 +224,15 @@ class MagnetCrawler:
             name="crawl-session",
         )
 
+        crawl_timeout = max(60, effective_depth * self._config.timeout * 2)
         try:
             while True:
-                msg = await events.get()
+                try:
+                    msg = await asyncio.wait_for(events.get(), timeout=crawl_timeout)
+                except asyncio.TimeoutError:
+                    log.error("爬取会话超时 url=%s depth=%d timeout=%ds", url, effective_depth, crawl_timeout)
+                    yield {"type": "error", "msg": f"爬取超时 ({crawl_timeout}s)", "url": url}
+                    break
                 if msg is None:
                     break
                 yield msg

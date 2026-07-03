@@ -92,6 +92,8 @@ async def get_items(
 ):
     if not status:
         status = "all"
+    if not category:
+        category = None
     if status != "all":
         try:
             TaskStatus(status)
@@ -106,14 +108,15 @@ async def get_items(
             status_code=422,
             detail=f"Invalid category: {category}. Valid values: {sorted(VALID_CATEGORIES)}",
         )
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
-    return _item_queries(ctx).page_items(
+    result = _item_queries(ctx).page_items(
         category=category,
         status=status,
         limit=limit,
         offset=offset,
     )
+    if ctx.stats is not None:
+        ctx.stats.record_api_call()
+    return result
 
 
 @router.get("/api/items/search")
@@ -122,9 +125,10 @@ async def search_items(
     limit: int = Query(20, ge=1, le=100),
     ctx: AppContext = Depends(get_context),
 ):
+    result = _item_queries(ctx).search_items(query=q, limit=limit)
     if ctx.stats is not None:
         ctx.stats.record_api_call()
-    return _item_queries(ctx).search_items(query=q, limit=limit)
+    return result
 
 
 @router.post("/api/crawl")
@@ -212,8 +216,6 @@ async def get_errors(
     ctx: AppContext = Depends(get_context),
     _=Depends(require_api_key),
 ):
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
     if not category:
         category = None
     if not severity:
@@ -230,6 +232,8 @@ async def get_errors(
     if eh is None:
         return {"errors": [], "stats": {}}
     errors = eh.get_recent_errors(cat, sev, limit)
+    if ctx.stats is not None:
+        ctx.stats.record_api_call()
     return {"errors": [e.to_dict() for e in errors], "stats": eh.get_error_stats()}
 
 

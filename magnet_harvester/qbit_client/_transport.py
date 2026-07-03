@@ -79,14 +79,15 @@ class QBitTransport:
 
     async def close(self) -> None:
         self._closing.set()
-        if self._client and not self._client.is_closed:
-            try:
-                self._client.cookies.clear()
-                await self._client.aclose()
-            except Exception:
-                log.exception("关闭 HTTP 客户端时出错")
-            finally:
-                self._client = None
+        async with self._client_lock:
+            if self._client and not self._client.is_closed:
+                try:
+                    self._client.cookies.clear()
+                    await self._client.aclose()
+                except Exception:
+                    log.exception("关闭 HTTP 客户端时出错")
+                finally:
+                    self._client = None
         self._authenticated = False
 
     def _record_success(self) -> None:
