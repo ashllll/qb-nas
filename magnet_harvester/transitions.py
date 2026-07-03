@@ -196,7 +196,12 @@ class DownloadTransitions(_TransitionBase):
 
     async def failed(self, hash_key: str, error_msg: str):
         item = self._store.get(hash_key)
-        previous_status = item.status if item else TaskStatus.adding
+        if item is None:
+            return
+        previous_status = item.status
+        # 前置状态检查：只允许从非终态转换到 error，已成功的种子不能被错误标记
+        if item.status in {TaskStatus.success, TaskStatus.error, TaskStatus.skipped}:
+            return
         if not self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg):
             return
         await self._emit_item_changed(hash_key)

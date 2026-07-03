@@ -20,6 +20,14 @@ log = logging.getLogger(__name__)
 
 _MAX_STORE_ITEMS = 50000
 
+# 非终态 — qBittorrent 同步只关心已提交到 qB 的活跃条目
+_SYNC_ACTIVE_STATUSES = [
+    TaskStatus.adding.value,
+    TaskStatus.queued.value,
+    TaskStatus.downloading.value,
+    TaskStatus.error.value,
+]
+
 
 class QBitSyncClient(Protocol):
     async def poll_torrent_snapshot(self) -> dict: ...
@@ -120,9 +128,11 @@ class QBitSyncLoop:
                 continue
             self._backoff.record_success()
 
-            all_items = store.list(limit=_MAX_STORE_ITEMS)
-            if len(all_items) >= _MAX_STORE_ITEMS:
-                log.error("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(all_items))
+            tracked_items = store.list(
+                status=_SYNC_ACTIVE_STATUSES, limit=_MAX_STORE_ITEMS,
+            )
+            if len(tracked_items) >= _MAX_STORE_ITEMS:
+                log.error("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items))
                 await self._bus.emit(
                     Event(
                         EventType.ERROR,
@@ -132,21 +142,10 @@ class QBitSyncLoop:
                                 f"tracked items 达到截断上限 {_MAX_STORE_ITEMS}，"
                                 "超过上限的 item 将不被同步"
                             ),
-                            "count": len(all_items),
+                            "count": len(tracked_items),
                         },
                     )
                 )
-            tracked_items = [
-                item
-                for item in all_items
-                if item.status
-                in {
-                    TaskStatus.adding,
-                    TaskStatus.queued,
-                    TaskStatus.downloading,
-                    TaskStatus.error,
-                }
-            ]
             if not tracked_items:
                 continue
 

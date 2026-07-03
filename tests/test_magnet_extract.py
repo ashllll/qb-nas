@@ -23,7 +23,7 @@ from magnet_harvester.magnet_parser import (
 def test_extract_standard_magnet():
     """从普通文本中提取标准磁力链接"""
     # MAGNET_RE 现在允许 &，所以 dn 参数能被捕获
-    text = "下载链接：magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&dn=Test+File"
+    text = "下载链接：magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&dn=Test%20File"
     items = extract_from_text(text)
     assert len(items) == 1, f"应找到1个磁力链接，实际找到 {len(items)}"
     item = items[0]
@@ -35,9 +35,9 @@ def test_extract_standard_magnet():
 def test_extract_multiple_magnets():
     """同一文本中有多个磁力链接"""
     text = """
-    magnet:?xt=urn:btih:AAAABBBBCCCCDDDDEEEEFFFFAAAABBBBCCCCDDDD&dn=File+1
+    magnet:?xt=urn:btih:AAAABBBBCCCCDDDDEEEEFFFFAAAABBBBCCCCDDDD&dn=File%201
     中间有干扰文字
-    magnet:?xt=urn:btih:1111222233334444555566661111222233334444&dn=File+2
+    magnet:?xt=urn:btih:1111222233334444555566661111222233334444&dn=File%202
     """
     items = extract_from_text(text)
     assert len(items) == 2, f"应找到2个磁力链接，实际找到 {len(items)}"
@@ -45,7 +45,7 @@ def test_extract_multiple_magnets():
 
 def test_extract_magnet_with_html():
     """磁力链接嵌在 HTML 属性中（模拟 crawl4ai 输出的常见场景）"""
-    text = '<a href="magnet:?xt=urn:btih:DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF&dn=Movie+2024">下载</a>'
+    text = '<a href="magnet:?xt=urn:btih:DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF&dn=Movie%202024">下载</a>'
     items = extract_from_text(text)
     assert len(items) == 1, f"应找到1个磁力链接，实际找到 {len(items)}"
     assert items[0]["hash"] == "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
@@ -93,8 +93,8 @@ def test_extract_base32_btih_magnet():
 def test_deduplicate_by_hash():
     """相同 hash 只返回一次"""
     text = """
-    magnet:?xt=urn:btih:ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD&dn=Same+File
-    magnet:?xt=urn:btih:ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD&dn=Same+File+2
+    magnet:?xt=urn:btih:ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD&dn=Same%20File
+    magnet:?xt=urn:btih:ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD&dn=Same%20File%202
     """
     items = extract_from_text(text)
     assert len(items) == 1, f"相同 hash 应去重，实际找到 {len(items)}"
@@ -102,7 +102,7 @@ def test_deduplicate_by_hash():
 
 def test_invalid_hash_too_short():
     """太短的 hash 不会被匹配"""
-    text = "magnet:?xt=urn:btih:ABCDEF12345&dn=Too+Short"
+    text = "magnet:?xt=urn:btih:ABCDEF12345&dn=Too%20Short"
     items = extract_from_text(text)
     assert len(items) == 0, "太短的 hash 不应被提取"
 
@@ -111,7 +111,7 @@ def test_base64_encoded_magnet():
     """Base64 编码的磁力链接"""
     import base64
 
-    magnet = "magnet:?xt=urn:btih:FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE&dn=Base64+Test"
+    magnet = "magnet:?xt=urn:btih:FFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFEEEFFFE&dn=Base64%20Test"
     encoded = base64.b64encode(magnet.encode()).decode()
     text = f"隐藏链接: {encoded}"
     items = extract_from_text(text)
@@ -153,7 +153,7 @@ def test_magnet_in_json():
     但也可能被 MAGNET_RE 先捕获（不含 &dn=）。
     只要有1个条目且 hash 正确即可。
     """
-    text = '{"link": "magnet:?xt=urn:btih:9999999999999999999999999999999999999999&dn=JSON+Test"}'
+    text = '{"link": "magnet:?xt=urn:btih:9999999999999999999999999999999999999999&dn=JSON%20Test"}'
     items = extract_from_text(text)
     assert len(items) >= 1, f"应至少提取1个磁力链接，实际找到 {len(items)}"
     # MAGNET_RE 匹配时取前40个hash字符（& 处截断），所以 hash 仍正确
@@ -168,7 +168,7 @@ def test_extract_name_with_chinese():
 
     # 直接测试 parse_magnet：传入含 &dn= 的完整磁力链接字符串
     magnet_url = (
-        "magnet:?xt=urn:btih:8888888888888888888888888888888888888888&dn=%E7%94%B5%E5%BD%B1+2024"
+        "magnet:?xt=urn:btih:8888888888888888888888888888888888888888&dn=%E7%94%B5%E5%BD%B1%202024"
     )
 
     # 验证 HASH 解析
@@ -179,7 +179,7 @@ def test_extract_name_with_chinese():
     # 验证 dn 解析
     dn_match = re.search(r"[?&]dn=([^&]+)", magnet_url)
     assert dn_match is not None
-    name = urllib.parse.unquote_plus(dn_match.group(1))
+    name = urllib.parse.unquote(dn_match.group(1))
     expected_bytes = b"\xe7\x94\xb5\xe5\xbd\xb1"  # "电影" 的 UTF-8
     assert expected_bytes in name.encode("utf-8"), f"文件名应包含'电影'，实际为: {repr(name)}"
     quoted = f'"{magnet_url}"'
@@ -210,10 +210,10 @@ def test_extract_from_crawl4ai_markdown():
 ## 资源列表
 
 - [电影1](https://example.com)  
-  `magnet:?xt=urn:btih:1111111111111111111111111111111111111111&dn=Movie+1`
+  `magnet:?xt=urn:btih:1111111111111111111111111111111111111111&dn=Movie%201`
 
-- [电影2](https://example.com)  
-  `magnet:?xt=urn:btih:2222222222222222222222222222222222222222&dn=Movie+2`
+- [电影2](https://example.com)
+  `magnet:?xt=urn:btih:2222222222222222222222222222222222222222&dn=Movie%202`
 
 > 注意：资源仅供测试
 """

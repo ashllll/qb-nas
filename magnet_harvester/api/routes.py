@@ -268,6 +268,9 @@ async def update_config(
     except ValueError as exc:
         log.error("配置验证失败: %s", exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        log.error("qBittorrent 连接失败: %s", exc)
+        raise HTTPException(status_code=503, detail=f"qBittorrent 连接失败: {exc}") from exc
     except OSError as exc:
         log.error("qBittorrent 配置持久化失败: %s", exc)
         raise HTTPException(status_code=500, detail="qBittorrent 配置持久化失败") from exc

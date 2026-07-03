@@ -73,7 +73,7 @@ def parse_magnet(raw_raw: str) -> Optional[dict]:
     btih = m.group(1).upper()
 
     dn_match = re.search(r"[?&]dn=([^&]+)", decoded)
-    name = urllib.parse.unquote_plus(dn_match.group(1)) if dn_match else f"Unknown_{btih[:8]}"
+    name = urllib.parse.unquote(dn_match.group(1)) if dn_match else f"Unknown_{btih[:8]}"
 
     xl_match = SIZE_RE.search(decoded)
     size = xl_match.group(1) if xl_match else None
@@ -162,7 +162,7 @@ def extract_magnet_params(raw: str) -> Dict[str, str]:
         for pair in query_string.split("&"):
             if "=" in pair:
                 key, value = pair.split("=", 1)
-                params[urllib.parse.unquote_plus(key)] = urllib.parse.unquote_plus(value)
+                params[urllib.parse.unquote(key)] = urllib.parse.unquote(value)
     return params
 
 

@@ -65,7 +65,7 @@ class ItemStore(Protocol):
     def list(
         self,
         category: Optional[str] = None,
-        status: Optional[str] = None,
+        status: Optional[str | list[str] | set[str]] = None,
         limit: int = 20,
     ) -> List[MagnetItem]: ...
     def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]: ...
@@ -154,7 +154,7 @@ class InMemoryItemStore:
     def list(
         self,
         category: Optional[str] = None,
-        status: Optional[str] = None,
+        status: Optional[str | list[str] | set[str]] = None,
         limit: int = 20,
     ) -> List[MagnetItem]:
         if limit <= 0:
@@ -169,12 +169,20 @@ class InMemoryItemStore:
     def _iter_filtered_items(
         self,
         category: Optional[str] = None,
-        status: Optional[str] = None,
+        status: Optional[str | list[str] | set[str]] = None,
     ) -> Iterable[MagnetItem]:
+        status_set: set[str] | None = None
+        if isinstance(status, (list, set, frozenset)):
+            if not status:
+                return
+            status_set = set(status)
+        elif status and status != "all":
+            status_set = {status}
+
         for item in self._items.values():
             if category and item.category != category:
                 continue
-            if status and status != "all" and item.status.value != status:
+            if status_set is not None and item.status.value not in status_set:
                 continue
             yield item
 
@@ -440,7 +448,7 @@ class SQLiteItemStore:
     def list(
         self,
         category: Optional[str] = None,
-        status: Optional[str] = None,
+        status: Optional[str | list[str] | set[str]] = None,
         limit: int = 20,
     ) -> List[MagnetItem]:
         if limit <= 0:
@@ -452,8 +460,15 @@ class SQLiteItemStore:
             conditions.append("category = ?")
             params.append(category)
         if status and status != "all":
-            conditions.append("status = ?")
-            params.append(status)
+            if isinstance(status, (list, set, frozenset)):
+                if not status:
+                    return []
+                placeholders = ", ".join(["?"] * len(status))
+                conditions.append(f"status IN ({placeholders})")
+                params.extend(status)
+            else:
+                conditions.append("status = ?")
+                params.append(status)
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
         sql = f"SELECT * FROM magnet_items {where} ORDER BY name ASC LIMIT ?"
@@ -597,8 +612,10 @@ class SQLiteItemStore:
         if not items:
             return 0
         added = 0
+        committed = 0
+        _BATCH_COMMIT = 50
         with self._lock, self._connect() as db:
-            for item in items:
+            for i, item in enumerate(items):
                 row = self._item_to_row(item)
                 db.execute("SAVEPOINT add_item")
                 try:
@@ -621,7 +638,13 @@ class SQLiteItemStore:
                     log.exception("sqlite: add_batch 条目 %s 未知错误", item.hash[:16] if item.hash else "?")
                     db.execute("ROLLBACK TO SAVEPOINT add_item")
                     db.execute("RELEASE SAVEPOINT add_item")
-            db.commit()
+                # 每 _BATCH_COMMIT 条提交一次，防止最终 commit 失败导致全部丢失
+                if (i + 1) % _BATCH_COMMIT == 0:
+                    db.commit()
+                    committed = added
+            # 提交剩余条目
+            if added > committed:
+                db.commit()
         if added < len(items):
             log.warning("sqlite: add_batch 部分成功 %d/%d", added, len(items))
         return added
