@@ -29,13 +29,13 @@ def test_error_handler_standalone_record():
 
 
 def test_error_handler_standalone_clear():
-    """clear_resolved works on independent instances."""
+    """clear_all works on independent instances."""
     eh = ErrorHandler()
     eh.record(ErrorCategory.CRAWLER, ErrorSeverity.WARNING, "test")
     recent = eh.get_recent_errors(limit=10)
     assert len(recent) == 1
-    eh.clear_resolved()
-    # clear_resolved now clears ALL errors (matching FakeErrorHandler behavior)
+    eh.clear_all()
+    # clear_all now clears ALL errors (matching FakeErrorHandler behavior)
     recent2 = eh.get_recent_errors(limit=10)
     assert len(recent2) == 0  # cleared
 

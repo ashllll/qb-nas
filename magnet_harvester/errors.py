@@ -154,11 +154,20 @@ class ErrorHandler:
             "by_severity": by_severity,
         }
 
-    def clear_resolved(self):
+    def clear_all(self):
         with self._lock:
             count = len(self._errors)
             self._errors.clear()
         log.info(f"已清理 {count} 个错误记录")
+
+    def mark_resolved(self, error_id: str) -> bool:
+        """标记指定错误为已解决，为未来扩展预留。"""
+        with self._lock:
+            record = self._errors.get(error_id)
+            if record is None:
+                return False
+            record.resolved = True
+            return True
 
 
 # Module-level singleton

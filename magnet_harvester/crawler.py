@@ -170,9 +170,12 @@ class MagnetCrawler:
         crawler = AsyncWebCrawler(config=browser_cfg)
         try:
             await crawler.start()
-        except Exception:
+        except Exception as exc:
             # start() 失败时关闭已创建的 crawler，防止浏览器进程泄漏
-            await crawler.close()
+            try:
+                await crawler.close()
+            except Exception as close_exc:
+                raise close_exc from exc
             raise
         self._crawler = crawler
         log.info("crawl4ai 引擎已启动")

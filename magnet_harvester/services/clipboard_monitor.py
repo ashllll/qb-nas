@@ -58,7 +58,6 @@ class ClipboardMonitor:
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
-        self._last_seen: str | None = None
         self._magnet_count: int = 0
         self._consecutive_failures: int = 0
         self._total_failure_cycles: int = 0
@@ -79,6 +78,7 @@ class ClipboardMonitor:
             if self._running:
                 return
             self._stop_event.clear()
+            self._processed_content.clear()
             self._task = BGTaskManager.spawn(
                 self._run(), task_manager=self._task_manager, name="clipboard-monitor"
             )
@@ -157,6 +157,8 @@ class ClipboardMonitor:
                 content = None
 
             if content and isinstance(content, str) and content not in self._processed_content:
+                if len(self._processed_content) >= 10000:
+                    self._processed_content.clear()
                 self._processed_content.add(content)
                 for item in self._magnet_sources.from_clipboard_text(content):
                     if not self._running:
@@ -165,8 +167,6 @@ class ClipboardMonitor:
                         await self._handle_item(item)
                     except Exception as e:
                         log.error(f"剪贴板条目处理失败: {e}", exc_info=True)
-                else:
-                    self._last_seen = content
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)

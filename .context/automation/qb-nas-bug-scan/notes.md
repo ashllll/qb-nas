@@ -1,39 +1,36 @@
 # qb-nas BUG 扫描记录
 
-## 2026-07-03 15:53 (第二十二轮 — 11 修复)
-基线: 428 passed, 0 failed。双会话发现 4 HIGH + 16 MEDIUM + 11 LOW = 31 新问题。
+## 2026-07-04 10:28 (第二十五轮 — 9 修复)
+基线: 428 passed, 0 failed。双会话发现 4 HIGH + 12 MEDIUM + 8 LOW = 24 新问题（排除已知10项）。
+HIGH≤5 阈值，自动修复 9 项。验证: 428 passed / 0 failed。
 
-### 本轮修复 (11/11 成功)
-✅ magnet_sources.py:26 — getattr 安全访问 crawl4ai 属性 (HIGH)
-✅ qbit_client/client.py:301 — ensure_category() isinstance 防御 (HIGH)
-✅ store.py:662 — clear() 空表 fetchone()[0]→TypeError 防护 (HIGH)
-✅ services/qbit_sync.py:94 — stop() wait_for 10s 超时防护 (HIGH)
-✅ pipeline.py:262 — _download_items() 空列表守卫 (MEDIUM)
-✅ pipeline.py:363 — replace_download_phase() new_qbit 参数验证 (MEDIUM)
-✅ _transport.py:119 — _login() 大小写不敏感比较 (MEDIUM)
-✅ bus.py:104-130 — emit() asyncio.Lock 读保护 (MEDIUM, 部分缓解 C3)
-✅ crawler.py:207 — crawl() asyncio.Lock + 双重检查 (MEDIUM, 部分缓解 C2)
-✅ api/routes.py:279,308,321 — clear_items/clipboard 异常处理 (MEDIUM)
-✅ config.py:188 — update_qbit() 回滚路径防护 (MEDIUM)
-✅ store.py:643 — add_batch() commit 失败 rollback (MEDIUM)
+### 本轮修复 (9)
+✅ errors.py: clear_resolved() → clear_all() + mark_resolved() [HIGH]
+✅ crawler.py:171-176 — start() 异常吞没, close 异常链到原异常 [HIGH]
+✅ qbit_sync.py:85 — start() 加 _stop_event.clear() 修复重启失效 [MEDIUM]
+✅ clipboard_monitor.py:66,160 — _processed_content 上限 10000 防泄漏 [MEDIUM]
+✅ clipboard_monitor.py:61,169 — 删除 _last_seen 死代码 [LOW]
+✅ transitions.py:273-277 — reconcile_snapshot map() 包 try/except [MEDIUM]
+✅ transitions.py:85-90 — found() emit 失败记录 warning 不丢数据 [MEDIUM]
+✅ pipeline.py:348 — reclassify hashes 去重 [MEDIUM]
+✅ routes.py:207 — reclassify 错误消息空字符串 fallback [LOW]
 
-### 持续累积
-🔴 C1: _transport.py close()/_get_client() TOCTOU 竞态 (R13)
-🔴 C2: crawler.py start() AsyncWebCrawler 泄漏态残留 (R14, R22 部分缓解)
-🟠 H1: websocket.py broadcast+无超时+gather 异常静默丢弃 (R15)
-🟠 H2: store.py _row_to_item 静默丢弃 → 分页空洞 (R15)
-🟠 H3: pipeline.py _download_single_item wait_for 超时竞态 (R18)
-🟡 C3: bus.py emit() 遍历 subscribers 无锁 (R19, R22 部分缓解)
+### 持续累积（仍未修复）
+🔴 C1: _transport.py close()/_get_client() TOCTOU (R13, 高复杂度)
+🔴 C2: crawler.py stop()/crawl() 浏览器进程泄漏竞态 (R14/R22/R24, 高复杂度)
+🔴 C3: pipeline.py _download_items 超时竞态 → 虚假 error (R18/R24, 高复杂度)
+🔴 C4: store.py stats() SQLite/InMemory 不一致 (R24, 中复杂度)
+🟠 H1: websocket.py broadcast+gather 异常静默 (R15/R23/R24, 中复杂度)
+🟠 H2: store.py _row_to_item 静默丢弃 → 分页空洞 (R15, 中复杂度)
+🟠 H5: clipboard_monitor.py stop() emit TOCTOU (R24, 中复杂度)
 
-### 阻塞
-✅ git push 成功 (R22 恢复推送)
+### 本轮未修复（非阻塞，低优先级/高复杂度跳过）
+3 HIGH: pipeline.py 分类下载竞态, qbit_client 返回值语义不一致,
+  errors.py 已修复 → 剩余 2 HIGH 移入下次评估
 
-### 趋势 (R14→R22)
-- 新发现 HIGH+: 7→9→2→1→3→2→10→5→4
-- 累积未修复 CRITICAL: 2, HIGH: 3 (↓3), MEDIUM+: ~59
+### 趋势 (R14→R25)
+- R25: 9 fix | R24: 0 fix(超阈值) | R23: 9 fix | R22: 11 fix
+- R21: 5 fix | R20: 0 fix(超阈值) | R19: 7 fix | R18: 10 fix
+- 累计修复: ~186 bugs
+- 连续 0 BUG 计数: 0（本轮发现 24 个）
 - 测试始终 428 passed / 0 failed
-- 累计修复: ~168 bugs
-
-## 历史
-R21: 5 fix (magnet_parser/transitions/routes/store×2) | R20: 0 fix, 10 HIGH+ 超阈值
-R19: 7 fix | R18: 10 fix | R17: 11 fix | R16: 7 fix | R12-R15: 49 fix | R9-R11: 21 fix | R1-R7: 48 fix

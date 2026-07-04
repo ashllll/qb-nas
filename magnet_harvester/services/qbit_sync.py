@@ -82,6 +82,7 @@ class QBitSyncLoop:
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     async def start(self):
+        self._stop_event.clear()
         if self._task_manager is not None:
             self._task = self._task_manager.create(
                 self._run(),

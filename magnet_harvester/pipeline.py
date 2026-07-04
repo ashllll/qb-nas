@@ -345,6 +345,7 @@ class HarvestPipeline:
                         log.error(f"兜底 store.update 也失败: {fallback_e}")
 
     async def reclassify(self, hashes: List[str]):
+        hashes = list(dict.fromkeys(hashes))
         items = [self._store.get(h) for h in hashes]
         items = [
             i for i in items

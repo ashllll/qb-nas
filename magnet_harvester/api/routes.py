@@ -204,7 +204,7 @@ async def reclassify(
         log.error("reclassify 返回类型异常: %s, 类型: %s", result, type(result))
         raise HTTPException(status_code=503, detail="服务内部错误")
     if result.get("status") == "error":
-        raise HTTPException(status_code=503, detail=result.get("reason", "服务暂时不可用"))
+        raise HTTPException(status_code=503, detail=result.get("reason") or "action failed")
     return result
 
 
@@ -240,8 +240,8 @@ async def get_errors(
 @router.post("/api/errors/clear")
 async def clear_resolved_errors(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     if ctx.error_handler is not None:
-        ctx.error_handler.clear_resolved()
-    return {"status": "cleared"}
+        ctx.error_handler.clear_all()
+    return {"status": "cleared", "message": "已清除所有错误"}
 
 
 @router.get("/api/health")

@@ -85,7 +85,10 @@ class DiscoveryTransitions(_TransitionBase):
     async def found(self, item: MagnetItem) -> bool:
         if not self._store.add(item):
             return False
-        await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
+        try:
+            await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
+        except Exception:
+            log.warning("MAGNET_FOUND emit 失败，item 已持久化 hash=%s", item.hash, exc_info=True)
         return True
 
     async def clipboard_found(self, item: MagnetItem) -> bool:
@@ -270,7 +273,12 @@ class DownloadTransitions(_TransitionBase):
                 return True
             return False
 
-        mapped = TorrentStatusMapper.map(torrent)
+        try:
+            mapped = TorrentStatusMapper.map(torrent)
+        except Exception:
+            log.warning("无法映射 torrent 状态，跳过 hash=%s", hash_key, exc_info=True)
+            return False
+
         fields: dict = {}
 
         if item.status != mapped["status"]:
