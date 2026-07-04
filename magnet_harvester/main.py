@@ -44,14 +44,28 @@ async def lifespan(app: FastAPI):
     app.state.ctx = runtime.ctx
     try:
         await runtime.start()
-        qbit_ok = await runtime.ctx.qbit.ping()
-        disk_info = settings.check_disk_space()
-        log.info(
-            f"Crawl4AI 已启动 | qB: {'在线' if qbit_ok else '离线'} "
-            f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
-        )
     except Exception:
-        log.warning("服务启动部分失败，继续以降级模式运行", exc_info=True)
+        log.exception("runtime.start() 失败")
+        # 验证核心存储服务是否可用：store 不可用为致命错误，应阻止启动
+        try:
+            _ = runtime.ctx.core.store.count
+        except Exception:
+            log.critical("核心存储 store 不可用，无法启动")
+            raise
+        log.warning("runtime.start() 部分失败，继续以降级模式运行")
+
+    # qBittorrent 连接检查（可降级：离线时服务仍可运行）
+    qbit_ok = False
+    try:
+        qbit_ok = await runtime.ctx.qbit.ping()
+    except Exception:
+        log.warning("qBittorrent 连接检查失败，继续以降级模式运行")
+
+    disk_info = settings.check_disk_space()
+    log.info(
+        f"Crawl4AI 已启动 | qB: {'在线' if qbit_ok else '离线'} "
+        f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
+    )
 
     yield
 

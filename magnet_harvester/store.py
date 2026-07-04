@@ -297,7 +297,7 @@ class SQLiteItemStore:
     # ── 数据库连接 ──────────────────────────
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path))
+        conn = sqlite3.connect(str(self._db_path), isolation_level='DEFERRED')
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")

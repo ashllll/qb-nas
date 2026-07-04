@@ -192,7 +192,9 @@ class QBitTransport:
 
         for attempt in range(config["max_retries"]):
             try:
-                if not self._authenticated:
+                async with self._auth_lock:
+                    needs_auth = not self._authenticated
+                if needs_auth:
                     ok = await self._login()
                     if not ok:
                         raise RuntimeError("qBittorrent 登录失败")

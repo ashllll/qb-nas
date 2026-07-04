@@ -82,6 +82,9 @@ class QBitSyncLoop:
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     async def start(self):
+        async with self._lock:
+            if self._task is not None and not self._task.done():
+                return
         self._stop_event.clear()
         if self._task_manager is not None:
             self._task = self._task_manager.create(
@@ -122,7 +125,11 @@ class QBitSyncLoop:
             async with self._lock:
                 qbit = self._qbit
             store = self._store
-            if qbit is None or store is None:
+            if qbit is None:
+                log.warning("qB 同步跳过：qbit client 为 None（可能尚未配置）")
+                continue
+            if store is None:
+                log.error("qB 同步跳过：store 为 None，数据持久化不可用")
                 continue
 
             try:
