@@ -354,7 +354,7 @@ class HarvestPipeline:
             if i is not None and i.status not in {
                 TaskStatus.adding, TaskStatus.queued,
                 TaskStatus.downloading, TaskStatus.success,
-                TaskStatus.classifying, TaskStatus.error,
+                TaskStatus.classifying,
             }
         ]
         if not items:

@@ -158,7 +158,9 @@ class ClipboardMonitor:
 
             if content and isinstance(content, str) and content not in self._processed_content:
                 if len(self._processed_content) >= 10000:
-                    self._processed_content.clear()
+                    # 逐出一半：set 无序，随机保留约半数，避免全部 clear 导致的重复消费窗口
+                    items = list(self._processed_content)
+                    self._processed_content = set(items[len(items) // 2:])
                 self._processed_content.add(content)
                 for item in self._magnet_sources.from_clipboard_text(content):
                     if not self._running:

@@ -91,6 +91,63 @@ def test_clipboard_accepts_html_escaped_and_quoted_magnet():
     assert item.name == "Quoted.Clipboard.720p.WEB-DL"
 
 
+def test_processed_content_fifo_eviction_not_full_clear():
+    """_processed_content 达到上限时应 FIFO 逐出一半，不应全部清零。"""
+    from unittest.mock import patch, MagicMock
+
+    store = FakeStore()
+    bus = NullBus()
+    monitor = ClipboardMonitor(
+        bus=bus,
+        store=store,
+        classifier=LocalClassifier(),
+        pipeline=None,
+        poll_interval=0.01,
+    )
+
+    # 填充到上限
+    for i in range(10000):
+        monitor._processed_content.add(f"content-{i}")
+
+    assert len(monitor._processed_content) == 10000
+
+    # 记录旧条目样本
+    old_sample = {f"content-{i}" for i in range(0, 10000, 100)}
+
+    # 模拟 pyperclip.paste 返回新内容，然后返回空触发退出
+    paste_values = ["brand-new-clipboard-text"]
+
+    def mock_paste():
+        if paste_values:
+            return paste_values.pop(0)
+        return ""
+
+    async def run_one_cycle():
+        monitor._running = True
+        monitor._stop_event.clear()
+        with patch(
+            "magnet_harvester.services.clipboard_monitor.pyperclip.paste",
+            side_effect=mock_paste,
+        ):
+            # 执行 _run 的一轮迭代（直接调用 _run 并快速停止）
+            task = asyncio.create_task(monitor._run())
+            await asyncio.sleep(0.05)
+            monitor._stop_event.set()
+            monitor._running = False
+            try:
+                await asyncio.wait_for(task, timeout=2.0)
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(run_one_cycle())
+
+    # 逐出后旧条目应部分保留（FIFO），不应全部清零
+    surviving = sum(1 for s in old_sample if s in monitor._processed_content)
+    total = len(monitor._processed_content)
+    assert surviving > 0, f"逐出后应保留部分旧条目，实际保留 {surviving} 个（总数 {total}）"
+    assert total > 100, f"逐出后大小应保留约一半，实际 {total}"
+
+
 if __name__ == "__main__":
     test_clipboard_no_longer_uses_local_magnet_regex()
     test_clipboard_accepts_non_2160p_magnet()

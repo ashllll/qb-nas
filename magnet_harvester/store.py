@@ -587,7 +587,8 @@ class SQLiteItemStore:
 
             # By category
             cursor = db.execute(
-                "SELECT COALESCE(category, '未分类') as cat, COUNT(*) as cnt FROM magnet_items GROUP BY cat"
+                "SELECT CASE WHEN category IS NULL OR category = '' THEN '未分类' ELSE category END as cat, "
+                "COUNT(*) as cnt FROM magnet_items GROUP BY cat"
             )
             for row in cursor.fetchall():
                 s.by_category[row["cat"]] = row["cnt"]

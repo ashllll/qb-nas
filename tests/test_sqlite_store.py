@@ -265,3 +265,21 @@ class TestSQLiteItemStore:
         assert updated.progress == 0.9
         assert updated.category == "电影"  # Should be preserved
         assert updated.save_path == "电影"  # Should be preserved
+
+    def test_stats_category_none_mapped_to_uncategorized(self, store):
+        """category=None 的条目应统计到 '未分类' 键下，不应出现空字符串键。"""
+        store.add(MagnetItem(
+            hash="NOCAT001", name="No Category Item",
+            magnet="magnet:?xt=urn:btih:NOCAT001", category=None,
+        ))
+        store.add(MagnetItem(
+            hash="WITHCAT001", name="With Category",
+            magnet="magnet:?xt=urn:btih:WITHCAT001", category="电影",
+        ))
+
+        s = store.stats()
+        assert s.total == 2
+        assert "未分类" in s.by_category, "category=None 应归入 '未分类'"
+        assert s.by_category["未分类"] == 1
+        assert "" not in s.by_category, "不应出现空字符串键"
+        assert s.by_category.get("电影", 0) == 1
