@@ -1,5 +1,5 @@
 """
-测试磁力链接提取逻辑 — 从 crawl4ai 的 markdown/html 输出中提取磁力链接
+测试磁力链接提取逻辑 — 从爬虫的 markdown/html 输出中提取磁力链接
 这是独立于爬虫引擎的业务逻辑测试，不依赖网络或浏览器
 """
 
@@ -44,7 +44,7 @@ def test_extract_multiple_magnets():
 
 
 def test_extract_magnet_with_html():
-    """磁力链接嵌在 HTML 属性中（模拟 crawl4ai 输出的常见场景）"""
+    """磁力链接嵌在 HTML 属性中（模拟爬虫输出的常见场景）"""
     text = '<a href="magnet:?xt=urn:btih:DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF&dn=Movie%202024">下载</a>'
     items = extract_from_text(text)
     assert len(items) == 1, f"应找到1个磁力链接，实际找到 {len(items)}"
@@ -199,8 +199,8 @@ def test_parse_magnet_preserves_literal_spaces_in_dn():
     assert item["name"] == "Example Movie 2160p WEB-DL"
 
 
-def test_extract_from_crawl4ai_markdown():
-    """模拟 crawl4ai 的 markdown 输出格式
+def test_extract_from_crawler_markdown():
+    """模拟爬虫的 markdown 输出格式
 
     注意：MAGNET_RE 匹配磁力链接，& 及之后的参数被截断（dn 丢失），
     但只要 hash 正确即可。
@@ -246,6 +246,6 @@ if __name__ == "__main__":
     test_base64_encoded_magnet()
     test_magnet_in_json()
     test_extract_name_with_chinese()
-    test_extract_from_crawl4ai_markdown()
+    test_extract_from_crawler_markdown()
     test_no_false_positives()
     print("=== 所有磁力提取测试通过! ===")

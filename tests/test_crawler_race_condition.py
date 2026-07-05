@@ -1,5 +1,5 @@
 """
-爬虫链接去重/遍历由 crawl4ai 深爬策略负责。
+爬虫链接去重/遍历由 Scrapling 适配层负责。
 """
 
 import ast
@@ -7,9 +7,6 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from magnet_harvester.config import CrawlerConfig
-from magnet_harvester.crawler import CrawlAdmissionFilter, MagnetCrawler
 
 
 def _crawler_source() -> str:
@@ -23,16 +20,14 @@ def test_manual_visited_claim_wheel_removed():
 
     assert "_claim_unvisited_links" not in source
     assert "_visited_lock" not in source
-    assert "BFSDeepCrawlStrategy" in source
+    assert "AsyncDynamicSession" in source
 
 
-def test_crawl_admission_filter_is_in_deep_crawl_filter_chain():
-    crawler = MagnetCrawler(config=CrawlerConfig())
-    strategy = crawler._build_deep_crawl_strategy(depth=2)
-
-    assert any(
-        isinstance(filter_, CrawlAdmissionFilter) for filter_ in strategy.filter_chain.filters
-    )
+def test_discovered_links_still_use_url_admission():
+    source = _crawler_source()
+    discover_source = source[source.index("async def _discover_detail_links") :]
+    assert "admit_redirect_chain" in discover_source
+    assert "URLValidationError" in discover_source
 
 
 def test_no_manual_worker_loop_methods_remain():
@@ -50,6 +45,6 @@ def test_no_manual_worker_loop_methods_remain():
 
 if __name__ == "__main__":
     test_manual_visited_claim_wheel_removed()
-    test_crawl_admission_filter_is_in_deep_crawl_filter_chain()
+    test_discovered_links_still_use_url_admission()
     test_no_manual_worker_loop_methods_remain()
     print("=== crawler wheel removal tests passed! ===")

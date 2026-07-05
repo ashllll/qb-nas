@@ -79,7 +79,7 @@ def test_third_party_loggers_quieted():
 
     configure_logging(level="DEBUG")
 
-    for name in ("httpx", "httpcore", "charset_normalizer", "urllib3", "crawl4ai", "playwright"):
+    for name in ("httpx", "httpcore", "charset_normalizer", "urllib3", "scrapling", "playwright"):
         assert logging.getLogger(name).level == logging.WARNING, f"{name} should be WARNING"
 
 

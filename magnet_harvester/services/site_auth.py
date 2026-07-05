@@ -1,7 +1,7 @@
 """
 SiteAuth — 站点 Cookie 注入与自动登录支持。
 
-从 .env SITE_COOKIES 读取站点 cookie，注入到 crawl4ai 浏览器会话。
+从 .env SITE_COOKIES 读取站点 cookie，注入到 Scrapling 浏览器会话。
 """
 
 from __future__ import annotations
