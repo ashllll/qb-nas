@@ -55,6 +55,11 @@ class SyncBackoffPolicy:
         self.failures += 1
 
 
+@dataclass
+class _ReconcileProgress:
+    processed: int = 0
+
+
 class QBitSyncLoop:
     """Polls qBittorrent state and reconciles tracked items."""
 
@@ -162,19 +167,26 @@ class QBitSyncLoop:
             if not tracked_items:
                 continue
 
+            progress = _ReconcileProgress()
             try:
                 await asyncio.wait_for(
-                    self._reconcile_batch(tracked_items, snapshot, removed_hashes),
+                    self._reconcile_batch(tracked_items, snapshot, removed_hashes, progress),
                     timeout=60.0,
                 )
             except asyncio.TimeoutError:
+                remaining = max(len(tracked_items) - progress.processed, 0)
                 log.warning(
-                    "同步轮次超时（60s），已处理部分 items 后跳过剩余 %d 条",
-                    sum(1 for _ in tracked_items),
+                    "同步轮次超时（60s），已处理 %d 条，跳过剩余 %d 条",
+                    progress.processed,
+                    remaining,
                 )
 
     async def _reconcile_batch(
-        self, tracked_items: list, snapshot: dict, removed_hashes: set[str]
+        self,
+        tracked_items: list,
+        snapshot: dict,
+        removed_hashes: set[str],
+        progress: _ReconcileProgress | None = None,
     ):
         """逐条 reconcile tracked items，每次 reconcile 前后检查 stop 信号。"""
         for item in tracked_items:
@@ -198,6 +210,9 @@ class QBitSyncLoop:
                     hash_key,
                     e,
                 )
+
+            if progress is not None:
+                progress.processed += 1
 
             if self._stop_event.is_set():
                 break

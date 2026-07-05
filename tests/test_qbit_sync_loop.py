@@ -13,7 +13,7 @@ import pytest
 from magnet_harvester.bus import EventType, MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
-from magnet_harvester.services.qbit_sync import QBitSyncLoop, SyncBackoffPolicy
+from magnet_harvester.services.qbit_sync import QBitSyncLoop, SyncBackoffPolicy, _ReconcileProgress
 from magnet_harvester.transitions import MagnetItemTransitions
 
 
@@ -311,6 +311,24 @@ class FakeTransitions:
         return True
 
 
+class SlowAfterFirstTransitions:
+    def __init__(self):
+        self.calls = 0
+
+    async def reconcile_download_snapshot(
+        self,
+        hash_key: str,
+        item: MagnetItem,
+        torrent: dict | None,
+        *,
+        was_removed: bool = False,
+    ) -> bool:
+        self.calls += 1
+        if self.calls > 1:
+            await asyncio.sleep(10)
+        return True
+
+
 class RecordingBus(MessageBus):
     """Records every emitted event for event-order assertions."""
 
@@ -374,6 +392,46 @@ async def test_sync_delegates_reconciliation_to_transitions():
         c["item"] == removed_item and c["torrent"] is None and c["was_removed"] is True
         for c in removed_calls
     )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_progress_excludes_cancelled_inflight_item():
+    qbit = FakeQbitClient()
+    store = FakeStore()
+    bus = MessageBus()
+    transitions = SlowAfterFirstTransitions()
+
+    items = [
+        MagnetItem(
+            hash="DONE",
+            name="Done",
+            magnet="magnet:?xt=urn:btih:DONE",
+            status=TaskStatus.queued,
+        ),
+        MagnetItem(
+            hash="SLOW",
+            name="Slow",
+            magnet="magnet:?xt=urn:btih:SLOW",
+            status=TaskStatus.queued,
+        ),
+    ]
+    progress = _ReconcileProgress()
+    loop = QBitSyncLoop(
+        qbit_client=qbit,
+        store=store,
+        bus=bus,
+        poll_interval=0.05,
+        transitions=transitions,
+    )
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(
+            loop._reconcile_batch(items, {}, set(), progress),
+            timeout=0.01,
+        )
+
+    assert transitions.calls == 2
+    assert progress.processed == 1
 
 
 @pytest.mark.asyncio
