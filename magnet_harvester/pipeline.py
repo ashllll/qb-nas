@@ -137,7 +137,7 @@ class HarvestPipeline:
                         item = MagnetItem(**msg["item"])
                         if await self._transitions.found(item):
                             new_hashes.append(item.hash)
-                    except Exception as exc:
+                    except Exception:
                         log.exception(
                             "Crawl found handler failed for url=%s, raw_item=%s",
                             url,
@@ -167,7 +167,7 @@ class HarvestPipeline:
 
             if auto_download:
                 await self._download_items(new_hashes)
-        except Exception as exc:
+        except Exception:
             log.exception("execute() 顶层异常 url=%s depth=%d", url, depth)
             await self._bus.emit(
                 Event(
@@ -175,6 +175,7 @@ class HarvestPipeline:
                     {"error": "pipeline_execute_failed", "url": url, "depth": depth},
                 )
             )
+            raise
 
     async def _stream_classify(self, items: List[MagnetItem]):
         if not items:
@@ -320,6 +321,8 @@ class HarvestPipeline:
                             hash_key,
                             status=TaskStatus.error,
                             error_msg=str(e),
+                            torrent_state=None,
+                            progress=0.0,
                         )
                         # 发射 STORE_CHANGED 确保 UI 刷新
                         item = self._store.get(hash_key)
@@ -344,13 +347,14 @@ class HarvestPipeline:
                         log.error(f"兜底 store.update 也失败: {fallback_e}")
 
     async def reclassify(self, hashes: List[str]):
+        hashes = list(dict.fromkeys(hashes))
         items = [self._store.get(h) for h in hashes]
         items = [
             i for i in items
             if i is not None and i.status not in {
                 TaskStatus.adding, TaskStatus.queued,
                 TaskStatus.downloading, TaskStatus.success,
-                TaskStatus.classifying, TaskStatus.error,
+                TaskStatus.classifying,
             }
         ]
         if not items:

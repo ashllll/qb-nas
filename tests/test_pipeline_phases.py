@@ -341,6 +341,40 @@ def test_classify_stream_uses_injected_task_manager():
     assert tasks.calls == ["classify:FFFF"]
 
 
+def test_reclassify_includes_error_status_items():
+    """reclassify() 应包含 error 状态的条目，不应排除它们。"""
+    store = FakeStore()
+    bus = NullBus()
+
+    error_item = MagnetItem(
+        hash="ERR01",
+        name="Error Item",
+        magnet="magnet:?xt=urn:btih:ERR01",
+        status=TaskStatus.error,
+        category="电影",
+    )
+    store.add(error_item)
+
+    classify_phase = FakeClassifyPhase(category="电视剧")
+
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(),
+        classifier=classify_phase,
+        qbit=FakeDownloadPhase(),
+        store=store,
+        bus=bus,
+    )
+
+    import asyncio
+    asyncio.run(pipeline.reclassify(["ERR01"]))
+
+    # reclassify 应将 error 状态条目发送到分类阶段
+    assert len(classify_phase.called_with) == 1, "error 状态应被 reclassify 包含"
+    classified_items = classify_phase.called_with[0]
+    assert len(classified_items) == 1
+    assert classified_items[0]["name"] == "Error Item"
+
+
 if __name__ == "__main__":
     test_crawl_phase_protocol()
     test_pipeline_with_fake_phases()

@@ -13,7 +13,7 @@ import heapq
 import logging
 import sqlite3
 import threading
-from contextlib import closing, contextmanager
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -297,14 +297,17 @@ class SQLiteItemStore:
     # ── 数据库连接 ──────────────────────────
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path))
+        conn = sqlite3.connect(str(self._db_path), isolation_level='DEFERRED')
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("PRAGMA foreign_keys=ON")
         except Exception:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
             raise
         return closing(conn)
 
@@ -584,7 +587,8 @@ class SQLiteItemStore:
 
             # By category
             cursor = db.execute(
-                "SELECT COALESCE(category, '未分类') as cat, COUNT(*) as cnt FROM magnet_items GROUP BY cat"
+                "SELECT CASE WHEN category IS NULL OR category = '' THEN '未分类' ELSE category END as cat, "
+                "COUNT(*) as cnt FROM magnet_items GROUP BY cat"
             )
             for row in cursor.fetchall():
                 s.by_category[row["cat"]] = row["cnt"]

@@ -444,3 +444,27 @@ async def test_sync_removed_torrent_emits_store_changed_and_download_result():
     assert updated.torrent_state == "removed"
     assert any(e.type == EventType.STORE_CHANGED for e in bus.events)
     assert any(e.type == EventType.DOWNLOAD_RESULT for e in bus.events)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_start_creates_only_one_task():
+    """并发调用 start() 只应创建一个同步任务，不应出现双重任务。"""
+    qbit = FakeQbitClient()
+    store = FakeStore()
+    bus = MessageBus()
+
+    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+
+    # 并发发起多个 start()
+    await asyncio.gather(loop.start(), loop.start(), loop.start())
+
+    # 应只有一个 task
+    assert loop._task is not None
+    assert not loop._task.done()
+
+    # 再次 start() 不应创建新 task
+    first_task = loop._task
+    await loop.start()
+    assert loop._task is first_task, "重复 start() 不应替换已有 task"
+
+    await loop.stop()

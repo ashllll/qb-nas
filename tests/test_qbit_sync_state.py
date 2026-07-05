@@ -131,7 +131,6 @@ if __name__ == "__main__":
     asyncio.run(test_poll_lowercases_hashes())
     asyncio.run(test_poll_returns_cached_snapshot_when_fetch_fails())
     asyncio.run(test_poll_tracks_removed_torrents_and_drops_them_from_snapshot())
-    asyncio.run(test_poll_clears_recently_removed_when_no_removals())
     test_take_recently_removed_returns_and_clears()
     asyncio.run(test_poll_passes_current_rid_to_fetch())
     print("=== qB sync state tests passed! ===")

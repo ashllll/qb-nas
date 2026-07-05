@@ -106,7 +106,6 @@ class QBitTransport:
             if force:
                 self._authenticated = False
 
-            last_error = None
             for attempt in range(self._max_auth_retries + 1):
                 try:
                     client = await self._get_client()
@@ -137,7 +136,6 @@ class QBitTransport:
                 except RuntimeError:
                     raise
                 except Exception as e:
-                    last_error = e
                     if attempt < self._max_auth_retries:
                         delay = self._backoff_delay(attempt)
                         log.warning(
@@ -192,7 +190,9 @@ class QBitTransport:
 
         for attempt in range(config["max_retries"]):
             try:
-                if not self._authenticated:
+                async with self._auth_lock:
+                    needs_auth = not self._authenticated
+                if needs_auth:
                     ok = await self._login()
                     if not ok:
                         raise RuntimeError("qBittorrent 登录失败")

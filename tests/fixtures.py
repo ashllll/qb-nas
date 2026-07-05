@@ -154,7 +154,7 @@ class FakeErrorHandler:
     def get_error_stats(self) -> dict:
         return {"total_errors": len(self.errors), "unique_errors": len(self.errors)}
 
-    def clear_resolved(self):
+    def clear_all(self):
         self.errors = []
 
     def get_recent_errors(self, category=None, severity=None, limit=50):

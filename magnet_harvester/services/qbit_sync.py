@@ -82,14 +82,17 @@ class QBitSyncLoop:
         self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
 
     async def start(self):
-        if self._task_manager is not None:
-            self._task = self._task_manager.create(
-                self._run(),
-                name="qbit-sync-loop",
-            )
-            return
-
-        self._task = BGTaskManager.spawn(self._run(), name="qbit-sync-loop")
+        async with self._lock:
+            if self._task is not None and not self._task.done():
+                return
+            self._stop_event.clear()
+            if self._task_manager is not None:
+                self._task = self._task_manager.create(
+                    self._run(),
+                    name="qbit-sync-loop",
+                )
+                return
+            self._task = BGTaskManager.spawn(self._run(), name="qbit-sync-loop")
 
     async def stop(self):
         self._stop_event.set()
@@ -121,7 +124,11 @@ class QBitSyncLoop:
             async with self._lock:
                 qbit = self._qbit
             store = self._store
-            if qbit is None or store is None:
+            if qbit is None:
+                log.warning("qB 同步跳过：qbit client 为 None（可能尚未配置）")
+                continue
+            if store is None:
+                log.error("qB 同步跳过：store 为 None，数据持久化不可用")
                 continue
 
             try:
@@ -155,24 +162,42 @@ class QBitSyncLoop:
             if not tracked_items:
                 continue
 
-            for item in tracked_items:
-                if self._stop_event.is_set():
-                    break
+            try:
+                await asyncio.wait_for(
+                    self._reconcile_batch(tracked_items, snapshot, removed_hashes),
+                    timeout=60.0,
+                )
+            except asyncio.TimeoutError:
+                log.warning(
+                    "同步轮次超时（60s），已处理部分 items 后跳过剩余 %d 条",
+                    sum(1 for _ in tracked_items),
+                )
 
-                hash_key = item.hash
-                torrent = snapshot.get(hash_key.lower())
-                is_removed = hash_key.lower() in removed_hashes
+    async def _reconcile_batch(
+        self, tracked_items: list, snapshot: dict, removed_hashes: set[str]
+    ):
+        """逐条 reconcile tracked items，每次 reconcile 前后检查 stop 信号。"""
+        for item in tracked_items:
+            if self._stop_event.is_set():
+                break
 
-                try:
-                    await self._transitions.reconcile_download_snapshot(
-                        hash_key,
-                        item,
-                        torrent,
-                        was_removed=is_removed,
-                    )
-                except Exception as e:
-                    log.error(
-                        "reconcile_download_snapshot 失败 for %s: %s",
-                        hash_key,
-                        e,
-                    )
+            hash_key = item.hash
+            torrent = snapshot.get(hash_key.lower())
+            is_removed = hash_key.lower() in removed_hashes
+
+            try:
+                await self._transitions.reconcile_download_snapshot(
+                    hash_key,
+                    item,
+                    torrent,
+                    was_removed=is_removed,
+                )
+            except Exception as e:
+                log.error(
+                    "reconcile_download_snapshot 失败 for %s: %s",
+                    hash_key,
+                    e,
+                )
+
+            if self._stop_event.is_set():
+                break

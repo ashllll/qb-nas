@@ -13,6 +13,7 @@ Used by HarvestPipeline during crawl→classify→download orchestration.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from magnet_harvester.bus import Event, EventType, MessageBus
@@ -84,7 +85,10 @@ class DiscoveryTransitions(_TransitionBase):
     async def found(self, item: MagnetItem) -> bool:
         if not self._store.add(item):
             return False
-        await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
+        try:
+            await self._bus.emit(Event(EventType.MAGNET_FOUND, {"item": item.model_dump()}))
+        except Exception:
+            log.warning("MAGNET_FOUND emit 失败，item 已持久化 hash=%s", item.hash, exc_info=True)
         return True
 
     async def clipboard_found(self, item: MagnetItem) -> bool:
@@ -162,21 +166,26 @@ class ClassificationTransitions(_TransitionBase):
 class DownloadTransitions(_TransitionBase):
     """下载域：下载生命周期相关的状态转换。"""
 
+    def __init__(self, store: ItemStore, bus: MessageBus):
+        super().__init__(store, bus)
+        self._submit_lock = asyncio.Lock()
+
     async def submitting(self, hash_key: str):
-        item = self._store.get(hash_key)
-        if item is None:
-            return
-        # 前置状态检查：只允许从 pending 或 error 状态转换到 adding
-        if item.status not in {TaskStatus.pending, TaskStatus.error}:
-            return
-        if not self._store.update(
-            hash_key,
-            status=TaskStatus.adding,
-            progress=0.0,
-            torrent_state="submitting",
-            error_msg=None,
-        ):
-            return
+        async with self._submit_lock:
+            item = self._store.get(hash_key)
+            if item is None:
+                return
+            # 前置状态检查：只允许从 pending 或 error 状态转换到 adding
+            if item.status not in {TaskStatus.pending, TaskStatus.error}:
+                return
+            if not self._store.update(
+                hash_key,
+                status=TaskStatus.adding,
+                progress=0.0,
+                torrent_state="submitting",
+                error_msg=None,
+            ):
+                return
         await self._emit_item_changed(hash_key)
         await self._bus.emit(Event(EventType.DOWNLOAD_START, {"hash": hash_key, "name": item.name}))
 
@@ -264,7 +273,12 @@ class DownloadTransitions(_TransitionBase):
                 return True
             return False
 
-        mapped = TorrentStatusMapper.map(torrent)
+        try:
+            mapped = TorrentStatusMapper.map(torrent)
+        except Exception:
+            log.warning("无法映射 torrent 状态，跳过 hash=%s", hash_key, exc_info=True)
+            return False
+
         fields: dict = {}
 
         if item.status != mapped["status"]:

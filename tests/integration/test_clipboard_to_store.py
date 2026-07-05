@@ -6,7 +6,7 @@ import asyncio
 
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.store import InMemoryItemStore
-from magnet_harvester.bus import MessageBus, Event, EventType
+from magnet_harvester.bus import MessageBus, Event
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
 from magnet_harvester.models import MagnetItem, TaskStatus

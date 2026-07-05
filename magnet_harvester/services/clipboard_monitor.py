@@ -58,7 +58,6 @@ class ClipboardMonitor:
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
-        self._last_seen: str | None = None
         self._magnet_count: int = 0
         self._consecutive_failures: int = 0
         self._total_failure_cycles: int = 0
@@ -78,11 +77,12 @@ class ClipboardMonitor:
         async with self._lock:
             if self._running:
                 return
-            self._running = True
             self._stop_event.clear()
+            self._processed_content.clear()
             self._task = BGTaskManager.spawn(
                 self._run(), task_manager=self._task_manager, name="clipboard-monitor"
             )
+            self._running = True
             await self._bus.emit(
                 Event(
                     EventType.CLIPBOARD_STATUS,
@@ -157,6 +157,10 @@ class ClipboardMonitor:
                 content = None
 
             if content and isinstance(content, str) and content not in self._processed_content:
+                if len(self._processed_content) >= 10000:
+                    # 逐出一半：set 无序，随机保留约半数，避免全部 clear 导致的重复消费窗口
+                    items = list(self._processed_content)
+                    self._processed_content = set(items[len(items) // 2:])
                 self._processed_content.add(content)
                 for item in self._magnet_sources.from_clipboard_text(content):
                     if not self._running:
@@ -165,8 +169,6 @@ class ClipboardMonitor:
                         await self._handle_item(item)
                     except Exception as e:
                         log.error(f"剪贴板条目处理失败: {e}", exc_info=True)
-                else:
-                    self._last_seen = content
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)
@@ -176,7 +178,12 @@ class ClipboardMonitor:
 
     async def _handle_item(self, item: dict):
         """处理单个已解析的磁力条目：分类、存储、发布事件。"""
-        name = item["name"]
+        name = item.get("name")
+        hash_val = item.get("hash")
+        magnet = item.get("magnet")
+        if not name or not hash_val or not magnet:
+            log.warning("剪贴板条目缺少必要字段（name/hash/magnet），跳过: %s", item)
+            return
 
         # 分类
         result = self._classifier.classify_one(name)
@@ -185,9 +192,9 @@ class ClipboardMonitor:
 
         # 构建 MagnetItem
         magnet_item = MagnetItem(
-            hash=item["hash"],
+            hash=hash_val,
             name=name,
-            magnet=item["magnet"],
+            magnet=magnet,
             category=category,
             save_path=save_path,
             status=TaskStatus.pending,

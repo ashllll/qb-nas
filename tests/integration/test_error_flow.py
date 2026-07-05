@@ -43,8 +43,8 @@ def test_multiple_error_occurrences_accumulate_count():
     assert stats["total_errors"] >= 3
 
 
-def test_error_clear_resolved():
-    """Clearing resolved errors should remove them from handler state."""
+def test_error_clear_all():
+    """Clearing all errors should remove them from handler state."""
     app, ctx, _ = make_test_app()
     handler = ctx.error_handler
 
@@ -55,6 +55,6 @@ def test_error_clear_resolved():
     )
     assert handler.get_error_stats()["total_errors"] >= 1
 
-    handler.clear_resolved()
+    handler.clear_all()
     stats = handler.get_error_stats()
     assert stats["total_errors"] == 0, f"expected 0 after clear, got {stats['total_errors']}"

@@ -45,6 +45,13 @@ class WSBroadcaster:
     def remove(self, ws: WebSocket):
         self._active_ws.discard(ws)
 
+    def shutdown(self):
+        """取消 MessageBus 订阅，断开强引用以允许 GC 回收。
+
+        架构支持 Broadcaster 热替换或重载时必须调用；当前单例场景下可选。
+        """
+        self._bus.unsubscribe(None, self._on_event)
+
     @property
     def active_count(self) -> int:
         return len(self._active_ws)
@@ -180,7 +187,19 @@ class WSBroadcaster:
                 return _DEAD
             return None
 
-        # 使用快照避免并发 remove() 修改 _active_ws 导致迭代不一致
+        # ── 并发模型说明 ──────────────────────────────
+        # _active_ws 是普通的 set[WebSocket]，未使用 asyncio.Lock 保护。
+        # 这是安全的，因为：
+        # 1. add() / remove() 只在 handle_connection() 协程中调用，
+        #    而 handle_connection() 与本方法 (_on_event) 运行在同一个
+        #    asyncio 事件循环中。
+        # 2. asyncio 协程只在 await 点切换，set 的 add/discard/difference_update
+        #    等原子操作之间不会发生竞态。
+        # 3. 快照 + difference_update 模式确保：迭代 snapshot 期间即使
+        #    handle_connection() 调用了 remove() 修改 _active_ws，
+        #    也不会导致 RuntimeError: Set changed size during iteration。
+        # ⚠️ 未来若重构为多事件循环或多线程，必须为 _active_ws 加锁。
+        # ─────────────────────────────────────────────
         snapshot = list(self._active_ws)
         dead: set[WebSocket] = set()
         try:

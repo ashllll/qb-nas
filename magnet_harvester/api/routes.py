@@ -92,6 +92,8 @@ async def get_items(
 ):
     if not status:
         status = "all"
+    if not category:
+        category = None
     if status != "all":
         try:
             TaskStatus(status)
@@ -106,14 +108,15 @@ async def get_items(
             status_code=422,
             detail=f"Invalid category: {category}. Valid values: {sorted(VALID_CATEGORIES)}",
         )
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
-    return _item_queries(ctx).page_items(
+    result = _item_queries(ctx).page_items(
         category=category,
         status=status,
         limit=limit,
         offset=offset,
     )
+    if ctx.stats is not None:
+        ctx.stats.record_api_call()
+    return result
 
 
 @router.get("/api/items/search")
@@ -122,9 +125,10 @@ async def search_items(
     limit: int = Query(20, ge=1, le=100),
     ctx: AppContext = Depends(get_context),
 ):
+    result = _item_queries(ctx).search_items(query=q, limit=limit)
     if ctx.stats is not None:
         ctx.stats.record_api_call()
-    return _item_queries(ctx).search_items(query=q, limit=limit)
+    return result
 
 
 @router.post("/api/crawl")
@@ -200,7 +204,7 @@ async def reclassify(
         log.error("reclassify 返回类型异常: %s, 类型: %s", result, type(result))
         raise HTTPException(status_code=503, detail="服务内部错误")
     if result.get("status") == "error":
-        raise HTTPException(status_code=503, detail=result.get("reason", "服务暂时不可用"))
+        raise HTTPException(status_code=503, detail=result.get("reason") or "action failed")
     return result
 
 
@@ -212,8 +216,6 @@ async def get_errors(
     ctx: AppContext = Depends(get_context),
     _=Depends(require_api_key),
 ):
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
     if not category:
         category = None
     if not severity:
@@ -230,14 +232,16 @@ async def get_errors(
     if eh is None:
         return {"errors": [], "stats": {}}
     errors = eh.get_recent_errors(cat, sev, limit)
+    if ctx.stats is not None:
+        ctx.stats.record_api_call()
     return {"errors": [e.to_dict() for e in errors], "stats": eh.get_error_stats()}
 
 
 @router.post("/api/errors/clear")
 async def clear_resolved_errors(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
     if ctx.error_handler is not None:
-        ctx.error_handler.clear_resolved()
-    return {"status": "cleared"}
+        ctx.error_handler.clear_all()
+    return {"status": "cleared", "message": "已清除所有错误"}
 
 
 @router.get("/api/health")

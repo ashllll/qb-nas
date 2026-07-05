@@ -381,7 +381,7 @@ def test_search_clear_health_categories_and_config_routes():
     assert cleared.json()["removed"] == 1
 
 
-def test_errors_routes_return_and_clear_resolved_records():
+def test_errors_routes_return_and_clear_all_records():
     app, ctx = _make_app()
     eh = ctx.error_handler
     assert eh is not None

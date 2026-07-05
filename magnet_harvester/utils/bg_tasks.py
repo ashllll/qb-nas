@@ -8,7 +8,6 @@ import asyncio
 import logging
 import time
 import uuid
-from collections import OrderedDict
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
