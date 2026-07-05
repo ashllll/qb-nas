@@ -1,16 +1,11 @@
 """
-测试 crawl4ai 深爬策略配置。
+测试 Scrapling 爬虫详情页遍历。
 """
 
+from __future__ import annotations
+
 import asyncio
-import os
-import sys
 from types import SimpleNamespace
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from crawl4ai import CacheMode
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 
 from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
@@ -39,35 +34,15 @@ def make_crawler(**config):
     )
 
 
-def test_build_run_config_uses_crawl4ai_dynamic_page_features():
-    crawler = make_crawler()
-    strategy = crawler._build_deep_crawl_strategy(depth=2)
-
-    cfg = crawler._build_run_config(stream=True, deep_crawl_strategy=strategy)
-
-    assert cfg.cache_mode == CacheMode.BYPASS
-    assert cfg.stream is True
-    assert cfg.deep_crawl_strategy is strategy
-    assert cfg.semaphore_count == 6
-    assert cfg.wait_until == "load"
-    assert cfg.delay_before_return_html == 1.0
-    assert cfg.scan_full_page is True
-    assert cfg.max_scroll_steps == 8
-    assert cfg.process_iframes is True
-    assert cfg.flatten_shadow_dom is True
-    assert cfg.remove_overlay_elements is True
-    assert cfg.remove_consent_popups is True
-
-
-def test_build_deep_crawl_strategy_delegates_depth_and_limits_to_crawl4ai():
-    crawler = make_crawler(max_detail_links=120, max_depth=3)
-
-    strategy = crawler._build_deep_crawl_strategy(depth=3)
-
-    assert isinstance(strategy, BFSDeepCrawlStrategy)
-    assert strategy.max_depth == 2
-    assert strategy.max_pages == 121
-    assert strategy.include_external is False
+def page(url, html="", status=200):
+    return SimpleNamespace(
+        url=url,
+        status=status,
+        html_content=html,
+        text=html,
+        body=html.encode(),
+        encoding="utf-8",
+    )
 
 
 def test_clamp_depth_respects_config_max():
@@ -80,14 +55,164 @@ def test_clamp_depth_respects_config_max():
     assert crawler._clamp_depth(5) == 2
 
 
-def test_build_deep_crawl_strategy_uses_config_max_depth_as_upper_bound():
-    crawler = make_crawler(max_depth=2)
+def test_discover_detail_links_keeps_detail_urls_and_rejects_listing_urls():
+    crawler = make_crawler()
+    result = SimpleNamespace(
+        url="https://example.com/torrents",
+        success=True,
+        html="""
+            <a href="/torrents/details/123">detail</a>
+            <a href="/item?tid=42">item</a>
+            <a href="/torrents/search/all">listing</a>
+            <a href="https://other.example/torrent/9">external</a>
+        """,
+        cleaned_html="",
+        markdown="",
+    )
 
-    effective_depth = crawler._clamp_depth(5)
-    strategy = crawler._build_deep_crawl_strategy(effective_depth)
+    async def check():
+        links = await crawler._discover_detail_links(result, "https://example.com")
+        assert links == [
+            "https://example.com/torrents/details/123",
+            "https://example.com/item?tid=42",
+        ]
 
-    assert isinstance(strategy, BFSDeepCrawlStrategy)
-    assert strategy.max_depth == 1
+    asyncio.run(check())
+
+
+def test_same_site_allows_explicit_default_port():
+    assert MagnetCrawler._is_same_site(
+        "https://example.com:443/torrents/details/123",
+        "https://example.com",
+    )
+
+
+def test_discover_detail_links_applies_project_url_admission():
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(),
+        target_admission=CrawlTargetAdmission(
+            resolver=private_resolver,
+            redirect_probe=no_redirect,
+        ),
+    )
+    result = SimpleNamespace(
+        url="https://example.com",
+        success=True,
+        html='<a href="/torrents/details/123">detail</a>',
+        cleaned_html="",
+        markdown="",
+    )
+
+    async def check():
+        assert await crawler._discover_detail_links(result, "https://example.com") == []
+
+    asyncio.run(check())
+
+
+async def redirect_to_private(_url):
+    return "http://192.168.1.10/torrent/secret"
+
+
+async def redirect_to_external_public(_url):
+    return "https://other.example/torrent/secret"
+
+
+def test_discover_detail_links_rejects_public_url_that_redirects_to_private():
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(),
+        target_admission=CrawlTargetAdmission(
+            resolver=public_resolver,
+            redirect_probe=redirect_to_private,
+        ),
+    )
+    result = SimpleNamespace(
+        url="https://example.com",
+        success=True,
+        html='<a href="/torrents/details/123">detail</a>',
+        cleaned_html="",
+        markdown="",
+    )
+
+    async def check():
+        assert await crawler._discover_detail_links(result, "https://example.com") == []
+
+    asyncio.run(check())
+
+
+def test_discover_detail_links_rejects_public_url_that_redirects_external():
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(),
+        target_admission=CrawlTargetAdmission(
+            resolver=public_resolver,
+            redirect_probe=redirect_to_external_public,
+        ),
+    )
+    result = SimpleNamespace(
+        url="https://example.com",
+        success=True,
+        html='<a href="/torrents/details/123">detail</a>',
+        cleaned_html="",
+        markdown="",
+    )
+
+    async def check():
+        assert await crawler._discover_detail_links(result, "https://example.com") == []
+
+    asyncio.run(check())
+
+
+def test_fetch_deep_stream_uses_scrapling_session_for_root_and_detail_links():
+    class FakeSession:
+        def __init__(self):
+            self.calls = []
+
+        async def fetch(self, url, **_kwargs):
+            self.calls.append(url)
+            if url == "https://example.com":
+                return page(
+                    url,
+                    """
+                    <a href="/torrents/details/123">detail</a>
+                    <a href="/torrents/search/all">listing</a>
+                    <a href="https://other.example/torrent/9">external</a>
+                    """,
+                )
+            return page(url, "magnet:?xt=urn:btih:" + "1" * 40 + "&dn=Movie.2160p")
+
+    async def collect():
+        crawler = make_crawler(max_detail_links=5)
+        fake = FakeSession()
+        crawler._crawler = fake
+        results = [result async for result in crawler._fetch_deep_stream("https://example.com", 2)]
+        return fake, results
+
+    fake, results = asyncio.run(collect())
+
+    assert fake.calls == ["https://example.com", "https://example.com/torrents/details/123"]
+    assert [result.url for result in results] == fake.calls
+
+
+def test_fetch_deep_stream_respects_page_limit():
+    class FakeSession:
+        async def fetch(self, url, **_kwargs):
+            if url == "https://example.com":
+                return page(
+                    url,
+                    """
+                    <a href="/torrent/1">one</a>
+                    <a href="/torrent/2">two</a>
+                    """,
+                )
+            return page(url)
+
+    async def collect():
+        crawler = make_crawler(max_detail_links=1)
+        crawler._crawler = FakeSession()
+        return [result async for result in crawler._fetch_deep_stream("https://example.com", 2)]
+
+    results = asyncio.run(collect())
+
+    assert [result.url for result in results] == ["https://example.com", "https://example.com/torrent/1"]
 
 
 def test_crawl_progress_reports_effective_depth():
@@ -103,8 +228,6 @@ def test_crawl_progress_reports_effective_depth():
                 markdown="",
                 cleaned_html="",
                 html="",
-                links={},
-                metadata={"depth": 0},
             )
 
     async def collect():
@@ -128,91 +251,6 @@ def test_crawl_progress_reports_effective_depth():
     assert progress["depth"] == 2
 
 
-def test_deep_crawl_filter_keeps_detail_urls_and_rejects_listing_urls():
-    crawler = make_crawler()
-    strategy = crawler._build_deep_crawl_strategy(depth=2)
-
-    async def check():
-        assert await strategy.filter_chain.apply("https://example.com/torrents/details/123")
-        assert await strategy.filter_chain.apply("https://example.com/item?tid=42")
-        assert not await strategy.filter_chain.apply("https://example.com/torrents/search/all")
-
-    asyncio.run(check())
-
-
-def test_deep_crawl_filter_applies_project_url_admission():
-    crawler = MagnetCrawler(
-        config=CrawlerConfig(),
-        target_admission=CrawlTargetAdmission(
-            resolver=private_resolver,
-            redirect_probe=no_redirect,
-        ),
-    )
-    strategy = crawler._build_deep_crawl_strategy(depth=2)
-
-    async def check():
-        assert not await strategy.filter_chain.apply("https://example.com/torrents/details/123")
-
-    asyncio.run(check())
-
-
-async def redirect_to_private(_url):
-    return "http://192.168.1.10/torrent/secret"
-
-
-def test_deep_crawl_filter_rejects_public_url_that_redirects_to_private():
-    crawler = MagnetCrawler(
-        config=CrawlerConfig(),
-        target_admission=CrawlTargetAdmission(
-            resolver=public_resolver,
-            redirect_probe=redirect_to_private,
-        ),
-    )
-    strategy = crawler._build_deep_crawl_strategy(depth=2)
-
-    async def check():
-        assert not await strategy.filter_chain.apply("https://example.com/torrents/details/123")
-
-    asyncio.run(check())
-
-
-def test_fetch_deep_stream_uses_arun_with_streaming_deep_crawl_strategy():
-    class FakeCrawl4AI:
-        def __init__(self):
-            self.calls = []
-
-        async def arun(self, url, config=None):
-            self.calls.append((url, config))
-
-            async def stream():
-                yield SimpleNamespace(
-                    url=url,
-                    success=True,
-                    markdown="",
-                    cleaned_html="",
-                    html="",
-                    links={},
-                    metadata={"depth": 0},
-                )
-
-            return stream()
-
-    async def collect():
-        crawler = make_crawler()
-        fake = FakeCrawl4AI()
-        crawler._crawler = fake
-        results = [result async for result in crawler._fetch_deep_stream("https://example.com", 2)]
-        return fake, results
-
-    fake, results = asyncio.run(collect())
-
-    assert len(results) == 1
-    url, config = fake.calls[0]
-    assert url == "https://example.com"
-    assert config.stream is True
-    assert isinstance(config.deep_crawl_strategy, BFSDeepCrawlStrategy)
-
-
 def test_crawl_batch_reports_page_errors_and_finishes():
     class ExplodingCrawler(MagnetCrawler):
         async def start(self):
@@ -226,8 +264,6 @@ def test_crawl_batch_reports_page_errors_and_finishes():
                 markdown="",
                 cleaned_html="",
                 html="",
-                links={},
-                metadata={"depth": 0},
             )
 
     async def collect():
@@ -258,7 +294,7 @@ def test_crawl_yields_error_and_done_when_fetch_deep_stream_raises():
 
         async def _fetch_deep_stream(self, root_url, depth):
             raise RuntimeError("deep fetch exploded")
-            yield  # marks this as an async generator
+            yield
 
     async def collect():
         crawler = ExplodingFetchCrawler(
@@ -297,8 +333,6 @@ def test_crawl_consumer_close_cleans_up_deep_crawl_session():
                 markdown="",
                 cleaned_html="",
                 html="",
-                links={},
-                metadata={"depth": 0},
             )
 
     async def consume_and_close():
@@ -351,19 +385,3 @@ def test_crawl_consumer_close_cancels_unfinished_session():
         assert crawler.cancelled is True
 
     asyncio.run(consume_and_close())
-
-
-if __name__ == "__main__":
-    test_build_run_config_uses_crawl4ai_dynamic_page_features()
-    test_build_deep_crawl_strategy_delegates_depth_and_limits_to_crawl4ai()
-    test_clamp_depth_respects_config_max()
-    test_build_deep_crawl_strategy_uses_config_max_depth_as_upper_bound()
-    test_crawl_progress_reports_effective_depth()
-    test_deep_crawl_filter_keeps_detail_urls_and_rejects_listing_urls()
-    test_deep_crawl_filter_applies_project_url_admission()
-    test_deep_crawl_filter_rejects_public_url_that_redirects_to_private()
-    test_fetch_deep_stream_uses_arun_with_streaming_deep_crawl_strategy()
-    test_crawl_batch_reports_page_errors_and_finishes()
-    test_crawl_yields_error_and_done_when_fetch_deep_stream_raises()
-    test_crawl_consumer_close_cleans_up_deep_crawl_session()
-    print("=== crawler deep crawl tests passed! ===")

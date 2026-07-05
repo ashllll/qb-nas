@@ -11,16 +11,31 @@ from magnet_harvester.crawler import MagnetCrawler
 
 
 class TestCrawlerConcurrency:
-    """Verify crawl4ai receives bounded concurrency settings."""
+    """Verify Scrapling receives bounded concurrency settings."""
 
     @pytest.fixture
     def crawler(self):
         return MagnetCrawler(config=CrawlerConfig())
 
-    def test_run_config_passes_bounded_concurrency_to_crawl4ai(self, crawler):
-        cfg = crawler._build_run_config(stream=True)
+    def test_start_passes_bounded_concurrency_to_scrapling(self, crawler, monkeypatch):
+        captured = {}
 
-        assert cfg.semaphore_count == 6
+        class FakeSession:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                pass
+
+        monkeypatch.setattr("magnet_harvester.crawler.AsyncDynamicSession", FakeSession)
+
+        asyncio.run(crawler.start())
+        asyncio.run(crawler.stop())
+
+        assert captured["max_pages"] == 6
 
     def test_worker_count_is_capped_for_browser_sessions(self):
         crawler = MagnetCrawler(config=CrawlerConfig(concurrency=50))

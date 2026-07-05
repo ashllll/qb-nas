@@ -21,8 +21,8 @@ async def main():
     print("测试 crawl() 生成器协议")
     print("=" * 50)
 
-    # 用 crawl4ai 官方文档测试（不含有磁力链接）
-    test_url = "https://docs.crawl4ai.com/"
+    # 用 Scrapling 官方文档测试（不含有磁力链接）
+    test_url = "https://scrapling.readthedocs.io/en/latest/"
     print(f"\n1. 爬取页面: {test_url}")
     print("-" * 40)
 

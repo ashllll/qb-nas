@@ -1,5 +1,5 @@
 """
-集成测试：MagnetCrawler (crawl4ai 适配器) 生命周期
+集成测试：MagnetCrawler (Scrapling 适配器) 生命周期
 """
 
 import sys
@@ -23,19 +23,19 @@ class FakeCookieProvider:
 
 @pytest.mark.asyncio
 async def test_crawler_start_stop(monkeypatch):
-    """验证 crawler 使用 crawl4ai 能正常启动和关闭"""
+    """验证 crawler 使用 Scrapling 能正常启动和关闭"""
 
-    class FakeAsyncWebCrawler:
-        def __init__(self, config):
-            pass
+    class FakeAsyncDynamicSession:
+        def __init__(self, **_kwargs):
+            self.closed = False
 
-        async def start(self):
-            pass
+        async def __aenter__(self):
+            return self
 
-        async def close(self):
-            pass
+        async def __aexit__(self, *_args):
+            self.closed = True
 
-    monkeypatch.setattr("magnet_harvester.crawler.AsyncWebCrawler", FakeAsyncWebCrawler)
+    monkeypatch.setattr("magnet_harvester.crawler.AsyncDynamicSession", FakeAsyncDynamicSession)
 
     config = CrawlerConfig(headless=True, timeout=10)
     crawler = MagnetCrawler(config=config)
@@ -44,7 +44,7 @@ async def test_crawler_start_stop(monkeypatch):
         # 启动
         await crawler.start()
         # 确认已启动（没有异常即可）
-        assert crawler._crawler is not None, "crawl4ai AsyncWebCrawler 应已创建"
+        assert crawler._crawler is not None, "Scrapling AsyncDynamicSession 应已创建"
     finally:
         # 关闭
         await crawler.stop()
@@ -57,18 +57,19 @@ async def test_crawler_start_uses_injected_site_cookies(monkeypatch):
     """Crawler startup should get browser cookies from the SiteAuth seam."""
     captured = {}
 
-    class FakeAsyncWebCrawler:
-        def __init__(self, config):
-            captured["config"] = config
+    class FakeAsyncDynamicSession:
+        def __init__(self, **kwargs):
+            captured["kwargs"] = kwargs
 
-        async def start(self):
+        async def __aenter__(self):
             captured["started"] = True
+            return self
 
-        async def close(self):
+        async def __aexit__(self, *_args):
             captured["closed"] = True
 
     cookies = [{"name": "sid", "value": "abc", "domain": "example.com", "path": "/"}]
-    monkeypatch.setattr("magnet_harvester.crawler.AsyncWebCrawler", FakeAsyncWebCrawler)
+    monkeypatch.setattr("magnet_harvester.crawler.AsyncDynamicSession", FakeAsyncDynamicSession)
 
     crawler = MagnetCrawler(
         config=CrawlerConfig(headless=True, timeout=10),
@@ -78,7 +79,7 @@ async def test_crawler_start_uses_injected_site_cookies(monkeypatch):
     await crawler.start()
     try:
         assert captured["started"] is True
-        assert captured["config"].cookies == cookies
+        assert captured["kwargs"]["cookies"] == cookies
     finally:
         await crawler.stop()
 
@@ -87,17 +88,17 @@ async def test_crawler_start_uses_injected_site_cookies(monkeypatch):
 async def test_crawler_context_manager(monkeypatch):
     """验证 async with 用法（通过 start/stop 模拟）"""
 
-    class FakeAsyncWebCrawler:
-        def __init__(self, config):
+    class FakeAsyncDynamicSession:
+        def __init__(self, **_kwargs):
             pass
 
-        async def start(self):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
             pass
 
-        async def close(self):
-            pass
-
-    monkeypatch.setattr("magnet_harvester.crawler.AsyncWebCrawler", FakeAsyncWebCrawler)
+    monkeypatch.setattr("magnet_harvester.crawler.AsyncDynamicSession", FakeAsyncDynamicSession)
 
     config = CrawlerConfig(headless=True, timeout=10)
     crawler = MagnetCrawler(config=config)
@@ -145,10 +146,10 @@ if __name__ == "__main__":
     async def run():
         config = CrawlerConfig(headless=True, timeout=10)
         crawler = MagnetCrawler(config=config)
-        print("正在启动 crawl4ai 爬虫...")
+        print("正在启动 Scrapling 爬虫...")
         await crawler.start()
         print("爬虫已启动 ✓")
-        print(f"  AsyncWebCrawler: {crawler._crawler}")
+        print(f"  AsyncDynamicSession: {crawler._crawler}")
         await crawler.stop()
         print("爬虫已关闭 ✓")
         print("生命周期测试通过!")

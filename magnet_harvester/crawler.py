@@ -1,9 +1,9 @@
 """
-MagnetCrawler v3.0 — 使用 crawl4ai 引擎
+MagnetCrawler v3.0 — 使用 Scrapling 引擎
 
-使用 crawl4ai (AsyncWebCrawler) 替代直接 Playwright 操作：
-- crawl4ai 管理浏览器生命周期、反爬、页面渲染
-- 本模块专注于磁力链接提取
+使用 Scrapling 的动态页面抓取能力：
+- Scrapling 管理浏览器页面加载
+- 本模块专注于安全遍历与磁力链接提取
 
 保持与 v2 相同的公共接口：
 - start() / stop()
@@ -17,17 +17,15 @@ import logging
 import re
 import time
 from contextvars import ContextVar
-from typing import AsyncGenerator, List, Optional, Protocol, Set, runtime_checkable
+from dataclasses import dataclass
+from html.parser import HTMLParser
+from typing import Any, AsyncGenerator, List, Optional, Protocol, Set, runtime_checkable
+from urllib.parse import urldefrag, urljoin, urlparse
 
-from crawl4ai import (
-    AsyncWebCrawler,
-    BrowserConfig,
-    CacheMode,
-    CrawlerRunConfig,
-)
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
-from crawl4ai.deep_crawling.filters import FilterChain, URLFilter, URLPatternFilter
-from crawl4ai.deep_crawling.scorers import PathDepthScorer
+try:
+    from scrapling.fetchers import AsyncDynamicSession
+except ImportError:  # pragma: no cover - dependency is declared, tests may monkeypatch it
+    AsyncDynamicSession = None  # type: ignore[assignment]
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_sources import (
@@ -77,24 +75,6 @@ class CrawlPhase(Protocol):
     async def admit_url(self, url: str) -> str: ...
 
 
-class CrawlAdmissionFilter(URLFilter):
-    """Apply project URL safety checks inside crawl4ai's deep crawl filter chain."""
-
-    def __init__(self, target_admission: CrawlTargetAdmission):
-        super().__init__()
-        self._target_admission = target_admission
-
-    async def apply(self, url: str) -> bool:
-        try:
-            await self._target_admission.admit_redirect_chain(url)
-        except URLValidationError:
-            self._update_stats(False)
-            log.warning("跳过不安全的详情页链接: %s", url)
-            return False
-        self._update_stats(True)
-        return True
-
-
 def filter_resolution_items(items: List[dict], allowed: tuple = ("2160p", "4k")) -> List[dict]:
     return _filter_resolution_items(items, allowed=allowed)
 
@@ -103,8 +83,32 @@ class BrowserCookieProvider(Protocol):
     def browser_cookies(self) -> list[dict]: ...
 
 
+@dataclass
+class ScraplingPageResult:
+    url: str
+    success: bool
+    html: str = ""
+    cleaned_html: str = ""
+    markdown: str = ""
+    error_message: str = ""
+
+
+class LinkExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        for key, value in attrs:
+            if key.lower() == "href" and value:
+                self.links.append(value)
+                return
+
+
 class MagnetCrawler:
-    """爬虫入口 — 使用 crawl4ai 引擎
+    """爬虫入口 — 使用 Scrapling 引擎
 
     公共接口：
         start()                — 启动浏览器引擎
@@ -119,7 +123,7 @@ class MagnetCrawler:
         site_auth: BrowserCookieProvider | None = None,
     ):
         self._config = config if config is not None else settings.crawler
-        self._crawler: Optional[AsyncWebCrawler] = None
+        self._crawler: Optional[Any] = None
         self._metrics: Optional[CrawlMetrics] = None
         self._session_metrics: ContextVar[CrawlMetrics | None] = ContextVar(
             "crawl_session_metrics",
@@ -152,39 +156,37 @@ class MagnetCrawler:
         return metrics
 
     async def start(self):
-        """启动 crawl4ai 引擎"""
+        """启动 Scrapling 引擎"""
+        if AsyncDynamicSession is None:
+            raise RuntimeError("Scrapling fetchers are not installed. Install scrapling[fetchers].")
         site_cookies = self._site_auth.browser_cookies()
 
-        browser_cfg = BrowserConfig(
-            browser_type="chromium",
+        session = AsyncDynamicSession(
             headless=self._config.headless,
-            verbose=False,
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            text_mode=True,
+            timeout=self._config.timeout * 1000,
+            network_idle=self._config.wait_until == "networkidle",
+            max_pages=self._worker_count,
+            retries=max(1, self._config.max_retries + 1),
             cookies=site_cookies if site_cookies else None,
         )
-        crawler = AsyncWebCrawler(config=browser_cfg)
         try:
-            await crawler.start()
+            if hasattr(session, "__aenter__"):
+                await session.__aenter__()
         except BaseException:
-            # start() 失败时关闭已创建的 crawler，防止浏览器进程泄漏
+            # start() 失败时关闭已创建的 session，防止浏览器进程泄漏
             # BaseException 覆盖 CancelledError（它是 BaseException 而非 Exception 的子类）
-            await crawler.close()
+            await self._close_session(session)
             raise
-        self._crawler = crawler
-        log.info("crawl4ai 引擎已启动")
+        self._crawler = session
+        log.info("Scrapling 引擎已启动")
 
     async def stop(self):
-        """关闭 crawl4ai 引擎"""
+        """关闭 Scrapling 引擎"""
         if self._crawler:
             try:
-                await self._crawler.close()
+                await self._close_session(self._crawler)
             except Exception as e:
-                log.warning(f"关闭 crawl4ai 时出错: {e}")
+                log.warning(f"关闭 Scrapling 时出错: {e}")
             finally:
                 self._crawler = None
         if self._target_admission is not None and hasattr(self._target_admission, "close"):
@@ -192,7 +194,17 @@ class MagnetCrawler:
                 await self._target_admission.close()
             except Exception as e:
                 log.warning(f"关闭 CrawlTargetAdmission 时出错: {e}")
-        log.info("crawl4ai 引擎已关闭")
+        log.info("Scrapling 引擎已关闭")
+
+    async def _close_session(self, session) -> None:
+        if hasattr(session, "__aexit__"):
+            await session.__aexit__(None, None, None)
+            return
+        close = getattr(session, "close", None)
+        if close is not None:
+            result = close()
+            if hasattr(result, "__await__"):
+                await result
 
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]:
         """爬取 URL 并提取磁力链接
@@ -339,62 +351,200 @@ class MagnetCrawler:
         )
 
     async def _fetch_deep_stream(self, root_url: str, depth: int):
-        crawler = self._crawler
-        if crawler is None:
+        session = self._crawler
+        if session is None:
             raise RuntimeError("爬虫已停止")
-        result_stream = await crawler.arun(
-            root_url,
-            config=self._build_run_config(
-                stream=True,
-                deep_crawl_strategy=self._build_deep_crawl_strategy(depth),
-            ),
-        )
-        async for result in result_stream:
-            yield result
+        max_pages = max(1, self._config.max_detail_links + 1)
+        seen_urls = {self._normalise_url(root_url)}
+        pending: list[tuple[str, int]] = [(root_url, 1)]
+        pages_seen = 0
 
-    def _build_deep_crawl_strategy(self, depth: int) -> BFSDeepCrawlStrategy:
-        url_scorer = PathDepthScorer() if self._config.url_score_depth_bias else None
-        return BFSDeepCrawlStrategy(
-            max_depth=max(0, depth - 1),
-            filter_chain=FilterChain(
-                [
-                    URLPatternFilter(DETAIL_URL_RE, use_glob=False),
-                    CrawlAdmissionFilter(self._target_admission),
-                ]
-            ),
-            url_scorer=url_scorer,
-            include_external=False,
-            max_pages=max(1, self._config.max_detail_links + 1),
-            logger=log,
+        while pending and pages_seen < max_pages:
+            batch = pending[: self._worker_count]
+            del pending[: self._worker_count]
+            results = await asyncio.gather(
+                *(self._fetch_page(session, url) for url, _ in batch),
+                return_exceptions=True,
+            )
+
+            for (source_url, current_depth), fetched in zip(batch, results):
+                pages_seen += 1
+                if isinstance(fetched, Exception):
+                    result = ScraplingPageResult(
+                        url=source_url,
+                        success=False,
+                        error_message=str(fetched),
+                    )
+                else:
+                    result = fetched
+                yield result
+
+                if current_depth >= depth or pages_seen + len(pending) >= max_pages:
+                    continue
+                for link in await self._discover_detail_links(result, root_url):
+                    normalised = self._normalise_url(link)
+                    if normalised in seen_urls or len(seen_urls) >= max_pages:
+                        continue
+                    seen_urls.add(normalised)
+                    pending.append((link, current_depth + 1))
+
+    async def _fetch_page(self, session, url: str) -> ScraplingPageResult:
+        try:
+            response = await session.fetch(
+                url,
+                timeout=self._config.timeout * 1000,
+                network_idle=self._config.wait_until == "networkidle",
+                wait=int(self._config.delay_before_return_html * 1000),
+                page_action=self._prepare_dynamic_page,
+            )
+        except Exception as exc:
+            return ScraplingPageResult(url=url, success=False, error_message=str(exc))
+
+        response_url = getattr(response, "url", url) or url
+        status = int(getattr(response, "status", 200) or 200)
+        html = self._response_html(response)
+        text = self._response_text(response)
+        return ScraplingPageResult(
+            url=response_url,
+            success=200 <= status < 400,
+            html=html,
+            cleaned_html=html,
+            markdown=text,
+            error_message="" if 200 <= status < 400 else f"HTTP {status}",
         )
 
-    def _build_run_config(
+    async def _prepare_dynamic_page(self, page) -> None:
+        if self._config.remove_overlay_elements or self._config.remove_consent_popups:
+            await page.evaluate(
+                """
+                ({ removeOverlays, removeConsent }) => {
+                    const shouldRemove = (el) => {
+                        const style = window.getComputedStyle(el);
+                        const rect = el.getBoundingClientRect();
+                        const text = (el.innerText || "").toLowerCase();
+                        const looksModal = el.matches("dialog,[aria-modal='true'],[role='dialog']");
+                        const blocksPage =
+                            ["fixed", "sticky"].includes(style.position) &&
+                            rect.width * rect.height > window.innerWidth * window.innerHeight * 0.25 &&
+                            Number(style.zIndex || 0) >= 10;
+                        const looksConsent =
+                            /cookie|consent|privacy|同意|隐私|接受|accept|agree/.test(text);
+                        const floats = looksModal || blocksPage || ["fixed", "sticky"].includes(style.position);
+                        return looksModal || (removeOverlays && blocksPage) || (removeConsent && floats && looksConsent);
+                    };
+                    document.querySelectorAll("dialog,[aria-modal='true'],[role='dialog'],body *")
+                        .forEach((el) => {
+                            if (shouldRemove(el)) el.remove();
+                        });
+                    document.documentElement.style.overflow = "auto";
+                    document.body.style.overflow = "auto";
+                }
+                """,
+                {
+                    "removeOverlays": self._config.remove_overlay_elements,
+                    "removeConsent": self._config.remove_consent_popups,
+                },
+            )
+
+        if self._config.scan_full_page:
+            for _ in range(max(0, self._config.max_scroll_steps)):
+                await page.evaluate("() => window.scrollBy(0, window.innerHeight)")
+                await page.wait_for_timeout(int(self._config.scroll_delay * 1000))
+
+        if self._config.process_iframes or self._config.flatten_shadow_dom:
+            await page.evaluate(
+                """
+                ({ processIframes, flattenShadowDom }) => {
+                    const sink = document.createElement("section");
+                    sink.setAttribute("data-magnet-harvester-extra", "");
+                    sink.hidden = true;
+                    const append = (html) => {
+                        if (!html) return;
+                        const block = document.createElement("div");
+                        block.innerHTML = html;
+                        sink.appendChild(block);
+                    };
+                    if (processIframes) {
+                        document.querySelectorAll("iframe").forEach((frame) => {
+                            try {
+                                append(frame.contentDocument?.documentElement?.outerHTML);
+                            } catch {}
+                        });
+                    }
+                    if (flattenShadowDom) {
+                        const walk = (node) => {
+                            if (node.shadowRoot) {
+                                append(node.shadowRoot.innerHTML);
+                                node.shadowRoot.querySelectorAll("*").forEach(walk);
+                            }
+                            node.querySelectorAll?.("*").forEach(walk);
+                        };
+                        walk(document.documentElement);
+                    }
+                    document.body?.appendChild(sink);
+                }
+                """,
+                {
+                    "processIframes": self._config.process_iframes,
+                    "flattenShadowDom": self._config.flatten_shadow_dom,
+                },
+            )
+
+    async def _discover_detail_links(
         self,
-        stream: bool = False,
-        deep_crawl_strategy: BFSDeepCrawlStrategy | None = None,
-    ) -> CrawlerRunConfig:
-        return CrawlerRunConfig(
-            cache_mode=CacheMode.BYPASS,
-            word_count_threshold=self._config.word_count_threshold,
-            verbose=False,
-            stream=stream,
-            page_timeout=self._config.timeout * 1000,
-            wait_until=self._config.wait_until,
-            delay_before_return_html=self._config.delay_before_return_html,
-            scan_full_page=self._config.scan_full_page,
-            scroll_delay=self._config.scroll_delay,
-            max_scroll_steps=self._config.max_scroll_steps,
-            process_iframes=self._config.process_iframes,
-            flatten_shadow_dom=self._config.flatten_shadow_dom,
-            remove_overlay_elements=self._config.remove_overlay_elements,
-            remove_consent_popups=self._config.remove_consent_popups,
-            deep_crawl_strategy=deep_crawl_strategy,
-            semaphore_count=self._worker_count,
-            max_retries=self._config.max_retries,
-            check_robots_txt=self._config.check_robots_txt,
-            simulate_user=self._config.simulate_user,
-            magic=self._config.magics,
-        )
+        result: ScraplingPageResult,
+        root_url: str,
+    ) -> list[str]:
+        if not result.success:
+            return []
+
+        parser = LinkExtractor()
+        parser.feed(result.html or result.cleaned_html or result.markdown)
+
+        links: list[str] = []
+        for href in parser.links:
+            candidate = self._normalise_url(urljoin(result.url, href))
+            if not self._is_detail_url(candidate) or not self._is_same_site(candidate, root_url):
+                continue
+            try:
+                admitted = await self._target_admission.admit_redirect_chain(candidate)
+            except URLValidationError:
+                log.warning("跳过不安全的详情页链接: %s", candidate)
+                continue
+            if not self._is_same_site(admitted, root_url):
+                continue
+            links.append(self._normalise_url(admitted))
+        return links
+
+    @staticmethod
+    def _normalise_url(url: str) -> str:
+        return urldefrag(url)[0]
+
+    @staticmethod
+    def _is_same_site(url: str, root_url: str) -> bool:
+        return (urlparse(url).hostname or "").lower() == (
+            urlparse(root_url).hostname or ""
+        ).lower()
+
+    @staticmethod
+    def _is_detail_url(url: str) -> bool:
+        return bool(DETAIL_URL_RE.match(url))
+
+    @staticmethod
+    def _response_html(response) -> str:
+        for attr in ("html_content", "text"):
+            value = getattr(response, attr, "")
+            if isinstance(value, str) and value:
+                return value
+        body = getattr(response, "body", b"")
+        if isinstance(body, bytes):
+            return body.decode(getattr(response, "encoding", "utf-8") or "utf-8", errors="replace")
+        return str(body or "")
+
+    @staticmethod
+    def _response_text(response) -> str:
+        value = getattr(response, "text", "")
+        return value if isinstance(value, str) else ""
 
     def _extract_page_items(self, result, source_url: str) -> List[dict]:
         return self._magnet_sources.from_page_result(result, source_url=source_url)

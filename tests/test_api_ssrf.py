@@ -13,7 +13,7 @@ import magnet_harvester.assembly as assembly_module
 
 
 class _FakeCrawler:
-    """Minimal crawler double — avoids real crawl4ai/SQLite init."""
+    """Minimal crawler double — avoids real Scrapling/SQLite init."""
 
     def __init__(self, config, site_auth=None):
         self.max_depth = 3

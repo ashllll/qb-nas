@@ -101,7 +101,7 @@ def configure_logging(
         _quiet_logger("httpcore", logging.WARNING)
         _quiet_logger("urllib3", logging.WARNING)
         _quiet_logger("charset_normalizer", logging.WARNING)
-        _quiet_logger("crawl4ai", logging.WARNING)
+        _quiet_logger("scrapling", logging.WARNING)
         _quiet_logger("playwright", logging.WARNING)
 
 
