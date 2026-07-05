@@ -481,11 +481,13 @@ class MagnetCrawler:
                         const walk = (node) => {
                             if (node.shadowRoot) {
                                 append(node.shadowRoot.innerHTML);
-                                node.shadowRoot.querySelectorAll("*").forEach(walk);
+                                stack.push(...node.shadowRoot.querySelectorAll("*"));
                             }
-                            node.querySelectorAll?.("*").forEach(walk);
                         };
-                        walk(document.documentElement);
+                        const stack = [...document.querySelectorAll("*")];
+                        while (stack.length) {
+                            walk(stack.pop());
+                        }
                     }
                     document.body?.appendChild(sink);
                 }
