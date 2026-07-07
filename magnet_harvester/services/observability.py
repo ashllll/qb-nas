@@ -64,6 +64,9 @@ class ObservabilitySnapshot:
         self._error_handler = error_handler
         self._classifier = classifier
 
+    def replace_qbit_client(self, new_qbit: QBitLike) -> None:
+        self._qbit = new_qbit
+
     async def system_status(self) -> dict:
         try:
             qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)

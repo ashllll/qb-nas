@@ -15,8 +15,16 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import QBitConfig
-from magnet_harvester.context.app_context import AppContext, CoreServices, QBitReplacementTarget, QBitRuntime, RuntimeState
+from magnet_harvester.context.app_context import (
+    AppContext,
+    AppServices,
+    CoreServices,
+    QBitReplacementTarget,
+    QBitRuntime,
+    RuntimeState,
+)
 from magnet_harvester.qbit_client._transport import QBitTransport
+from magnet_harvester.services.observability import ObservabilitySnapshot
 
 
 class FakeQbit:
@@ -74,7 +82,12 @@ class FakeSync:
         self.qbit = new_qbit
 
 
-def _make_runtime(*, old_qbit=None, settings=None, factory=None):
+class FakeClassifier:
+    def get_cache_stats(self):
+        return {}
+
+
+def _make_runtime(*, old_qbit=None, settings=None, factory=None, app_services=None):
     ctx = AppContext(
         core=CoreServices(
             store=None,
@@ -84,6 +97,7 @@ def _make_runtime(*, old_qbit=None, settings=None, factory=None):
             classifier=None,
             qbit=old_qbit,
         ),
+        app_services=app_services or AppServices(),
         runtime=RuntimeState(qbit_sync=FakeSync()),
     )
     return QBitRuntime(
@@ -200,6 +214,32 @@ async def test_replace_qbit_config_replaces_and_commits_on_success():
     assert old_qbit.closed is True
     assert runtime.settings.persisted == [runtime.ctx.qbit.config]
     assert runtime.settings.committed == [runtime.ctx.qbit.config]
+
+
+async def test_replace_qbit_config_refreshes_observability_qbit():
+    old_qbit = FakeQbit(QBitConfig(host="http://old:8080"))
+    old_qbit.ping_ok = False
+    observability = ObservabilitySnapshot(
+        store=None,
+        qbit=old_qbit,
+        classifier=FakeClassifier(),
+    )
+    runtime = _make_runtime(
+        old_qbit=old_qbit,
+        app_services=AppServices(observability=observability),
+    )
+
+    before = await observability.health()
+    assert before["qbittorrent"] is False
+
+    await runtime.replace_qbit_config(
+        host="http://new:8080",
+        username="newuser",
+        password="newpass",
+    )
+
+    after = await observability.health()
+    assert after["qbittorrent"] is True
 
 
 async def test_replace_qbit_config_does_not_replace_on_persist_failure():

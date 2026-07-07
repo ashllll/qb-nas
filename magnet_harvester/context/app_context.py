@@ -90,6 +90,7 @@ class ObservabilityLike(Protocol):
     async def system_status(self) -> dict: ...
     async def health(self) -> dict: ...
     def api_stats(self) -> dict: ...
+    def replace_qbit_client(self, new_qbit) -> None: ...
 
 
 class ItemQueryLike(Protocol):
@@ -292,6 +293,7 @@ class QBitReplacementTarget:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     qbit_sync: QBitSyncLike | None = None
     pipeline: "HarvestPipeline" | None = None
+    observability: ObservabilityLike | None = None
 
     @classmethod
     def from_context(cls, ctx: AppContext) -> "QBitReplacementTarget":
@@ -301,6 +303,7 @@ class QBitReplacementTarget:
             set_qbit=lambda value: setattr(ctx, "qbit", value),
             qbit_sync=ctx.qbit_sync,
             pipeline=ctx.pipeline,
+            observability=ctx.observability,
         )
 
     async def replace(self, new_qbit: QBittorrentClient) -> None:
@@ -353,6 +356,8 @@ class QBitReplacementTarget:
             self.pipeline.replace_download_phase(new_qbit)
         if self.qbit_sync is not None:
             await self.qbit_sync.replace_qbit_client(new_qbit)
+        if self.observability is not None:
+            self.observability.replace_qbit_client(new_qbit)
         self.set_qbit(new_qbit)
 
 
