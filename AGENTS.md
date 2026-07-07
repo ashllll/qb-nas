@@ -6,7 +6,7 @@ Magnet Harvester is a FastAPI-based async service that crawls web pages for `mag
 
 ## Project
 
-- **Stack**: Python 3.11+ · FastAPI · Pydantic v2 · crawl4ai + Playwright · httpx · pyperclip
+- **Stack**: Python 3.11+ · FastAPI · Pydantic v2 · Scrapling + Playwright · httpx · pyperclip
 - **Entry point**: `run.py` (invokes `uvicorn` with settings from `magnet_harvester.config.settings`)
 - **Config**: `.env` file (see `.env.example`), parsed by `pydantic-settings` into `Settings` at `magnet_harvester/config.py`
 - **License**: MIT
@@ -51,7 +51,7 @@ npm run check    # lint + test
 ```
 ┌─────────────┐     ┌─────────────┐     ┌────────────────┐
 │   Web UI    │────▶│  FastAPI    │────▶│  MagnetCrawler │
-│ index.html  │◀────│  main.py    │◀────│   crawl4ai     │
+│ index.html  │◀────│  main.py    │◀────│   Scrapling    │
 └─────────────┘     └──────┬──────┘     └───────┬────────┘
                            │                    │
         ┌──────────────────┼────────────────────┼──────────────┐
@@ -75,7 +75,7 @@ npm run check    # lint + test
 | `assembly.py`      | `build_runtime()` wires all services into `AppContext`                                                                                                                 |
 | `config.py`        | `Settings` (pydantic-settings) → `.env`; sub-configs: `CrawlerConfig`, `QBitConfig`, `ServiceConfig`                                                                   |
 | `models.py`        | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus` enum, `MetricSnapshot`                                                                                   |
-| `crawler.py`       | `MagnetCrawler` — crawl4ai-based async crawler with depth limits, resolution filtering, cookie injection                                                               |
+| `crawler.py`       | `MagnetCrawler` — Scrapling-based async crawler with depth limits, resolution filtering, cookie injection                                                              |
 | `magnet_parser.py` | Regex + Base64 extraction of magnet links from text/markdown/html                                                                                                      |
 | `pipeline.py`      | `HarvestPipeline` — orchestrates crawl → classify → download                                                                                                           |
 | `store.py`         | `ItemStore` protocol + `InMemoryItemStore`                                                                                                                             |
@@ -127,7 +127,7 @@ qb-nas/
 │   ├── main.py                         # FastAPI app + lifespan
 │   ├── config.py                       # Settings + sub-configs
 │   ├── models.py                       # Pydantic models
-│   ├── crawler.py                      # crawl4ai crawler
+│   ├── crawler.py                      # Scrapling crawler
 │   ├── magnet_parser.py                # Magnet link extraction (regex + Base64)
 │   ├── pipeline.py                     # HarvestPipeline orchestration
 │   ├── store.py                        # InMemoryItemStore

@@ -11,7 +11,7 @@ Magnet Harvester is a FastAPI-based service for general-purpose magnet link craw
 ```
 ┌─────────────┐     ┌─────────────┐     ┌────────────────┐
 │   Web UI    │────▶│  FastAPI    │────▶│  Crawler       │
-│  (index.html│◀────│   (main.py) │◀────│ (crawl4ai)     │
+│  (index.html│◀────│   (main.py) │◀────│ (Scrapling)    │
 └─────────────┘     └──────┬──────┘     └───────┬────────┘
                            │                    │
         ┌──────────────────┼────────────────────┼──────────────┐
@@ -23,8 +23,9 @@ Magnet Harvester is a FastAPI-based service for general-purpose magnet link craw
 ```
 
 **Key Components:**
+
 - `main.py` - FastAPI server with WebSocket (`/ws`) and REST endpoints, includes `/api/config` for qB connection settings
-- `crawler.py` - Crawl4AI-based web crawler with magnet link extraction and configurable resolution filtering
+- `crawler.py` - Scrapling-based web crawler with magnet link extraction and configurable resolution filtering
 - `classifier/` - Local rule-based classification with a replaceable helper module for project-specific naming rules
 - `magnet_parser.py` - Regex-based magnet link extraction from text/markdown/html
 - `qbit_client.py` - qBittorrent Web API v2 client with auto-login, category creation, and default path detection
@@ -41,7 +42,7 @@ qb-nas/
 ├── magnet_harvester/           # Python 包
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI 应用
-│   ├── crawler.py              # Crawl4AI 爬虫
+│   ├── crawler.py              # Scrapling 爬虫
 │   ├── magnet_parser.py        # 磁力链接解析（正则提取）
 │   ├── qbit_client.py          # qBittorrent API
 │   ├── config.py               # 配置（子配置拆分）
@@ -65,6 +66,7 @@ qb-nas/
 ## Development Commands
 
 **Setup:**
+
 ```bash
 pip install -r requirements.txt
 playwright install chromium
@@ -72,6 +74,7 @@ cp .env.example .env  # Edit with your credentials
 ```
 
 **Run:**
+
 ```bash
 python run.py                # 推荐：入口脚本
 python -m magnet_harvester   # 或使用包方式
@@ -79,6 +82,7 @@ uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
 ```
 
 **Run tests:**
+
 ```bash
 python tests/test_imports.py          # Import verification
 python tests/test_magnet_extract.py   # Magnet extraction tests
@@ -89,6 +93,7 @@ python -m pytest tests/ -v
 ## Configuration
 
 All settings are in `.env` (see `.env.example`):
+
 - `QBIT_HOST`, `QBIT_USERNAME`, `QBIT_PASSWORD` - qBittorrent connection
 - `CRAWLER_ALLOWED_RESOLUTIONS` - Comma-separated resolution keywords to keep, default `2160p,4k`
 - `FS_BASE_PATH` - Optional local filesystem root used only when the service should create directories itself
@@ -97,13 +102,15 @@ All settings are in `.env` (see `.env.example`):
 ## Key Implementation Details
 
 **Crawler (`crawler.py`):**
-- Uses `crawl4ai` (AsyncWebCrawler) instead of raw Playwright
-- Clean markdown/text extraction via crawl4ai
+
+- Uses Scrapling `AsyncDynamicSession` instead of raw Playwright
+- Clean HTML/text extraction via Scrapling
 - Magnet link extraction via `magnet_parser.py` (regex + Base64 decode)
-- Depth-limited crawling (max 3) with crawl4ai link discovery
+- Depth-limited crawling (max 3) with project-local detail link discovery
 - `text_mode=True` blocks media resources to reduce bandwidth
 
 **Classifier (`classifier/local_classifier.py`):**
+
 - Pure local rule engine; no external AI dependency
 - Streaming batch classification with per-item callbacks
 - Uses `classifier/fallback.py` for category rules
@@ -111,20 +118,24 @@ All settings are in `.env` (see `.env.example`):
 - Categories: 电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他
 
 **Internal tool executor (`main.py`):**
+
 - `_tool_executor()` exposes project operations such as stats, item listing, crawl start, queueing downloads, reclassification, search, and clearing state
 - It operates through `ItemStore` and `HarvestPipeline`; keep new operations aligned with those boundaries
 
 **WebSocket Protocol:**
+
 - `/ws` - Real-time magnet item updates (broadcast on discovery, classification, download status)
 
 ## Common Patterns
 
 **Adding a new API endpoint:**
+
 1. Add Pydantic model in `models.py` if needed
 2. Implement handler in `main.py` using existing `_bg()` helper for background tasks
 3. Use `MessageBus` events to push updates to connected WebSocket clients
 
 **Modifying classification behavior:**
+
 - Edit `LOCAL_RULES` in `classifier/fallback.py` for regex-based local classification
 - Extend or replace `keyword_recognizer.py` if project-specific naming heuristics are needed
 - Categories should stay aligned with `VALID_CATEGORIES` in `classifier/fallback.py`
@@ -145,4 +156,3 @@ Use the default mattpocock/skills triage label vocabulary. See `docs/agents/tria
 ### Domain docs
 
 Single-context repo: read `CONTEXT.md` at the repo root and ADRs under `docs/adr/` when present. See `docs/agents/domain.md`.
-
