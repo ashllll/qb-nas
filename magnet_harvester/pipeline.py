@@ -281,8 +281,6 @@ class HarvestPipeline:
                 elif isinstance(result, Exception):
                     log.error("下载失败 %s: %s", hashes[i], result)
                     await self._transitions.download_failed(hashes[i], str(result))
-                elif isinstance(result, asyncio.CancelledError):
-                    raise result
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
             for h in hashes:
