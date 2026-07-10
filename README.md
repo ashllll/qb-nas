@@ -62,7 +62,7 @@ Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
 - 顶部：WebSocket、qBittorrent、剪贴板监控状态
 - 移动端：底部分段导航，在“采集 / 资源库 / 设置”之间切换
 
-前端不依赖外部字体、CDN 或打包工具；所有界面逻辑都在 `static/index.html`。
+前端不依赖外部字体、CDN 或打包工具；页面结构、样式、API 传输、资源状态和界面控制分别位于 `static/` 下的 HTML、CSS 与 JavaScript 模块中。
 
 ## 快速开始
 
@@ -157,10 +157,8 @@ python run.py
 git clone https://github.com/ashllll/qb-nas.git
 cd qb-nas
 
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-playwright install chromium
+uv sync --extra dev --locked
+uv run playwright install chromium
 ```
 
 macOS / Linux 使用 `source .venv/bin/activate`，Windows PowerShell 使用：
@@ -260,9 +258,8 @@ journalctl -u magnet-harvester -f
 ```bash
 cd /opt/qb-nas
 git pull --ff-only
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-playwright install chromium
+uv sync --extra dev --locked
+uv run playwright install chromium
 sudo systemctl restart magnet-harvester
 ```
 
@@ -335,7 +332,11 @@ qb-nas/
 │       ├── serializers.py          # 响应序列化
 │       └── bg_tasks.py             # 后台任务管理
 ├── static/
-│   └── index.html                  # Web UI 单页应用
+│   ├── index.html                  # Web UI 页面结构
+│   ├── styles.css                  # 页面样式
+│   ├── api_client.js               # API 传输与鉴权
+│   ├── item_state.js               # 资源筛选与选择状态
+│   └── app.js                      # WebSocket 与界面控制
 ├── config/
 │   └── category_keywords.json      # 关键词规则配置
 ├── tests/                          # 单元测试
@@ -346,7 +347,7 @@ qb-nas/
 ## 核心实现
 
 - **分类引擎**：关键词精确匹配 + 通用正则，覆盖电影、电视剧、动漫、音乐、游戏、软件、综艺、纪录片和其他资源类型
-- **前端界面**：`static/index.html` 单文件工作台，无构建步骤；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
+- **前端界面**：`static/` 下的无构建步骤多模块工作台；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
 - **爬虫调度**：Scrapling `AsyncDynamicSession` 抓取页面，项目内受限 BFS 负责详情页发现、去重和深度遍历，结果流式回传到 WebSocket
 - **动态页面抓取**：通过 Scrapling 浏览器会话加载动态页面，再解析页面内容中的磁力链接
 - **Cookie 注入**：`SITE_COOKIES` JSON 配置 → Scrapling 浏览器会话 cookies，支持多域名
