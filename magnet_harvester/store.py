@@ -213,6 +213,8 @@ class AsyncItemStore:
 
     async def clear(self) -> int:
         return await self._invoke(self._backend.clear)
+
+
 class InMemoryItemStore:
     """ItemStore 的默认内存适配器。
 

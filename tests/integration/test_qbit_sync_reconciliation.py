@@ -34,10 +34,14 @@ class _SnapshotQBit:
 def _reconcile(store, transitions, snapshot, removed_hashes):
     """Drive a single reconciliation pass over tracked items."""
     tracked = [
-        it for it in store.list(limit=store.count)
-        if it.status in {
-            TaskStatus.adding, TaskStatus.queued,
-            TaskStatus.downloading, TaskStatus.error,
+        it
+        for it in store.list(limit=store.count)
+        if it.status
+        in {
+            TaskStatus.adding,
+            TaskStatus.queued,
+            TaskStatus.downloading,
+            TaskStatus.error,
         }
     ]
     for t_item in tracked:
@@ -55,20 +59,25 @@ def test_qbit_sync_marks_downloaded_item_as_success():
     bus = NullBus()
     transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
-    store.add(MagnetItem(
-        hash="SYNCTEST001",
-        name="Sync.Test",
-        magnet="magnet:?xt=urn:btih:SYNCTEST001",
-        category="电影",
-        status=TaskStatus.downloading,
-        progress=0.5,
-        torrent_state="downloading",
-    ))
+    store.add(
+        MagnetItem(
+            hash="SYNCTEST001",
+            name="Sync.Test",
+            magnet="magnet:?xt=urn:btih:SYNCTEST001",
+            category="电影",
+            status=TaskStatus.downloading,
+            progress=0.5,
+            torrent_state="downloading",
+        )
+    )
 
     snapshot = {
         "synctest001": {
-            "hash": "synctest001", "name": "Sync.Test",
-            "progress": 1.0, "state": "completed", "amount_left": 0,
+            "hash": "synctest001",
+            "name": "Sync.Test",
+            "progress": 1.0,
+            "state": "completed",
+            "amount_left": 0,
         }
     }
 
@@ -96,15 +105,17 @@ def test_qbit_sync_marks_removed_torrent_as_error():
     bus = NullBus()
     transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
-    store.add(MagnetItem(
-        hash="REMOVED001",
-        name="Removed.Torrent",
-        magnet="magnet:?xt=urn:btih:REMOVED001",
-        category="电视剧",
-        status=TaskStatus.downloading,
-        progress=0.3,
-        torrent_state="downloading",
-    ))
+    store.add(
+        MagnetItem(
+            hash="REMOVED001",
+            name="Removed.Torrent",
+            magnet="magnet:?xt=urn:btih:REMOVED001",
+            category="电视剧",
+            status=TaskStatus.downloading,
+            progress=0.3,
+            torrent_state="downloading",
+        )
+    )
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

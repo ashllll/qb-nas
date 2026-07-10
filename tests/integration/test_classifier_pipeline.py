@@ -26,11 +26,25 @@ def test_real_classifier_categorizes_items():
     qbit = FakeQbit()
     bg_manager = BGTaskManager()
     async_store = AsyncItemStore(store)
-    crawler = FakeCrawler(items=[
-        MagnetItem(hash="HASH001", name="Test.Movie.2024.2160p.BluRay", magnet="magnet:?xt=urn:btih:HASH001"),
-        MagnetItem(hash="HASH002", name="Some.Show.S01E02.1080p.WEB-DL", magnet="magnet:?xt=urn:btih:HASH002"),
-        MagnetItem(hash="HASH003", name="Anime.Title.Ep01.1080p.Crunchyroll", magnet="magnet:?xt=urn:btih:HASH003"),
-    ])
+    crawler = FakeCrawler(
+        items=[
+            MagnetItem(
+                hash="HASH001",
+                name="Test.Movie.2024.2160p.BluRay",
+                magnet="magnet:?xt=urn:btih:HASH001",
+            ),
+            MagnetItem(
+                hash="HASH002",
+                name="Some.Show.S01E02.1080p.WEB-DL",
+                magnet="magnet:?xt=urn:btih:HASH002",
+            ),
+            MagnetItem(
+                hash="HASH003",
+                name="Anime.Title.Ep01.1080p.Crunchyroll",
+                magnet="magnet:?xt=urn:btih:HASH003",
+            ),
+        ]
+    )
     pipeline = HarvestPipeline(
         crawler=crawler,
         classifier=classifier,

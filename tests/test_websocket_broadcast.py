@@ -120,9 +120,7 @@ async def test_initial_snapshot_delivers_every_item_beyond_first_page():
     await broadcaster.send_init_from_store(ws)
 
     messages = [json.loads(call.args[0]) for call in ws.send_text.await_args_list]
-    delivered_hashes = {
-        item["hash"] for message in messages for item in message.get("items", [])
-    }
+    delivered_hashes = {item["hash"] for message in messages for item in message.get("items", [])}
     assert len(delivered_hashes) == 501
     assert messages[0]["type"] == "init"
     assert messages[-1]["type"] == "init_done"

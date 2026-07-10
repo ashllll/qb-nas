@@ -47,7 +47,12 @@ def test_security_posture_allows_explicit_insecure_development_override():
 
 async def test_replace_qbit_closes_old_client():
     """替换 qBittorrent 客户端时，旧客户端应被关闭"""
-    from magnet_harvester.context.app_context import AppContext, CoreServices, QBitRuntime, RuntimeState
+    from magnet_harvester.context.app_context import (
+        AppContext,
+        CoreServices,
+        QBitRuntime,
+        RuntimeState,
+    )
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.config import QBitConfig
 
@@ -77,7 +82,12 @@ async def test_replace_qbit_closes_old_client():
 
 
 async def test_replace_qbit_updates_download_state_sync():
-    from magnet_harvester.context.app_context import AppContext, CoreServices, QBitRuntime, RuntimeState
+    from magnet_harvester.context.app_context import (
+        AppContext,
+        CoreServices,
+        QBitRuntime,
+        RuntimeState,
+    )
 
     class FakeQbit:
         def __init__(self):

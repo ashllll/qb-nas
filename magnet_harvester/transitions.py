@@ -114,9 +114,7 @@ class ClassificationTransitions(_TransitionBase):
         item = await self._store.get(hash_key)
         if item is not None and item.status == TaskStatus.classifying:
             return  # 已在分类中，拒绝重复调用
-        if not await self._store.update(
-            hash_key, status=TaskStatus.classifying, error_msg=None
-        ):
+        if not await self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None):
             return
         await self._emit_item_changed(hash_key)
 
@@ -154,9 +152,7 @@ class ClassificationTransitions(_TransitionBase):
         item = await self._store.get(hash_key)
         if item is None or item.status != TaskStatus.classifying:
             return
-        if not await self._store.update(
-            hash_key, status=TaskStatus.pending, error_msg=error_msg
-        ):
+        if not await self._store.update(hash_key, status=TaskStatus.pending, error_msg=error_msg):
             return
         await self._emit_item_changed(hash_key)
 
@@ -164,9 +160,7 @@ class ClassificationTransitions(_TransitionBase):
         """手动分类：更新 + CLASSIFY_DONE + emit_item_changed"""
         item = await self._store.get(hash_key)
         save_path = item.save_path if item and item.save_path else ""
-        if not await self._store.update(
-            hash_key, category=category, save_path=save_path
-        ):
+        if not await self._store.update(hash_key, category=category, save_path=save_path):
             return False
         await self._bus.emit(
             Event(
@@ -234,9 +228,7 @@ class DownloadTransitions(_TransitionBase):
         # 前置状态检查：只允许从非终态转换到 error，已成功的种子不能被错误标记
         if item.status in {TaskStatus.success, TaskStatus.error, TaskStatus.skipped}:
             return
-        if not await self._store.update(
-            hash_key, status=TaskStatus.error, error_msg=error_msg
-        ):
+        if not await self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg):
             return
         try:
             await self._emit_item_changed(hash_key)

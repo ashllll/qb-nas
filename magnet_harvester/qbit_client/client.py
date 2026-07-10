@@ -90,7 +90,10 @@ class QBittorrentClient:
         async with self._ping_lock:
             # 双重检查：获取锁期间缓存可能已被另一个协程填充
             now = time.monotonic()
-            if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
+            if (
+                self._last_ping_result is not None
+                and now - self._last_ping_at < self._ping_cache_ttl
+            ):
                 return self._last_ping_result
             try:
                 r = await self._req("GET", "/app/version")
@@ -216,7 +219,8 @@ class QBittorrentClient:
                     if not evicted:
                         log.error(
                             "分类锁 LRU 已达上限 (%d) 且全部被持有，拒绝创建 [%s]",
-                            self.MAX_CATEGORY_LOCKS, name,
+                            self.MAX_CATEGORY_LOCKS,
+                            name,
                         )
                         return False
                 self._category_locks[name] = asyncio.Lock()
@@ -240,7 +244,11 @@ class QBittorrentClient:
 
                     cat_entry = cats.get(name, {})
                     if not isinstance(cat_entry, dict):
-                        log.warning("分类 [%s] 返回非 dict 类型: %s，跳过路径比对", name, type(cat_entry).__name__)
+                        log.warning(
+                            "分类 [%s] 返回非 dict 类型: %s，跳过路径比对",
+                            name,
+                            type(cat_entry).__name__,
+                        )
                         return False
                     if name in cats and cat_entry.get("savePath", "") != save_path:
                         await self._req(

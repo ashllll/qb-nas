@@ -35,9 +35,11 @@ async def test_frontend_loads_css_and_javascript_as_local_modules(static_server_
         console_problems: list[str] = []
         page.on(
             "console",
-            lambda message: console_problems.append(message.text)
-            if message.type in {"error", "warning"}
-            else None,
+            lambda message: (
+                console_problems.append(message.text)
+                if message.type in {"error", "warning"}
+                else None
+            ),
         )
         await page.add_init_script(
             """
@@ -114,9 +116,11 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
         console_problems: list[str] = []
         page.on(
             "console",
-            lambda message: console_problems.append(message.text)
-            if message.type in {"error", "warning"}
-            else None,
+            lambda message: (
+                console_problems.append(message.text)
+                if message.type in {"error", "warning"}
+                else None
+            ),
         )
         await page.add_init_script(
             """
@@ -169,7 +173,9 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
                 payload = {"running": False, "magnet_count": 0}
             else:
                 payload = {}
-            await route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+            await route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(payload)
+            )
 
         await page.route("**/api/**", handle_api)
         await page.goto(static_server_url, wait_until="domcontentloaded")
@@ -234,9 +240,7 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
             }
             """
         )
-        download = next(
-            request for request in requests if request["url"].endswith("/api/download")
-        )
+        download = next(request for request in requests if request["url"].endswith("/api/download"))
         assert download["body"] == {"hashes": ["MOVIE"]}
         assert console_problems == []
         await browser.close()

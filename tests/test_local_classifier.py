@@ -9,6 +9,8 @@ import json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.classifier.local_classifier import LocalClassificationEngine, LocalClassifier
+
+
 def test_local_classification_engine_has_narrow_interface():
     """本地规则引擎只负责名称分类，协议兼容面留给 LocalClassifier。"""
     engine = LocalClassificationEngine()

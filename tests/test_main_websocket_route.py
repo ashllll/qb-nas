@@ -25,9 +25,7 @@ def test_main_app_ws_route_is_mounted_from_api_websocket():
 
 
 def test_main_app_index_route_is_not_mounted_from_api_websocket():
-    index_routes = [
-        route for route in _mounted_routes() if getattr(route, "path", None) == "/"
-    ]
+    index_routes = [route for route in _mounted_routes() if getattr(route, "path", None) == "/"]
 
     assert len(index_routes) == 1
     assert index_routes[0].endpoint.__module__ != "magnet_harvester.api.websocket"

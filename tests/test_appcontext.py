@@ -38,7 +38,12 @@ def _make_test_context() -> AppContext:
     )
     return AppContext(
         core=CoreServices(
-            store=store, bus=bus, pipeline=pipeline, crawler=crawler, classifier=classifier, qbit=qbit
+            store=store,
+            bus=bus,
+            pipeline=pipeline,
+            crawler=crawler,
+            classifier=classifier,
+            qbit=qbit,
         ),
     )
 
@@ -66,7 +71,9 @@ def test_appcontext_in_endpoint():
         assert resp.json()["count"] == 0
 
         asyncio.run(
-            ctx.core.store.add(MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST"))
+            ctx.core.store.add(
+                MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST")
+            )
         )
         resp = client.get("/test/count")
         assert resp.json()["count"] == 1

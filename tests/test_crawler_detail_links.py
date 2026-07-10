@@ -212,7 +212,10 @@ def test_fetch_deep_stream_respects_page_limit():
 
     results = asyncio.run(collect())
 
-    assert [result.url for result in results] == ["https://example.com", "https://example.com/torrent/1"]
+    assert [result.url for result in results] == [
+        "https://example.com",
+        "https://example.com/torrent/1",
+    ]
 
 
 def test_crawl_progress_reports_effective_depth():

@@ -82,6 +82,8 @@ def test_health_reports_qbit_connectivity():
     assert result == {"healthy": False, "qbittorrent": False, "classifier": True}
 
     # 无 classifier 时应报告 classifier: False
-    snapshot_no_classifier = ObservabilitySnapshot(store=AsyncItemStore(FakeStore()), qbit=FakeQbit(online=False))
+    snapshot_no_classifier = ObservabilitySnapshot(
+        store=AsyncItemStore(FakeStore()), qbit=FakeQbit(online=False)
+    )
     result2 = asyncio.run(snapshot_no_classifier.health())
     assert result2["classifier"] is False

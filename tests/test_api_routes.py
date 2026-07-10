@@ -14,7 +14,13 @@ from tests._client import asgi_client
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
 from magnet_harvester.config import QBitConfig
-from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState, QBitRuntime
+from magnet_harvester.context.app_context import (
+    AppContext,
+    AppServices,
+    CoreServices,
+    RuntimeState,
+    QBitRuntime,
+)
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus

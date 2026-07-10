@@ -42,7 +42,9 @@ class _FakeQbit:
 
 
 class _FakeSyncLoop:
-    def __init__(self, qbit_client, store, bus, task_manager=None, downloads=None, poll_interval=2.0):
+    def __init__(
+        self, qbit_client, store, bus, task_manager=None, downloads=None, poll_interval=2.0
+    ):
         pass
 
     async def start(self):

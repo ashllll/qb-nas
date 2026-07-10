@@ -135,7 +135,9 @@ class ClipboardMonitor:
                 self._consecutive_failures = 0
             except Exception as e:
                 self._consecutive_failures += 1
-                log.warning(f"剪贴板读取异常（连续 {self._consecutive_failures}/{self.MAX_CONSECUTIVE_FAILURES}）: {e}")
+                log.warning(
+                    f"剪贴板读取异常（连续 {self._consecutive_failures}/{self.MAX_CONSECUTIVE_FAILURES}）: {e}"
+                )
                 if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
                     self._consecutive_failures = 0
                     self._total_failure_cycles += 1
@@ -160,7 +162,7 @@ class ClipboardMonitor:
                 if len(self._processed_content) >= 10000:
                     # 逐出一半：set 无序，随机保留约半数，避免全部 clear 导致的重复消费窗口
                     items = list(self._processed_content)
-                    self._processed_content = set(items[len(items) // 2:])
+                    self._processed_content = set(items[len(items) // 2 :])
                 self._processed_content.add(content)
                 for item in self._magnet_sources.from_clipboard_text(content):
                     if not self._running:
@@ -213,14 +215,21 @@ class ClipboardMonitor:
 
         # 自动发送到 qBittorrent（通过 action_executor 统一入口，确保 stats 计数和未来保护措施生效）
         if self._action_executor:
-            result = await self._action_executor.download([magnet_item.hash], task_name="clipboard_download")
+            result = await self._action_executor.download(
+                [magnet_item.hash], task_name="clipboard_download"
+            )
             if result.get("status") == "started":
                 log.info(f"剪贴板自动下载: {name[:40]}")
             else:
-                log.warning("剪贴板自动下载失败: %s, 原因: %s", name[:40], result.get("reason", "未知"))
+                log.warning(
+                    "剪贴板自动下载失败: %s, 原因: %s", name[:40], result.get("reason", "未知")
+                )
         elif self._pipeline:
             # 向后兼容：未注入 action_executor 时回退到 pipeline
             await self._pipeline.download([magnet_item.hash])
             log.info(f"剪贴板自动下载: {name[:40]}")
         else:
-            log.warning("剪贴板捕获了磁力但 action_executor 和 pipeline 均为 None，无法自动下载: %s", name[:50])
+            log.warning(
+                "剪贴板捕获了磁力但 action_executor 和 pipeline 均为 None，无法自动下载: %s",
+                name[:50],
+            )

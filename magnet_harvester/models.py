@@ -76,6 +76,7 @@ class QBitConfigUpdate(BaseModel):
 
     所有字段可选：仅更新显式传入的字段。
     """
+
     qbit_host: Optional[str] = None
     qbit_username: Optional[str] = None
     qbit_password: Optional[str] = None

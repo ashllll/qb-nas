@@ -43,7 +43,8 @@ class TestAPIKeyAuth:
         app, _, _ = app_with_key
         with asgi_client(app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "https://example.com/test", "depth": 1},
+                "/api/crawl",
+                json={"url": "https://example.com/test", "depth": 1},
                 headers={"X-API-Key": "secret"},
             )
         assert resp.status_code == 200
@@ -53,7 +54,8 @@ class TestAPIKeyAuth:
         app, _, _ = app_with_key
         with asgi_client(app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "https://example.com/test", "depth": 1},
+                "/api/crawl",
+                json={"url": "https://example.com/test", "depth": 1},
                 headers={"X-API-Key": "wrong-key"},
             )
         assert resp.status_code == 401
@@ -75,7 +77,8 @@ class TestURLValidation:
         """POST /api/crawl with invalid URL should return 422."""
         with asgi_client(self.app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "not-a-valid-url", "depth": 1},
+                "/api/crawl",
+                json={"url": "not-a-valid-url", "depth": 1},
                 headers={"X-API-Key": "secret"},
             )
         assert resp.status_code == 422
@@ -84,7 +87,8 @@ class TestURLValidation:
         """POST /api/crawl with empty URL should return 422."""
         with asgi_client(self.app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "", "depth": 1},
+                "/api/crawl",
+                json={"url": "", "depth": 1},
                 headers={"X-API-Key": "secret"},
             )
         assert resp.status_code == 422

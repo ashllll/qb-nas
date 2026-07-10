@@ -96,8 +96,8 @@ def test_dynamic_page_action_uses_crawler_page_options():
     assert page.waits == [50, 50]
     assert page.evaluations[0][1] == {"removeOverlays": True, "removeConsent": False}
     assert page.evaluations[-1][1] == {"processIframes": True, "flattenShadowDom": True}
-    assert "node.querySelectorAll?.(\"*\").forEach(walk)" not in page.evaluations[-1][0]
-    assert "const stack = [...document.querySelectorAll(\"*\")]" in page.evaluations[-1][0]
+    assert 'node.querySelectorAll?.("*").forEach(walk)' not in page.evaluations[-1][0]
+    assert 'const stack = [...document.querySelectorAll("*")]' in page.evaluations[-1][0]
 
 
 def test_worker_count_is_capped_for_browser_sessions():

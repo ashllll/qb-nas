@@ -310,9 +310,7 @@ class HarvestPipeline:
                 if ok:
                     await self._downloads.submitted(hash_key)
                 else:
-                    await self._downloads.failed(
-                        hash_key, self._qbit.last_error or "qB 返回失败"
-                    )
+                    await self._downloads.failed(hash_key, self._qbit.last_error or "qB 返回失败")
             except Exception as e:
                 try:
                     await self._downloads.failed(hash_key, str(e))

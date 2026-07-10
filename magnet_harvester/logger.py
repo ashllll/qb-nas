@@ -16,6 +16,7 @@ from pathlib import Path
 
 # ── Console formatter ──────────────────────────
 
+
 class _ColorlessConsoleFormatter(logging.Formatter):
     """Clean console formatter — timestamps, level, message (no ANSI)."""
 
@@ -27,6 +28,7 @@ class _ColorlessConsoleFormatter(logging.Formatter):
 
 
 # ── File formatter ─────────────────────────────
+
 
 class _DetailFormatter(logging.Formatter):
     """Full-detail formatter for log files — includes module, line number."""
@@ -40,10 +42,11 @@ class _DetailFormatter(logging.Formatter):
 
 # ── Public API ─────────────────────────────────
 
+
 def configure_logging(
     level: str = "INFO",
     log_file: str | None = None,
-    max_bytes: int = 10 * 1024 * 1024,   # 10 MB
+    max_bytes: int = 10 * 1024 * 1024,  # 10 MB
     backup_count: int = 3,
     quiet_third_party: bool = True,
 ) -> None:

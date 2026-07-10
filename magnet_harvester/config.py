@@ -284,9 +284,7 @@ class Settings(BaseSettings):
                 rendered.append(f"{key}={cls._format_env_value(value)}\n")
 
         if not rendered:
-            rendered = [
-                f"{k}={cls._format_env_value(v)}\n" for k, v in updates.items()
-            ]
+            rendered = [f"{k}={cls._format_env_value(v)}\n" for k, v in updates.items()]
 
         tmp = path.with_suffix(path.suffix + ".tmp")
         try:

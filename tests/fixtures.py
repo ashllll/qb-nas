@@ -39,6 +39,7 @@ from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 class FakeCrawler:
     """Produces a configurable set of fake magnet items."""
+
     max_depth = 2
 
     def __init__(self, items: list[MagnetItem] | None = None, fail: bool = False):
@@ -69,6 +70,7 @@ class FakeCrawler:
 
 class FakeClassifier:
     """Always returns a fixed classification for every item."""
+
     usage = type("Usage", (), {"as_dict": lambda self: {"total": 0}})()
 
     def __init__(self, category: str = "电影", confidence: str = "high"):
@@ -79,12 +81,15 @@ class FakeClassifier:
         for item in items:
             idx = item.get("index", -1)
             if on_result and idx >= 0:
-                on_result(idx, {
-                    "category": self._category,
-                    "save_path": self._category,
-                    "confidence": self._confidence,
-                    "reason": "test_fake",
-                })
+                on_result(
+                    idx,
+                    {
+                        "category": self._category,
+                        "save_path": self._category,
+                        "confidence": self._confidence,
+                        "reason": "test_fake",
+                    },
+                )
 
     def get_cache_stats(self) -> dict:
         return {}
@@ -103,6 +108,7 @@ class FakeClassifier:
 
 class FakeQbit:
     """Records added magnets for assertion."""
+
     last_error: str | None = None
 
     def __init__(self, fail_add: bool = False):
@@ -128,6 +134,7 @@ class FakeQbit:
 
 class FakeBus:
     """Records emitted events for assertion."""
+
     def __init__(self):
         self.events: list[Event] = []
 
@@ -143,17 +150,20 @@ class FakeBus:
 
 class FakeErrorHandler:
     """Records errors for assertion."""
+
     def __init__(self):
         self.errors: list[dict] = []
 
     def record(self, category, severity, message, details=None, exc=None):
         cat_val = category.value if hasattr(category, "value") else str(category)
         sev_val = severity.value if hasattr(severity, "value") else str(severity)
-        self.errors.append({
-            "category": cat_val,
-            "severity": sev_val,
-            "message": message,
-        })
+        self.errors.append(
+            {
+                "category": cat_val,
+                "severity": sev_val,
+                "message": message,
+            }
+        )
 
     def get_error_stats(self) -> dict:
         return {"total_errors": len(self.errors), "unique_errors": len(self.errors)}
@@ -169,12 +179,15 @@ class FakeErrorHandler:
         if severity:
             sev_val = severity.value if hasattr(severity, "value") else str(severity)
             filtered = [e for e in filtered if e["severity"] == sev_val]
+
         # Return objects with to_dict() like the real ErrorRecord
         class _FakeRecord:
             def __init__(self, data):
                 self._data = data
+
             def to_dict(self):
                 return self._data
+
         return [_FakeRecord(e) for e in filtered[:limit]]
 
 
