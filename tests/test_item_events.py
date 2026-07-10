@@ -12,7 +12,7 @@ import asyncio
 from magnet_harvester.bus import EventType, MessageBus
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 
 
 class RecordingBus(MessageBus):
@@ -40,7 +40,7 @@ async def test_emit_item_changed_always_emits():
     """classification_started always broadcasts STORE_CHANGED."""
     store = FakeStore()
     bus = MessageBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     item = _make_item("ABC123", "Test.Movie.2160p", TaskStatus.pending)
     store.add(item)
@@ -61,7 +61,7 @@ async def test_terminal_status_always_emits_download_result():
     for terminal_status in (TaskStatus.success, TaskStatus.error):
         store = FakeStore()
         bus = MessageBus()
-        transitions = MagnetItemTransitions(store=store, bus=bus)
+        transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
         item = _make_item("TERM", "terminal", terminal_status)
         store.add(item)
@@ -81,7 +81,7 @@ async def test_new_phase_emits_download_result():
     for prev in (TaskStatus.pending, TaskStatus.adding, TaskStatus.classifying, None):
         store = FakeStore()
         bus = MessageBus()
-        transitions = MagnetItemTransitions(store=store, bus=bus)
+        transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
         item = _make_item("NEW", "new phase", TaskStatus.queued)
         store.add(item)
@@ -100,7 +100,7 @@ async def test_routine_oscillation_suppressed():
     """queued→downloading and back should NOT emit DOWNLOAD_RESULT (noise suppression)."""
     store = FakeStore()
     bus = MessageBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     item = _make_item("OSC", "oscillating", TaskStatus.downloading)
     store.add(item)
@@ -127,7 +127,7 @@ async def test_stale_completion_callbacks_do_not_overwrite_newer_state():
     """过期的分类/提交回调不能覆盖已推进的条目状态。"""
     store = FakeStore()
     bus = RecordingBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     submitted = _make_item("SUBMITTED", status=TaskStatus.error)
     store.add(submitted)
@@ -150,7 +150,7 @@ async def test_completion_callbacks_accept_their_expected_source_state():
     """adding/classifying 的正常完成路径保持不变。"""
     store = FakeStore()
     bus = RecordingBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     submitted = _make_item("ADDING", status=TaskStatus.adding)
     store.add(submitted)

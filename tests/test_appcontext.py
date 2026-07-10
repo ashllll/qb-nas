@@ -13,7 +13,7 @@ from fastapi import FastAPI, Depends
 
 from tests._client import asgi_client
 
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, get_context
@@ -27,7 +27,7 @@ def _make_test_context() -> AppContext:
     from magnet_harvester.config import CrawlerConfig, QBitConfig
     from magnet_harvester.pipeline import HarvestPipeline
 
-    store = FakeStore()
+    store = AsyncItemStore(FakeStore())
     bus = NullBus()
     cfg = CrawlerConfig(headless=True, timeout=5)
     crawler = MagnetCrawler(config=cfg)
@@ -56,7 +56,7 @@ def test_appcontext_in_endpoint():
 
     @app.get("/test/count")
     async def test_count(ctx: AppContext = Depends(get_context)):
-        return {"count": ctx.store.count}
+        return {"count": await ctx.store.count()}
 
     app.state.ctx = ctx
 
@@ -65,7 +65,9 @@ def test_appcontext_in_endpoint():
         assert resp.status_code == 200
         assert resp.json()["count"] == 0
 
-        ctx.store.add(MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST"))
+        asyncio.run(
+            ctx.store.add(MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST"))
+        )
         resp = client.get("/test/count")
         assert resp.json()["count"] == 1
 
@@ -82,7 +84,7 @@ def test_appcontext_in_lifespan():
 
     @app.get("/ping")
     async def ping(ctx: AppContext = Depends(get_context)):
-        return {"ok": ctx.store.count == 0}
+        return {"ok": await ctx.store.count() == 0}
 
     with asgi_client(app) as client:
         resp = client.get("/ping")
@@ -294,8 +296,8 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
         ctx = test_app.state.ctx
         await ctx.pipeline.execute("https://example.com", depth=1, auto_download=True)
 
-        assert ctx.store.count == 1
-        item = ctx.store.get("ABCDEF1234567890")
+        assert await ctx.store.count() == 1
+        item = await ctx.store.get("ABCDEF1234567890")
         assert item is not None
         assert item.category == "电影"
         assert item.status.value == "queued"

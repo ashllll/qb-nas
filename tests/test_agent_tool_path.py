@@ -5,7 +5,7 @@ P2-24: Agent 工具路径测试 (UserActionExecutor)
 import pytest
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 
@@ -26,9 +26,10 @@ async def test_reclassify_item_updates_category_and_save_path():
     """验证 manually_reclassify 正确更新 category 和 save_path"""
     store = InMemoryItemStore()
     bus = MessageBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    async_store = AsyncItemStore(store)
+    transitions = MagnetItemTransitions(store=async_store, bus=bus)
     executor = UserActionExecutor(
-        store=store,
+        store=async_store,
         pipeline=None,
         task_manager=None,
         transitions=transitions,

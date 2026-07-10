@@ -24,7 +24,7 @@ from magnet_harvester.models import MagnetItem
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -220,7 +220,8 @@ def make_test_app(
     Any component not provided gets a sensible default Fake. Returns
     (app, ctx, qbit) where qbit is the FakeQbit instance for assertions.
     """
-    _store = store or InMemoryItemStore()
+    _backend = store or InMemoryItemStore()
+    _store = AsyncItemStore(_backend)
     _bus = bus or NullBus()
     _crawler = crawler or FakeCrawler()
     _classifier = classifier or FakeClassifier()

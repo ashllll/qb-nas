@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from magnet_harvester.classifier.local_classifier import LocalClassifier
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import MessageBus, Event
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
@@ -29,11 +29,11 @@ def test_clipboard_monitor_parses_and_stores_magnet():
     store = InMemoryItemStore()
     bus = _CollectingBus()
     classifier = LocalClassifier()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     monitor = ClipboardMonitor(
         bus=bus,
-        store=store,
+        store=AsyncItemStore(store),
         classifier=classifier,
         pipeline=None,
         poll_interval=0.1,
@@ -85,11 +85,11 @@ def test_clipboard_monitor_ignores_duplicates():
     store = InMemoryItemStore()
     bus = _CollectingBus()
     classifier = LocalClassifier()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     monitor = ClipboardMonitor(
         bus=bus,
-        store=store,
+        store=AsyncItemStore(store),
         classifier=classifier,
         pipeline=None,
         transitions=transitions,

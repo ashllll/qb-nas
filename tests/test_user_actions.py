@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 
 
 class FakePipeline:
@@ -80,9 +80,9 @@ def _make_executor(max_depth: int = 2) -> tuple[UserActionExecutor, FakePipeline
     store = InMemoryItemStore()
     bus = MessageBus()
     pipeline = FakePipeline(max_depth=max_depth)
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
     executor = UserActionExecutor(
-        store=store,
+        store=AsyncItemStore(store),
         pipeline=pipeline,
         task_manager=None,
         transitions=transitions,
@@ -98,9 +98,9 @@ def test_start_crawl_uses_pipeline_start_interface():
     store = InMemoryItemStore()
     bus = MessageBus()
     pipeline = StartOnlyPipeline()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
     executor = UserActionExecutor(
-        store=store,
+        store=AsyncItemStore(store),
         pipeline=pipeline,
         task_manager=None,
         transitions=transitions,
@@ -116,9 +116,9 @@ def test_download_and_reclassify_close_coroutines_when_task_manager_missing():
     store = InMemoryItemStore()
     bus = MessageBus()
     pipeline = CloseTrackingPipeline()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
     executor = UserActionExecutor(
-        store=store,
+        store=AsyncItemStore(store),
         pipeline=pipeline,
         task_manager=None,
         transitions=transitions,

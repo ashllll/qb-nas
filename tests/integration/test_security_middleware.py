@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from magnet_harvester.models import MagnetItem, TaskStatus
@@ -15,12 +17,16 @@ def app_with_key():
     app, ctx, qbit = make_test_app(store=store)
     ctx.api_key = "secret"
     # Seed a pending item
-    ctx.store.add(MagnetItem(
-        hash="ALPHA1234567890",
-        name="Test.Item.2160p",
-        magnet="magnet:?xt=urn:btih:ALPHA1234567890",
-        status=TaskStatus.pending,
-    ))
+    asyncio.run(
+        ctx.store.add(
+            MagnetItem(
+                hash="ALPHA1234567890",
+                name="Test.Item.2160p",
+                magnet="magnet:?xt=urn:btih:ALPHA1234567890",
+                status=TaskStatus.pending,
+            )
+        )
+    )
     return app, ctx, qbit
 
 

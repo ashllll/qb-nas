@@ -9,7 +9,7 @@ from magnet_harvester.bus import NullBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.magnet_parser import extract_from_text
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 
 
 def test_clipboard_no_longer_uses_local_magnet_regex():
@@ -23,7 +23,7 @@ def test_clipboard_accepts_non_2160p_magnet():
     store = FakeStore()
     monitor = ClipboardMonitor(
         bus=NullBus(),
-        store=store,
+        store=AsyncItemStore(store),
         classifier=LocalClassifier(),
         pipeline=None,
     )
@@ -46,7 +46,7 @@ def test_clipboard_accepts_base64_encoded_magnet():
     store = FakeStore()
     monitor = ClipboardMonitor(
         bus=NullBus(),
-        store=store,
+        store=AsyncItemStore(store),
         classifier=LocalClassifier(),
         pipeline=None,
     )
@@ -72,7 +72,7 @@ def test_clipboard_accepts_html_escaped_and_quoted_magnet():
     store = FakeStore()
     monitor = ClipboardMonitor(
         bus=NullBus(),
-        store=store,
+        store=AsyncItemStore(store),
         classifier=LocalClassifier(),
         pipeline=None,
     )
@@ -99,7 +99,7 @@ def test_processed_content_fifo_eviction_not_full_clear():
     bus = NullBus()
     monitor = ClipboardMonitor(
         bus=bus,
-        store=store,
+        store=AsyncItemStore(store),
         classifier=LocalClassifier(),
         pipeline=None,
         poll_interval=0.01,

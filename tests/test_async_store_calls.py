@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from magnet_harvester.store import call_store
+from magnet_harvester.store import AsyncItemStore
 
 
 class BlockingStore:
@@ -32,21 +32,33 @@ class InlineStore:
 
 @pytest.mark.asyncio
 async def test_blocking_store_call_does_not_stop_event_loop():
-    store = BlockingStore()
-    task = asyncio.create_task(call_store(store, "get", "item"))
+    backend = BlockingStore()
+    store = AsyncItemStore(backend)
+    task = asyncio.create_task(store.get("item"))
 
     started_at = asyncio.get_running_loop().time()
-    await asyncio.to_thread(store.started.wait, 0.2)
+    await asyncio.to_thread(backend.started.wait, 0.2)
     await asyncio.sleep(0)
     assert asyncio.get_running_loop().time() - started_at < 0.2
-    store.release.set()
+    backend.release.set()
 
     assert await task == "item"
 
 
 @pytest.mark.asyncio
 async def test_in_memory_style_store_stays_on_calling_thread():
-    store = InlineStore()
+    backend = InlineStore()
+    store = AsyncItemStore(backend)
 
-    assert await call_store(store, "get", "item") == "item"
-    assert store.thread_id == threading.get_ident()
+    assert await store.get("item") == "item"
+    assert backend.thread_id == threading.get_ident()
+
+
+@pytest.mark.asyncio
+async def test_count_is_part_of_the_typed_async_interface():
+    class CountBackend:
+        count = 3
+
+    store = AsyncItemStore(CountBackend())
+
+    assert await store.count() == 3

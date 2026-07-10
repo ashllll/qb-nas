@@ -49,13 +49,15 @@ def test_websocket_connect_receives_init_message(app_ctx):
     app, ctx = app_ctx
 
     # Add a seed item so init message has content
-    ctx.store.add(
-        MagnetItem(
-            hash="INIT001",
-            name="Init Test Item",
-            magnet="magnet:?xt=urn:btih:INIT001",
-            category="电影",
-            status=TaskStatus.pending,
+    asyncio.run(
+        ctx.store.add(
+            MagnetItem(
+                hash="INIT001",
+                name="Init Test Item",
+                magnet="magnet:?xt=urn:btih:INIT001",
+                category="电影",
+                status=TaskStatus.pending,
+            )
         )
     )
 
@@ -122,13 +124,13 @@ def test_websocket_json_ping_pong(app_ctx):
 def test_websocket_broadcaster_sends_events_directly():
     """WSBroadcaster sends bus events to connected clients (in-process)."""
     from magnet_harvester.bus import MessageBus
-    from magnet_harvester.store import InMemoryItemStore
+    from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
     from magnet_harvester.api.websocket import WSBroadcaster
     from starlette.websockets import WebSocketState
 
     bus = MessageBus()
     store = InMemoryItemStore()
-    broadcaster = WSBroadcaster(bus=bus, store=store)
+    broadcaster = WSBroadcaster(bus=bus, store=AsyncItemStore(store))
 
     class CollectingWS:
         def __init__(self):

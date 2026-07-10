@@ -5,7 +5,7 @@ from __future__ import annotations
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.services.observability import ObservabilitySnapshot
 from magnet_harvester.services.stats import SystemStats
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from tests.fixtures import FakeClassifier
 
 
@@ -36,7 +36,7 @@ def test_system_status_counts_tracked_downloads():
     store.add(MagnetItem(hash="C", name="c", magnet="m", status=TaskStatus.queued))
     store.add(MagnetItem(hash="D", name="d", magnet="m", status=TaskStatus.downloading))
     store.add(MagnetItem(hash="E", name="e", magnet="m", status=TaskStatus.success))
-    snapshot = ObservabilitySnapshot(store=store, qbit=FakeQbit())
+    snapshot = ObservabilitySnapshot(store=AsyncItemStore(store), qbit=FakeQbit())
 
     import asyncio
 
@@ -53,7 +53,7 @@ def test_api_stats_combines_stats_with_runtime_context():
     stats = SystemStats()
     store.add(MagnetItem(hash="A", name="a", magnet="m"))
     snapshot = ObservabilitySnapshot(
-        store=store,
+        store=AsyncItemStore(store),
         qbit=FakeQbit(),
         stats=stats,
         broadcaster=FakeBroadcaster(),
@@ -72,7 +72,7 @@ def test_api_stats_combines_stats_with_runtime_context():
 
 def test_health_reports_qbit_connectivity():
     snapshot = ObservabilitySnapshot(
-        store=FakeStore(), qbit=FakeQbit(online=False), classifier=FakeClassifier()
+        store=AsyncItemStore(FakeStore()), qbit=FakeQbit(online=False), classifier=FakeClassifier()
     )
 
     import asyncio
@@ -82,6 +82,6 @@ def test_health_reports_qbit_connectivity():
     assert result == {"healthy": False, "qbittorrent": False, "classifier": True}
 
     # 无 classifier 时应报告 classifier: False
-    snapshot_no_classifier = ObservabilitySnapshot(store=FakeStore(), qbit=FakeQbit(online=False))
+    snapshot_no_classifier = ObservabilitySnapshot(store=AsyncItemStore(FakeStore()), qbit=FakeQbit(online=False))
     result2 = asyncio.run(snapshot_no_classifier.health())
     assert result2["classifier"] is False

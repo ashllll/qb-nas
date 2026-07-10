@@ -12,7 +12,7 @@ import pytest
 
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.services.item_queries import ItemQueryExecutor
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.transitions import MagnetItemTransitions
@@ -60,11 +60,12 @@ class FakeTaskManager:
 
 def _make_executor(store=None, pipeline=None, tasks=None, stats=None):
     store = store or FakeStore()
+    async_store = AsyncItemStore(store)
     pipeline = pipeline or FakePipeline()
     tasks = tasks or FakeTaskManager()
-    transitions = MagnetItemTransitions(store=store, bus=NullBus())
+    transitions = MagnetItemTransitions(store=async_store, bus=NullBus())
     return UserActionExecutor(
-        store=store,
+        store=async_store,
         pipeline=pipeline,
         task_manager=tasks,
         transitions=transitions,
@@ -78,7 +79,7 @@ async def test_get_stats():
     store.add(MagnetItem(hash="A", name="a", magnet="m:?xt=urn:btih:A", category="电影"))
     store.add(MagnetItem(hash="B", name="b", magnet="m:?xt=urn:btih:B", category="电视剧"))
 
-    queries = ItemQueryExecutor(store=store)
+    queries = ItemQueryExecutor(store=AsyncItemStore(store))
     result = await queries.get_stats()
 
     assert result["total"] == 2
@@ -91,7 +92,7 @@ async def test_list_items():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
 
-    queries = ItemQueryExecutor(store=store)
+    queries = ItemQueryExecutor(store=AsyncItemStore(store))
     result = await queries.list_items(category="电影")
 
     assert result["count"] == 1
@@ -104,7 +105,7 @@ async def test_page_items_returns_api_payload_shape():
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
     store.add(MagnetItem(hash="B", name="Beta", magnet="m:?xt=urn:btih:B", category="电视剧"))
 
-    queries = ItemQueryExecutor(store=store)
+    queries = ItemQueryExecutor(store=AsyncItemStore(store))
     result = await queries.page_items(limit=1, offset=1)
 
     assert result["total"] == 2
@@ -119,7 +120,7 @@ async def test_page_items_normalizes_internal_pagination_boundaries():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
 
-    queries = ItemQueryExecutor(store=store)
+    queries = ItemQueryExecutor(store=AsyncItemStore(store))
     result = await queries.page_items(limit=-1, offset=-1)
 
     assert result["total"] == 1
@@ -134,7 +135,7 @@ async def test_search_items():
     store.add(MagnetItem(hash="A", name="Alpha Movie", magnet="m:?xt=urn:btih:A"))
     store.add(MagnetItem(hash="B", name="Beta Show", magnet="m:?xt=urn:btih:B"))
 
-    queries = ItemQueryExecutor(store=store)
+    queries = ItemQueryExecutor(store=AsyncItemStore(store))
     result = await queries.search_items(query="alpha")
 
     assert result["count"] == 1

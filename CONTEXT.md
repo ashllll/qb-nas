@@ -6,6 +6,10 @@
 
 A discovered magnet link plus the metadata needed to classify it, show it in the UI, and submit it to qBittorrent. Its lifecycle is represented by `TaskStatus`.
 
+### Magnet item store
+
+The source of truth for discovered Magnet items, including their lifecycle state, classification metadata, and download progress.
+
 ### Crawl pipeline
 
 The orchestration that crawls a URL, stores new Magnet items, classifies them, and optionally submits them to qBittorrent.

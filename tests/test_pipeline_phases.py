@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus, Event, EventType, MessageBus
 
 
@@ -179,7 +179,7 @@ def test_pipeline_with_fake_phases():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
@@ -216,7 +216,7 @@ def test_start_crawl_returns_trackable_task_id():
             crawler=FakeCrawlPhase(),
             classifier=FakeClassifyPhase(),
             qbit=FakeDownloadPhase(),
-            store=store,
+            store=AsyncItemStore(store),
             bus=bus,
             task_manager=task_manager,
         )
@@ -250,7 +250,7 @@ def test_pipeline_skip_download():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
@@ -278,7 +278,7 @@ def test_classify_item_events_are_observable_before_all_done():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
@@ -309,7 +309,7 @@ async def test_classify_failure_rolls_back_cancelled_result_task():
         crawler=FakeCrawlPhase(items=[item]),
         classifier=ExplodingClassifyPhase(),
         qbit=FakeDownloadPhase(),
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         transitions=transitions,
     )
@@ -340,7 +340,7 @@ def test_download_result_is_observable_after_queued_store_change():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
@@ -382,7 +382,7 @@ def test_download_skips_items_that_cannot_enter_submitting():
         crawler=FakeCrawlPhase(),
         classifier=FakeClassifyPhase(),
         qbit=download_phase,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
@@ -405,7 +405,7 @@ def test_no_new_items_skips_classify():
         crawler=crawl_phase,
         classifier=classify_phase,
         qbit=download_phase,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
@@ -427,7 +427,7 @@ def test_classify_stream_uses_injected_task_manager():
         crawler=FakeCrawlPhase(),
         classifier=FakeClassifyPhase(category="电影"),
         qbit=FakeDownloadPhase(),
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         task_manager=tasks,
     )
@@ -457,7 +457,7 @@ def test_reclassify_includes_error_status_items():
         crawler=FakeCrawlPhase(),
         classifier=classify_phase,
         qbit=FakeDownloadPhase(),
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 

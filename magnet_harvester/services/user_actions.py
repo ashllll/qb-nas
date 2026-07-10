@@ -6,7 +6,7 @@ import logging
 
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
 from magnet_harvester.pipeline import PipelineProtocol
-from magnet_harvester.store import ItemStore, call_store
+from magnet_harvester.store import ItemStore
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -71,7 +71,7 @@ class UserActionExecutor:
         return {"status": "started", "count": len(hashes)}
 
     async def download_pending(self) -> dict:
-        pending = await call_store(self._store, "get_pending")
+        pending = await self._store.get_pending()
         hashes = [item.hash for item in pending]
         return await self.download(hashes, task_name="download_batch")
 
@@ -87,7 +87,7 @@ class UserActionExecutor:
         if len(hash_prefix) < 8:
             return {"status": "error", "reason": "hash 至少需要 8 位前缀"}
 
-        matches = await call_store(self._store, "get_hashes_by_prefix", hash_prefix)
+        matches = await self._store.get_hashes_by_prefix(hash_prefix)
         if not matches:
             return {"status": "not_found", "hash": hash_prefix}
 

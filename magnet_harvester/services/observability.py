@@ -7,7 +7,7 @@ from typing import Protocol
 
 from magnet_harvester.config import settings
 from magnet_harvester.models import TaskStatus
-from magnet_harvester.store import call_store, store_value
+from magnet_harvester.store import ItemStore
 
 
 class StoreLike(Protocol):
@@ -54,7 +54,7 @@ class ObservabilitySnapshot:
     def __init__(
         self,
         *,
-        store: StoreLike,
+        store: ItemStore,
         qbit: QBitLike,
         stats: StatsLike | None = None,
         broadcaster: BroadcasterLike | None = None,
@@ -76,7 +76,7 @@ class ObservabilitySnapshot:
             qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
         except (asyncio.TimeoutError, Exception):
             qbit_ok = False
-        by_status = (await call_store(self._store, "stats")).by_status
+        by_status = (await self._store.stats()).by_status
         tracked = sum(
             by_status.get(status.value, 0)
             for status in (TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading)
@@ -86,7 +86,7 @@ class ObservabilitySnapshot:
         return {
             "qbittorrent": "online" if qbit_ok else "offline",
             "classifier": "local_rules",
-            "items_count": await store_value(self._store, "count"),
+            "items_count": await self._store.count(),
             "tracked_downloads": tracked,
             "qbit_stats": qbit_stats,
             "disk_space": await asyncio.to_thread(settings.check_disk_space),
@@ -116,7 +116,7 @@ class ObservabilitySnapshot:
             result = self._stats.as_dict()
         else:
             result = {"api_calls": 0}
-        result["active_items"] = await store_value(self._store, "count")
+        result["active_items"] = await self._store.count()
         result["websocket_clients"] = (
             self._broadcaster.active_count if self._broadcaster is not None else 0
         )

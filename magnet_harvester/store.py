@@ -55,9 +55,8 @@ class StoreStats:
         }
 
 
-@runtime_checkable
-class ItemStore(Protocol):
-    """ItemStore 协议 — 所有 store 适配器必须实现此接口"""
+class _ItemStoreBackend(Protocol):
+    """Module-internal synchronous adapter interface."""
 
     def add(self, item: MagnetItem) -> bool: ...
     def get(self, hash_key: str) -> Optional[MagnetItem]: ...
@@ -91,21 +90,130 @@ class ItemStore(Protocol):
     def clear(self) -> int: ...
 
 
-async def call_store(store: ItemStore, method: str, /, *args, **kwargs):
-    """在异步业务路径中调用 store，避免阻塞型 adapter 占用事件循环。"""
-    operation = getattr(store, method)
-    if getattr(store, "blocks_event_loop", False):
-        return await asyncio.to_thread(operation, *args, **kwargs)
-    return operation(*args, **kwargs)
+@runtime_checkable
+class ItemStore(Protocol):
+    """Typed async interface for Magnet item persistence and queries."""
+
+    async def add(self, item: MagnetItem) -> bool: ...
+    async def get(self, hash_key: str) -> Optional[MagnetItem]: ...
+    async def update(self, hash_key: str, **fields) -> bool: ...
+    async def remove(self, hash_key: str) -> bool: ...
+    async def list(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str | list[str] | set[str]] = None,
+        limit: int = 20,
+    ) -> List[MagnetItem]: ...
+    async def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]: ...
+    async def get_pending(self) -> List[MagnetItem]: ...
+    async def get_hashes_by_prefix(self, prefix: str) -> List[str]: ...
+    async def count(self) -> int: ...
+    async def count_items(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int: ...
+    async def count_and_page(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple: ...
+    async def stats(self) -> StoreStats: ...
+    async def add_batch(self, items: List[MagnetItem]) -> int: ...
+    async def clear(self) -> int: ...
 
 
-async def store_value(store: ItemStore, attribute: str):
-    """异步读取 store 属性，语义与 :func:`call_store` 一致。"""
-    if getattr(store, "blocks_event_loop", False):
-        return await asyncio.to_thread(getattr, store, attribute)
-    return getattr(store, attribute)
+class AsyncItemStore:
+    """Typed async interface over a synchronous Magnet item store adapter.
 
+    Callers never need to know whether the selected adapter blocks the event
+    loop. SQLite work is moved to a worker thread here; in-memory work stays
+    inline so its cheap operations avoid thread scheduling overhead.
+    """
 
+    def __init__(self, backend: _ItemStoreBackend):
+        self._backend = backend
+
+    async def _invoke(self, operation, /, *args, **kwargs):
+        if getattr(self._backend, "blocks_event_loop", False):
+            return await asyncio.to_thread(operation, *args, **kwargs)
+        return operation(*args, **kwargs)
+
+    async def add(self, item: MagnetItem) -> bool:
+        return await self._invoke(self._backend.add, item)
+
+    async def get(self, hash_key: str) -> Optional[MagnetItem]:
+        return await self._invoke(self._backend.get, hash_key)
+
+    async def update(self, hash_key: str, **fields) -> bool:
+        return await self._invoke(self._backend.update, hash_key, **fields)
+
+    async def remove(self, hash_key: str) -> bool:
+        return await self._invoke(self._backend.remove, hash_key)
+
+    async def list(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str | list[str] | set[str]] = None,
+        limit: int = 20,
+    ) -> List[MagnetItem]:
+        return await self._invoke(
+            self._backend.list,
+            category=category,
+            status=status,
+            limit=limit,
+        )
+
+    async def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]:
+        return await self._invoke(self._backend.search, query, limit=limit)
+
+    async def get_pending(self) -> List[MagnetItem]:
+        return await self._invoke(self._backend.get_pending)
+
+    async def get_hashes_by_prefix(self, prefix: str) -> List[str]:
+        return await self._invoke(self._backend.get_hashes_by_prefix, prefix)
+
+    async def count(self) -> int:
+        if getattr(self._backend, "blocks_event_loop", False):
+            return await asyncio.to_thread(getattr, self._backend, "count")
+        return self._backend.count
+
+    async def count_items(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        return await self._invoke(
+            self._backend.count_items,
+            category=category,
+            status=status,
+        )
+
+    async def count_and_page(
+        self,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple:
+        return await self._invoke(
+            self._backend.count_and_page,
+            category=category,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def stats(self) -> StoreStats:
+        return await self._invoke(self._backend.stats)
+
+    async def add_batch(self, items: List[MagnetItem]) -> int:
+        return await self._invoke(self._backend.add_batch, items)
+
+    async def clear(self) -> int:
+        return await self._invoke(self._backend.clear)
 class InMemoryItemStore:
     """ItemStore 的默认内存适配器。
 

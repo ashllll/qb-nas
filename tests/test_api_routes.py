@@ -16,7 +16,7 @@ from magnet_harvester.api.routes import router
 from magnet_harvester.config import QBitConfig
 from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState, QBitRuntime
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.observability import ObservabilitySnapshot
@@ -167,9 +167,10 @@ def _make_app():
     pipeline = FakePipeline()
     bg_manager = FakeBGManager()
     stats = FakeStats()
-    transitions = MagnetItemTransitions(store=store, bus=NullBus())
+    async_store = AsyncItemStore(store)
+    transitions = MagnetItemTransitions(store=async_store, bus=NullBus())
     action_executor = UserActionExecutor(
-        store=store,
+        store=async_store,
         pipeline=pipeline,
         task_manager=bg_manager,
         transitions=transitions,
@@ -178,13 +179,13 @@ def _make_app():
     qbit = FakeQbit()
     classifier = FakeClassifier()
     observability = ObservabilitySnapshot(
-        store=store,
+        store=async_store,
         qbit=qbit,
         stats=stats,
         error_handler=error_handler,
         classifier=classifier,
     )
-    item_queries = ItemQueryExecutor(store=store)
+    item_queries = ItemQueryExecutor(store=async_store)
 
     class RuntimeSettings:
         def build_qbit_config(self, host, username, password):
@@ -209,7 +210,7 @@ def _make_app():
 
     ctx = AppContext(
         core=CoreServices(
-            store=store,
+            store=async_store,
             bus=NullBus(),
             pipeline=pipeline,
             crawler=None,

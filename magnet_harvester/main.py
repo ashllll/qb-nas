@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
         log.exception("runtime.start() 失败")
         # 验证核心存储服务是否可用：store 不可用为致命错误，应阻止启动
         try:
-            _ = runtime.ctx.core.store.count
+            await runtime.ctx.core.store.count()
         except Exception:
             log.critical("核心存储 store 不可用，无法启动")
             raise

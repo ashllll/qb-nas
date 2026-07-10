@@ -8,13 +8,13 @@ import asyncio
 import json
 import logging
 from datetime import date, datetime
-from typing import Any, Protocol
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from magnet_harvester.bus import Event, MessageBus
-from magnet_harvester.store import call_store
+from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
@@ -27,14 +27,10 @@ def _json_serializer(obj: Any) -> str:
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-class BroadcasterStore(Protocol):
-    def list(self, limit: int = 20): ...
-
-
 class WSBroadcaster:
     """Subscribes to MessageBus and broadcasts events to all active WebSocket clients."""
 
-    def __init__(self, bus: MessageBus, store: BroadcasterStore | None = None):
+    def __init__(self, bus: MessageBus, store: ItemStore | None = None):
         self._bus = bus
         self._store = store
         self._active_ws: set[WebSocket] = set()
@@ -65,7 +61,7 @@ class WSBroadcaster:
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store:
-            items = [item_payload(i) for i in await call_store(self._store, "list", limit=500)]
+            items = [item_payload(i) for i in await self._store.list(limit=500)]
             await self.send_init(ws, items)
         else:
             await self.send_init(ws, [])

@@ -33,7 +33,7 @@ from magnet_harvester.services.qbit_sync import QBitSyncLoop
 from magnet_harvester.services.site_auth import SiteAuth
 from magnet_harvester.services.stats import SystemStats
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.store import InMemoryItemStore, SQLiteItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore, SQLiteItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
@@ -81,12 +81,12 @@ class AppRuntime:
 def _build_store():
     """Create the ItemStore backend based on configuration."""
     if settings.STORE_BACKEND == "sqlite":
-        store = SQLiteItemStore(db_path=settings.STORE_DB_PATH)
+        backend = SQLiteItemStore(db_path=settings.STORE_DB_PATH)
         log.info("使用 SQLite 持久化存储: %s", settings.STORE_DB_PATH)
     else:
-        store = InMemoryItemStore()
+        backend = InMemoryItemStore()
         log.info("使用内存存储")
-    return store
+    return AsyncItemStore(backend)
 
 
 def _build_core():

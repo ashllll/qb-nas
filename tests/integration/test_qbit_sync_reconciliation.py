@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.transitions import MagnetItemTransitions
@@ -53,7 +53,7 @@ def test_qbit_sync_marks_downloaded_item_as_success():
     """When qB reports a torrent as 'completed', the item should be marked success."""
     store = InMemoryItemStore()
     bus = NullBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     store.add(MagnetItem(
         hash="SYNCTEST001",
@@ -94,7 +94,7 @@ def test_qbit_sync_marks_removed_torrent_as_error():
     """When a tracked torrent disappears from qB, it should be marked as error/removed."""
     store = InMemoryItemStore()
     bus = NullBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
 
     store.add(MagnetItem(
         hash="REMOVED001",

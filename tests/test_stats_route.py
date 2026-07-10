@@ -10,9 +10,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import magnet_harvester.main as main_module
 
 
+def _mounted_routes():
+    for route in main_module.app.routes:
+        included = getattr(route, "original_router", None)
+        if included is not None:
+            yield from included.routes
+        else:
+            yield route
+
+
 def test_main_app_stats_route_is_mounted_from_api_routes():
     stats_routes = [
-        route for route in main_module.app.routes if getattr(route, "path", None) == "/api/stats"
+        route for route in _mounted_routes() if getattr(route, "path", None) == "/api/stats"
     ]
 
     assert len(stats_routes) == 1

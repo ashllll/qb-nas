@@ -8,7 +8,7 @@ P1-7: 下载并发化测试
 import asyncio
 import pytest
 from magnet_harvester.pipeline import HarvestPipeline
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 
@@ -84,7 +84,7 @@ async def test_download_is_concurrent():
         crawler=FakeCrawler(),
         classifier=FakeClassifier(),
         qbit=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
@@ -128,7 +128,7 @@ async def test_download_concurrency_limit():
         crawler=FakeCrawler(),
         classifier=FakeClassifier(),
         qbit=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
 
