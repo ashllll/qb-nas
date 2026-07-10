@@ -18,13 +18,11 @@ const ICON_SYMBOLS = {
   info: "i",
 };
 
-const items = new Map();
+const itemState = new MagnetItemState();
+const { items, selected } = itemState;
 const apiClient = new MagnetApiClient({
   onUnauthorized: () => setMobileView("config"),
 });
-const selected = new Set();
-let filter = "all";
-let searchQuery = "";
 let ws = null;
 let reconnectTimer = null;
 let clipRunning = false;
@@ -133,14 +131,12 @@ function handleMsg(msg) {
   switch (msg.type) {
     case "init":
       fieldPulse(0.5);
-      items.clear();
-      selected.clear();
-      (msg.items || []).forEach((item) => items.set(item.hash, item));
+      itemState.reset(msg.items || []);
       renderTable();
       addLog("实时数据已同步", "info");
       break;
     case "init_page":
-      (msg.items || []).forEach((item) => items.set(item.hash, item));
+      itemState.upsertMany(msg.items || []);
       renderTable();
       break;
     case "init_done":
@@ -160,7 +156,7 @@ function handleMsg(msg) {
     case "magnet_found":
       fieldPulse(0.8);
       if (msg.item) {
-        items.set(msg.item.hash, msg.item);
+        itemState.upsert(msg.item);
         renderTable();
         addLog(`发现 ${msg.item.name}`, "found");
       }
@@ -168,7 +164,7 @@ function handleMsg(msg) {
       break;
     case "store_changed":
       if (msg.item) {
-        items.set(msg.item.hash, msg.item);
+        itemState.upsert(msg.item);
         renderTable();
       }
       break;
@@ -213,8 +209,7 @@ function handleMsg(msg) {
       }
       break;
     case "items_cleared":
-      items.clear();
-      selected.clear();
+      itemState.clear();
       renderTable();
       addLog("资源库已清空", "warn");
       break;
@@ -362,8 +357,7 @@ async function clearAll() {
   closeClearDialog();
   try {
     await apiClient.fetch("/api/items", { method: "DELETE" });
-    items.clear();
-    selected.clear();
+    itemState.clear();
     renderTable();
     toast("资源库已清空", "success");
   } catch (error) {
@@ -383,13 +377,7 @@ const statusLabels = {
 };
 
 function visibleItems() {
-  const query = searchQuery.toLocaleLowerCase();
-  return [...items.values()].filter((item) => {
-    const categoryMatch = filter === "all" || item.category === filter;
-    const haystack =
-      `${item.name || ""} ${item.category || ""} ${item.source_url || ""}`.toLocaleLowerCase();
-    return categoryMatch && (!query || haystack.includes(query));
-  });
+  return itemState.visible();
 }
 
 function rowHtml(item) {
@@ -428,7 +416,7 @@ function renderTable() {
 }
 
 function setFilter(category) {
-  filter = category;
+  itemState.setFilter(category);
   document
     .querySelectorAll(".filter-tab")
     .forEach((tab) =>
@@ -438,25 +426,22 @@ function setFilter(category) {
 }
 
 function toggleRow(hash, checked) {
-  if (checked) selected.add(hash);
-  else selected.delete(hash);
+  itemState.select(hash, checked);
   renderTable();
 }
 
 function toggleVisible(checked) {
-  visibleItems().forEach((item) =>
-    checked ? selected.add(item.hash) : selected.delete(item.hash)
-  );
+  itemState.selectVisible(checked);
   renderTable();
 }
 
 function selectAllVisible() {
-  visibleItems().forEach((item) => selected.add(item.hash));
+  itemState.selectVisible();
   renderTable();
 }
 
 function selectNone() {
-  selected.clear();
+  itemState.clearSelection();
   renderTable();
 }
 
@@ -661,7 +646,7 @@ document
 document
   .getElementById("searchInput")
   .addEventListener("input", (event) => {
-    searchQuery = event.target.value.trim();
+    itemState.setQuery(event.target.value);
     renderTable();
   });
 document

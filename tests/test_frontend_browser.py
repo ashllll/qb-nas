@@ -59,8 +59,28 @@ async def test_frontend_loads_css_and_javascript_as_local_modules(static_server_
         )
         assert any(resource.endswith("/static/styles.css") for resource in resources)
         assert any(resource.endswith("/static/api_client.js") for resource in resources)
+        assert any(resource.endswith("/static/item_state.js") for resource in resources)
         assert any(resource.endswith("/static/app.js") for resource in resources)
         assert await page.evaluate("() => typeof window.MagnetApiClient") == "function"
+        assert await page.evaluate("() => typeof window.MagnetItemState") == "function"
+        assert await page.evaluate(
+            """
+            () => {
+              const state = new MagnetItemState();
+              state.reset([
+                {hash: 'MOVIE', name: 'Movie', category: '电影'},
+                {hash: 'MUSIC', name: 'Music', category: '音乐'}
+              ]);
+              state.setFilter('电影');
+              state.selectVisible();
+              state.reset([{hash: 'NEW', name: 'New', category: '电影'}]);
+              return {
+                visible: state.visible().map(item => item.hash),
+                selected: [...state.selected]
+              };
+            }
+            """
+        ) == {"visible": ["NEW"], "selected": []}
         assert await page.evaluate("() => typeof window.handleMsg") == "function"
         categories = await page.locator("[data-cat]").evaluate_all(
             "elements => elements.map((element) => element.dataset.cat)"
