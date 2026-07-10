@@ -1,7 +1,4 @@
-"""
-TDD 循环 5: 配置验证与动态更新的原子性
-验证 Settings.update_qbit() 的输入校验和 QBitRuntime.replace_qbit() 的资源清理
-"""
+"""Configuration security validation and QBitRuntime resource cleanup."""
 
 import sys
 import os
@@ -11,72 +8,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import Settings
-
-
-# ═══════════════════════════════════════════════════
-# 示踪弹: update_qbit() 应拒绝非法 URL
-# ═══════════════════════════════════════════════════
-
-
-def test_update_qbit_rejects_invalid_url():
-    """传入非法 URL 时，update_qbit() 应返回错误且不修改配置"""
-    settings = Settings()
-    original_host = settings.QBIT_HOST
-
-    result = settings.update_qbit(host="not-a-valid-url")
-
-    # 应返回错误信息
-    assert result is not True
-    assert "url" in str(result).lower() or "invalid" in str(result).lower() or result is False
-    # 配置不应被修改
-    assert settings.QBIT_HOST == original_host
-
-
-# ═══════════════════════════════════════════════════
-# 增量测试 2: update_qbit() 应接受合法 URL
-# ═══════════════════════════════════════════════════
-
-
-def test_update_qbit_accepts_valid_url():
-    """传入合法 URL 时，update_qbit() 应成功更新"""
-    settings = Settings()
-
-    result = settings.update_qbit(host="http://192.168.1.200:8080")
-
-    assert result is True or result is None  # 成功时返回 True 或 None
-    assert settings.QBIT_HOST == "http://192.168.1.200:8080"
-    # 内部缓存应被清除
-    assert settings._qbit_config is None
-
-
-# ═══════════════════════════════════════════════════
-# 增量测试 3: update_qbit() 应拒绝空值
-# ═══════════════════════════════════════════════════
-
-
-def test_update_qbit_rejects_empty_values():
-    """传入空字符串时，update_qbit() 应拒绝"""
-    settings = Settings()
-    original_host = settings.QBIT_HOST
-
-    result = settings.update_qbit(host="", username="", password="")
-
-    assert result is not True
-    assert settings.QBIT_HOST == original_host
-
-
-def test_update_qbit_does_not_partially_mutate_on_late_validation_failure():
-    settings = Settings()
-    original = (settings.QBIT_HOST, settings.QBIT_USERNAME, settings.QBIT_PASSWORD)
-
-    result = settings.update_qbit(
-        host="http://new.example:8080",
-        username="new-user",
-        password="",
-    )
-
-    assert result is not True
-    assert (settings.QBIT_HOST, settings.QBIT_USERNAME, settings.QBIT_PASSWORD) == original
 
 
 def test_security_posture_allows_loopback_without_api_key():
@@ -185,15 +116,6 @@ async def test_replace_qbit_updates_download_state_sync():
 
 
 if __name__ == "__main__":
-    test_update_qbit_rejects_invalid_url()
-    print("[PASS] test_update_qbit_rejects_invalid_url")
-
-    test_update_qbit_accepts_valid_url()
-    print("[PASS] test_update_qbit_accepts_valid_url")
-
-    test_update_qbit_rejects_empty_values()
-    print("[PASS] test_update_qbit_rejects_empty_values")
-
     import asyncio
 
     asyncio.run(test_replace_qbit_closes_old_client())

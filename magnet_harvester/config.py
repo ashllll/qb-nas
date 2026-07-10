@@ -168,45 +168,6 @@ class Settings(BaseSettings):
             )
         return self._service_config
 
-    def update_qbit(
-        self, host: str | None = None, username: str | None = None, password: str | None = None
-    ) -> Optional[str]:
-        """动态更新 qB 配置（由前端配置面板调用）
-
-        返回:
-            None — 更新成功
-            str  — 错误信息（验证失败）
-        """
-        try:
-            candidate = self.build_qbit_config(host=host, username=username, password=password)
-        except ValueError as exc:
-            return str(exc)
-        old_host, old_user, old_pass = self.QBIT_HOST, self.QBIT_USERNAME, self.QBIT_PASSWORD
-        self.commit_qbit_config(candidate)
-        try:
-            self.persist_qbit_config(candidate)
-        except Exception as exc:
-            # 持久化失败：尝试回滚内存配置
-            try:
-                rollback = self.build_qbit_config(
-                    host=old_host, username=old_user, password=old_pass
-                )
-                self.commit_qbit_config(rollback)
-                return f"配置已回滚，持久化失败: {exc}"
-            except ValueError:
-                log.critical(
-                    "持久化失败且回滚也失败，尝试从 .env 恢复内存配置: %s", exc
-                )
-                try:
-                    self._reload_qbit_from_env()
-                except Exception as reload_exc:
-                    log.critical(
-                        "从 .env 恢复配置也失败，内存配置仍为 candidate 状态: %s",
-                        reload_exc,
-                    )
-                return f"持久化失败且回滚也失败，配置状态不一致: {exc}"
-        return None
-
     def build_qbit_config(
         self,
         host: str | None = None,
@@ -241,28 +202,6 @@ class Settings(BaseSettings):
         self.QBIT_USERNAME = config.username
         self.QBIT_PASSWORD = config.password
         self._qbit_config = None
-
-    def _reload_qbit_from_env(self) -> None:
-        """从 .env 文件重新读取 qBittorrent 配置到内存，用于回滚失败后的状态恢复。"""
-        env_path = Path(self.model_config.get("env_file", ".env"))
-        if not env_path.exists():
-            return
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            key = self._env_line_key(line)
-            if key not in ("QBIT_HOST", "QBIT_USERNAME", "QBIT_PASSWORD"):
-                continue
-            _, _, raw = line.partition("=")
-            value = raw.strip()
-            if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-                value = value[1:-1]
-            value = (
-                value.replace('\\"', '"')
-                .replace("\\\\", "\\")
-                .replace("\\$", "$")
-                .replace("\\n", "\n")
-            )
-            setattr(self, key, value)
-        self._qbit_config = None  # 使缓存失效，下次访问时重新构建
 
     def persist_qbit_config(self, config: QBitConfig, env_path: str | Path | None = None) -> None:
         """Persist qBittorrent connection settings to the .env file."""
