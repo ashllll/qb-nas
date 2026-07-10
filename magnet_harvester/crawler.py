@@ -19,7 +19,7 @@ import time
 from contextvars import ContextVar
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import Any, AsyncGenerator, List, Optional, Protocol, Set, runtime_checkable
+from typing import Any, AsyncGenerator, List, Optional, Protocol, Set
 from urllib.parse import urldefrag, urljoin, urlparse
 
 try:
@@ -67,7 +67,6 @@ class CrawlMetrics:
         }
 
 
-@runtime_checkable
 class CrawlPhase(Protocol):
     """Protocol for crawl adapters — implemented by MagnetCrawler."""
 

@@ -18,7 +18,6 @@ from magnet_harvester.bus import NullBus, Event, EventType, MessageBus
 
 # ── Phase Protocols（从 pipeline.py 导入） ──
 
-from magnet_harvester.crawler import CrawlPhase
 from magnet_harvester.pipeline import (
     HarvestPipeline,
 )
@@ -150,12 +149,6 @@ class SlowClassifiedTransitions:
             status=TaskStatus.error,
             error_msg=error_msg,
         )
-
-
-def test_crawl_phase_protocol():
-    """FakeCrawlPhase 符合 CrawlPhase 协议"""
-    phase = FakeCrawlPhase()
-    assert isinstance(phase, CrawlPhase)
 
 
 def test_pipeline_with_fake_phases():
@@ -473,7 +466,6 @@ def test_reclassify_includes_error_status_items():
 
 
 if __name__ == "__main__":
-    test_crawl_phase_protocol()
     test_pipeline_with_fake_phases()
     test_pipeline_skip_download()
     test_classify_item_events_are_observable_before_all_done()

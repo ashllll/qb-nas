@@ -18,7 +18,7 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Protocol, runtime_checkable
+from typing import Dict, Iterable, List, Optional, Protocol
 
 from pydantic import ValidationError
 
@@ -90,7 +90,6 @@ class _ItemStoreBackend(Protocol):
     def clear(self) -> int: ...
 
 
-@runtime_checkable
 class ItemStore(Protocol):
     """Typed async interface for Magnet item persistence and queries."""
 

@@ -9,15 +9,6 @@ import json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.classifier.local_classifier import LocalClassificationEngine, LocalClassifier
-from magnet_harvester.pipeline import ClassifyPhase
-
-
-def test_conforms_to_classify_phase_protocol():
-    """LocalClassifier 符合 ClassifyPhase 协议"""
-    clf = LocalClassifier()
-    assert isinstance(clf, ClassifyPhase)
-
-
 def test_local_classification_engine_has_narrow_interface():
     """本地规则引擎只负责名称分类，协议兼容面留给 LocalClassifier。"""
     engine = LocalClassificationEngine()
@@ -138,7 +129,6 @@ def test_reload_rules_uses_updated_keyword_file(tmp_path):
 
 
 if __name__ == "__main__":
-    test_conforms_to_classify_phase_protocol()
     test_tv_series()
     test_anime()
     test_music()

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable, List, Protocol, runtime_checkable
+from typing import Callable, List, Protocol
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
@@ -26,7 +26,6 @@ log = logging.getLogger(__name__)
 # ── Phase Protocols ──────────────────────────
 
 
-@runtime_checkable
 class PipelineProtocol(Protocol):
     async def start_crawl(
         self, url: str, *, depth: int = 1, auto_download: bool = False
@@ -38,12 +37,10 @@ class PipelineProtocol(Protocol):
     def max_crawl_depth(self) -> int: ...
 
 
-@runtime_checkable
 class UsageStats(Protocol):
     def as_dict(self) -> dict: ...
 
 
-@runtime_checkable
 class ClassifyPhase(Protocol):
     async def classify_stream_batch(
         self, items: List[dict], on_result: Callable[[int, dict], None] | None = None
@@ -53,7 +50,6 @@ class ClassifyPhase(Protocol):
     def get_cache_stats(self) -> dict: ...
 
 
-@runtime_checkable
 class DownloadPhase(Protocol):
     last_error: str | None
 

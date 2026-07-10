@@ -5,11 +5,12 @@
 import sys
 import os
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import (
-    AsyncItemStore,
     InMemoryItemStore,
     ItemStore,
     SQLiteItemStore,
@@ -36,18 +37,10 @@ def test_protocol_is_defined():
     assert hasattr(ItemStore, "search")
 
 
-def test_inmemory_conforms_to_protocol():
-    """异步 module 是 ItemStore 的实例。"""
-    store = AsyncItemStore(InMemoryItemStore())
-    assert isinstance(store, ItemStore)
-
-
-def test_fake_store_conforms_to_protocol():
-    """Fake adapter 经异步 module 后符合 ItemStore interface。"""
-    from magnet_harvester.store import FakeStore
-
-    store = AsyncItemStore(FakeStore())
-    assert isinstance(store, ItemStore)
+def test_async_protocol_rejects_runtime_member_name_checks():
+    """Runtime Protocol checks cannot prove that same-named methods are async."""
+    with pytest.raises(TypeError):
+        isinstance(InMemoryItemStore(), ItemStore)
 
 
 # ── 行为测试（在协议上运行，任何实现都应通过） ──
@@ -215,8 +208,7 @@ def test_fakestore_behaviors():
 
 if __name__ == "__main__":
     test_protocol_is_defined()
-    test_inmemory_conforms_to_protocol()
-    test_fake_store_conforms_to_protocol()
+    test_async_protocol_rejects_runtime_member_name_checks()
     test_inmemory_behaviors()
     test_fakestore_behaviors()
     print("=== ItemStore Protocol tests passed! ===")
