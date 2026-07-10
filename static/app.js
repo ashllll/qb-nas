@@ -19,6 +19,9 @@ const ICON_SYMBOLS = {
 };
 
 const items = new Map();
+const apiClient = new MagnetApiClient({
+  onUnauthorized: () => setMobileView("config"),
+});
 const selected = new Set();
 let filter = "all";
 let searchQuery = "";
@@ -98,32 +101,6 @@ if (fieldReducedMotion) {
 }
 
 /* ---- End field animation ---- */
-
-function apiHeaders(extra = {}) {
-  const headers = { ...extra };
-  const key = sessionStorage.getItem("magnet-api-key") || "";
-  if (key) headers["X-API-Key"] = key;
-  return headers;
-}
-
-async function apiFetch(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: apiHeaders(options.headers || {}),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail =
-      typeof data.detail === "string"
-        ? data.detail
-        : Array.isArray(data.detail) && data.detail[0]?.msg
-          ? data.detail[0].msg.replace(/^Value error,\s*/, "")
-          : `请求失败 (${response.status})`;
-    if (response.status === 401) setMobileView("config");
-    throw new Error(detail);
-  }
-  return data;
-}
 
 function connectWS() {
   clearTimeout(reconnectTimer);
@@ -254,21 +231,20 @@ function handleMsg(msg) {
 
 async function loadConfig() {
   try {
-    const data = await apiFetch("/api/config");
+    const data = await apiClient.fetch("/api/config");
     document.getElementById("cfgHost").value = data.qbit_host || "";
     document.getElementById("cfgUser").value = data.qbit_username || "";
   } catch (error) {
     setConfigResult(error.message, "error");
   }
-  const savedKey = sessionStorage.getItem("magnet-api-key") || "";
+  const savedKey = apiClient.getKey();
   document.getElementById("apiKeyInput").value = savedKey;
 }
 
 async function saveConfig() {
   const button = document.getElementById("saveConfigBtn");
   const key = document.getElementById("apiKeyInput").value.trim();
-  if (key) sessionStorage.setItem("magnet-api-key", key);
-  else sessionStorage.removeItem("magnet-api-key");
+  apiClient.setKey(key);
   setButtonBusy(button, true, "连接中");
   try {
     const payload = {
@@ -277,7 +253,7 @@ async function saveConfig() {
     };
     const password = document.getElementById("cfgPass").value;
     if (password) payload.qbit_password = password;
-    const data = await apiFetch("/api/config", {
+    const data = await apiClient.fetch("/api/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -319,7 +295,7 @@ async function startCrawl() {
   }
   setCrawling(true);
   try {
-    await apiFetch("/api/crawl", {
+    await apiClient.fetch("/api/crawl", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -340,7 +316,7 @@ async function downloadSelected() {
   const button = document.getElementById("dlBtn");
   setButtonBusy(button, true, "发送中");
   try {
-    await apiFetch("/api/download", {
+    await apiClient.fetch("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hashes: [...selected] }),
@@ -363,7 +339,7 @@ async function reclassifySelected() {
   const button = document.getElementById("classifyBtn");
   setButtonBusy(button, true, "分类中");
   try {
-    await apiFetch("/api/reclassify", {
+    await apiClient.fetch("/api/reclassify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hashes }),
@@ -385,7 +361,7 @@ function closeClearDialog() {
 async function clearAll() {
   closeClearDialog();
   try {
-    await apiFetch("/api/items", { method: "DELETE" });
+    await apiClient.fetch("/api/items", { method: "DELETE" });
     items.clear();
     selected.clear();
     renderTable();
@@ -592,7 +568,7 @@ function setProgress(percent) {
 async function checkStatus() {
   const dot = document.getElementById("dotQbit");
   try {
-    const data = await apiFetch("/api/status");
+    const data = await apiClient.fetch("/api/status");
     const online = data.qbittorrent === "online";
     dot.className = `dot ${online ? "online" : "offline"}`;
     document.getElementById("qbitStatus").textContent = online
@@ -610,7 +586,7 @@ async function toggleClipboard() {
   const button = document.getElementById("clipButton");
   button.disabled = true;
   try {
-    const data = await apiFetch(
+    const data = await apiClient.fetch(
       clipRunning ? "/api/clipboard/stop" : "/api/clipboard/start",
       { method: "POST" }
     );
@@ -641,7 +617,7 @@ function updateClipUI(running) {
 
 async function initClipStatus() {
   try {
-    const data = await apiFetch("/api/clipboard");
+    const data = await apiClient.fetch("/api/clipboard");
     clipCount = data.magnet_count || 0;
     updateClipUI(Boolean(data.running));
   } catch {
@@ -692,8 +668,7 @@ document
   .getElementById("apiKeyInput")
   .addEventListener("input", (event) => {
     const value = event.target.value.trim();
-    if (value) sessionStorage.setItem("magnet-api-key", value);
-    else sessionStorage.removeItem("magnet-api-key");
+    apiClient.setKey(value);
   });
 document.addEventListener("keydown", (event) => {
   if (

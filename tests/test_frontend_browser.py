@@ -58,7 +58,9 @@ async def test_frontend_loads_css_and_javascript_as_local_modules(static_server_
             "() => performance.getEntriesByType('resource').map((entry) => entry.name)"
         )
         assert any(resource.endswith("/static/styles.css") for resource in resources)
+        assert any(resource.endswith("/static/api_client.js") for resource in resources)
         assert any(resource.endswith("/static/app.js") for resource in resources)
+        assert await page.evaluate("() => typeof window.MagnetApiClient") == "function"
         assert await page.evaluate("() => typeof window.handleMsg") == "function"
         categories = await page.locator("[data-cat]").evaluate_all(
             "elements => elements.map((element) => element.dataset.cat)"
@@ -116,6 +118,27 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
                     "body": body,
                 }
             )
+            if request.url.endswith("/api/error422"):
+                await route.fulfill(
+                    status=422,
+                    content_type="application/json",
+                    body=json.dumps({"detail": [{"msg": "Value error, invalid probe"}]}),
+                )
+                return
+            if request.url.endswith("/api/error-text"):
+                await route.fulfill(status=503, content_type="text/plain", body="unavailable")
+                return
+            if (
+                request.url.endswith("/api/config")
+                and request.method == "PUT"
+                and body["qbit_host"] == "http://unauthorized.test"
+            ):
+                await route.fulfill(
+                    status=401,
+                    content_type="application/json",
+                    body=json.dumps({"detail": "API key invalid"}),
+                )
+                return
             if request.url.endswith("/api/config") and request.method == "GET":
                 payload = {"qbit_host": "http://qbit.test", "qbit_username": "admin"}
             elif request.url.endswith("/api/config") and request.method == "PUT":
@@ -131,10 +154,22 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
         await page.route("**/api/**", handle_api)
         await page.goto(static_server_url, wait_until="domcontentloaded")
         await page.locator("#apiKeyInput").fill("test-api-key")
-        await page.evaluate("() => apiFetch('/api/probe')")
+        await page.evaluate("() => new MagnetApiClient().fetch('/api/probe')")
 
         probe = next(request for request in requests if request["url"].endswith("/api/probe"))
         assert probe["headers"]["x-api-key"] == "test-api-key"
+        assert (
+            await page.evaluate(
+                "() => new MagnetApiClient().fetch('/api/error422').catch(error => error.message)"
+            )
+            == "invalid probe"
+        )
+        assert (
+            await page.evaluate(
+                "() => new MagnetApiClient().fetch('/api/error-text').catch(error => error.message)"
+            )
+            == "请求失败 (503)"
+        )
 
         await page.locator("#cfgPass").fill("")
         await page.evaluate("() => saveConfig()")
@@ -144,6 +179,11 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
             if request["url"].endswith("/api/config") and request["method"] == "PUT"
         )
         assert "qbit_password" not in update["body"]
+
+        await page.locator("#cfgHost").fill("http://unauthorized.test")
+        await page.evaluate("() => saveConfig()")
+        assert await page.locator("#appWindow").get_attribute("data-mobile-view") == "config"
+        console_problems.clear()  # 上面的失败响应会被浏览器按预期记录到控制台。
 
         await page.evaluate(
             """
