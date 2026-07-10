@@ -1,12 +1,11 @@
 """
-MagnetItemTransitions — applies Magnet item state changes and publishes events.
+Magnet item lifecycle modules apply state changes and publish events.
 
 This module encapsulates the knowledge of what state transitions exist for a
 Magnet item and which events each transition should publish.
 
-Organized into 3 domain objects (Discovery, Classification, Download) with
-MagnetItemTransitions as a facade that delegates to them. The facade preserves
-the original public API so callers are unaffected.
+Organized into three deep modules: Discovery, Classification, and Download.
+Callers depend only on the lifecycle module they use.
 
 Used by HarvestPipeline during crawl→classify→download orchestration.
 """
@@ -97,6 +96,15 @@ class DiscoveryTransitions(_TransitionBase):
             return False
         await self._emit_item_changed(item.hash)
         return True
+
+    async def cleared(self) -> int:
+        """Clear all Magnet items and publish the collection change."""
+        count = await self._store.clear()
+        await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
+        remaining = await self._store.count()
+        if remaining > 0:
+            log.warning("cleared() 后 store 仍有 %d 个条目（并发写入）", remaining)
+        return count
 
 
 class ClassificationTransitions(_TransitionBase):
@@ -318,114 +326,3 @@ class DownloadTransitions(_TransitionBase):
 
 
 # ── 外观 ──────────────────────────────────────
-
-
-class MagnetItemTransitions:
-    """Applies Magnet item state changes and publishes matching events.
-
-    Facade that delegates to 3 domain objects (Discovery, Classification,
-    Download). Preserves the original public API so callers are unaffected.
-    """
-
-    def __init__(self, store: ItemStore, bus: MessageBus):
-        self._store = store
-        self._bus = bus
-        self._discovery = DiscoveryTransitions(store, bus)
-        self._classification = ClassificationTransitions(store, bus)
-        self._download = DownloadTransitions(store, bus)
-
-    @property
-    def discovery(self) -> DiscoveryTransitions:
-        """发现域转换（供未来直接访问）"""
-        return self._discovery
-
-    @property
-    def classification(self) -> ClassificationTransitions:
-        """分类域转换（供未来直接访问）"""
-        return self._classification
-
-    @property
-    def download(self) -> DownloadTransitions:
-        """下载域转换（供未来直接访问）"""
-        return self._download
-
-    # ── 发现域（委托）──
-
-    async def found(self, item: MagnetItem) -> bool:
-        return await self._discovery.found(item)
-
-    async def clipboard_found(self, item: MagnetItem) -> bool:
-        return await self._discovery.clipboard_found(item)
-
-    # ── 分类域（委托）──
-
-    async def classification_started(self, hash_key: str):
-        await self._classification.started(hash_key)
-
-    async def classified(self, hash_key: str, result: dict):
-        await self._classification.classified(hash_key, result)
-
-    async def classification_failed(self, hash_key: str, error_msg: str):
-        await self._classification.failed(hash_key, error_msg)
-
-    async def manually_classified(self, hash_key: str, category: str) -> bool:
-        return await self._classification.manually_classified(hash_key, category)
-
-    # ── 下载域（委托）──
-
-    async def download_submitting(self, hash_key: str) -> bool:
-        return await self._download.submitting(hash_key)
-
-    async def download_submitted(self, hash_key: str):
-        await self._download.submitted(hash_key)
-
-    async def download_failed(self, hash_key: str, error_msg: str):
-        await self._download.failed(hash_key, error_msg)
-
-    async def download_removed(self, hash_key: str, previous_status: TaskStatus | None):
-        await self._download.removed(hash_key, previous_status)
-
-    async def download_status_changed(
-        self,
-        hash_key: str,
-        *,
-        fields: dict,
-        previous_status: TaskStatus | None,
-    ):
-        await self._download.status_changed(
-            hash_key, fields=fields, previous_status=previous_status
-        )
-
-    async def download_state_changed(
-        self,
-        hash_key: str,
-        previous_status: TaskStatus | None = None,
-    ):
-        await self._download.state_changed(hash_key, previous_status)
-
-    async def reconcile_download_snapshot(
-        self,
-        hash_key: str,
-        item: MagnetItem,
-        torrent: dict | None,
-        *,
-        was_removed: bool = False,
-    ) -> bool:
-        return await self._download.reconcile_snapshot(
-            hash_key, item, torrent, was_removed=was_removed
-        )
-
-    # ── 共享操作 ──
-
-    async def cleared(self) -> int:
-        """清空全部 + ITEMS_CLEARED
-
-        store.clear() 现在原子化地返回清空前的条目数，消除了原先
-        count→clear 之间的 check-then-act 竞态窗口。
-        """
-        count = await self._store.clear()
-        await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
-        remaining = await self._store.count()
-        if remaining > 0:
-            log.warning("cleared() 清空后 store 仍有 %d 个条目（并发写入）", remaining)
-        return count

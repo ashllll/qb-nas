@@ -14,9 +14,17 @@ The source of truth for discovered Magnet items, including their lifecycle state
 
 The orchestration that crawls a URL, stores new Magnet items, classifies them, and optionally submits them to qBittorrent.
 
-### MagnetItemTransitions
+### Discovery lifecycle
 
-The module responsible for applying a Magnet item state change to `ItemStore` and publishing the matching `MessageBus` events in observable order.
+The lifecycle that admits newly discovered Magnet items into the collection and removes the collection when the user clears it.
+
+### Classification lifecycle
+
+The lifecycle that records classification start, success, failure, and manual category changes for a Magnet item.
+
+### Download lifecycle
+
+The lifecycle that records qBittorrent submission and reconciles later download state changes for a Magnet item.
 
 ### RuntimeContext
 

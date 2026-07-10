@@ -25,7 +25,11 @@ from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import (
+    ClassificationTransitions,
+    DiscoveryTransitions,
+    DownloadTransitions,
+)
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 # ═══════════════════════════════════════════════════
@@ -209,7 +213,9 @@ def make_test_app(
     classifier: FakeClassifier | LocalClassifier | None = None,
     qbit: FakeQbit | None = None,
     bg_manager: BGTaskManager | None = None,
-    transitions: MagnetItemTransitions | None = None,
+    discovery: DiscoveryTransitions | None = None,
+    classification: ClassificationTransitions | None = None,
+    downloads: DownloadTransitions | None = None,
     pipeline: HarvestPipeline | None = None,
     action_executor: UserActionExecutor | None = None,
     error_handler: FakeErrorHandler | None = None,
@@ -227,7 +233,9 @@ def make_test_app(
     _classifier = classifier or FakeClassifier()
     _qbit = qbit or FakeQbit()
     _bg_manager = bg_manager or BGTaskManager()
-    _transitions = transitions or MagnetItemTransitions(store=_store, bus=_bus)
+    _discovery = discovery or DiscoveryTransitions(store=_store, bus=_bus)
+    _classification = classification or ClassificationTransitions(store=_store, bus=_bus)
+    _downloads = downloads or DownloadTransitions(store=_store, bus=_bus)
     _pipeline = pipeline or HarvestPipeline(
         crawler=_crawler,
         classifier=_classifier,
@@ -235,13 +243,16 @@ def make_test_app(
         store=_store,
         bus=_bus,
         task_manager=_bg_manager,
-        transitions=_transitions,
+        discovery=_discovery,
+        classification=_classification,
+        downloads=_downloads,
     )
     _action_executor = action_executor or UserActionExecutor(
         store=_store,
         pipeline=_pipeline,
         task_manager=_bg_manager,
-        transitions=_transitions,
+        discovery=_discovery,
+        classification=_classification,
     )
     _error_handler = error_handler or FakeErrorHandler()
     _broadcaster = WSBroadcaster(bus=_bus, store=_store)
@@ -262,7 +273,6 @@ def make_test_app(
         ),
         runtime=RuntimeState(
             bg_manager=_bg_manager,
-            item_transitions=_transitions,
             error_handler=_error_handler,
             stats=stats or FakeStats(),
         ),

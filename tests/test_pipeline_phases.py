@@ -131,20 +131,20 @@ class ExplodingClassifyPhase(FakeClassifyPhase):
 class SlowClassifiedTransitions:
     def __init__(self, store):
         self._store = store
-        self.failed: list[tuple[str, str]] = []
+        self.failed_calls: list[tuple[str, str]] = []
 
     async def found(self, item: MagnetItem) -> bool:
         return self._store.add(item)
 
-    async def classification_started(self, hash_key: str):
+    async def started(self, hash_key: str):
         self._store.update(hash_key, status=TaskStatus.classifying)
         return True
 
     async def classified(self, hash_key: str, result: dict):
         await asyncio.sleep(10)
 
-    async def classification_failed(self, hash_key: str, error_msg: str):
-        self.failed.append((hash_key, error_msg))
+    async def failed(self, hash_key: str, error_msg: str):
+        self.failed_calls.append((hash_key, error_msg))
         return self._store.update(
             hash_key,
             status=TaskStatus.error,
@@ -311,13 +311,13 @@ async def test_classify_failure_rolls_back_cancelled_result_task():
         qbit=FakeDownloadPhase(),
         store=AsyncItemStore(store),
         bus=bus,
-        transitions=transitions,
+        classification=transitions,
     )
 
     with pytest.raises(RuntimeError, match="classifier exploded"):
         await pipeline.execute("https://example.com", depth=1)
 
-    assert transitions.failed == [("CANCELLED01", "classifier exploded")]
+    assert transitions.failed_calls == [("CANCELLED01", "classifier exploded")]
     current = store.get("CANCELLED01")
     assert current is not None
     assert current.status == TaskStatus.error

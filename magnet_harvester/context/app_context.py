@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from magnet_harvester.pipeline import HarvestPipeline
     from magnet_harvester.crawler import MagnetCrawler
     from magnet_harvester.classifier import LocalClassifier
-    from magnet_harvester.transitions import MagnetItemTransitions
 
 
 log = logging.getLogger(__name__)
@@ -148,7 +147,6 @@ class RuntimeState:
     bg_manager: BackgroundTaskSpawner | None = None
     qbit_lock: asyncio.Lock | None = None
     error_handler: ErrorHandlerLike | None = None
-    item_transitions: MagnetItemTransitions | None = None
     qbit_sync: QBitSyncLike | None = None
     qbit_runtime: QBitRuntimeLike | None = None
 
@@ -258,10 +256,6 @@ class AppContext:
     @property
     def error_handler(self) -> ErrorHandlerLike | None:
         return self.runtime.error_handler
-
-    @property
-    def item_transitions(self) -> MagnetItemTransitions | None:
-        return self.runtime.item_transitions
 
     @property
     def observability(self) -> ObservabilityLike | None:

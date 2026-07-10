@@ -7,7 +7,7 @@ import logging
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
 from magnet_harvester.pipeline import PipelineProtocol
 from magnet_harvester.store import ItemStore
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
@@ -21,13 +21,15 @@ class UserActionExecutor:
         store: ItemStore,
         pipeline: PipelineProtocol | None,
         task_manager: BackgroundTaskSpawner | None,
-        transitions: MagnetItemTransitions,
+        discovery: DiscoveryTransitions,
+        classification: ClassificationTransitions,
         stats: StatsTracker | None = None,
     ):
         self._store = store
         self._pipeline = pipeline
         self._task_manager = task_manager
-        self._transitions = transitions
+        self._discovery = discovery
+        self._classification = classification
         self._stats = stats
 
     def _spawn(self, coro, *, name: str) -> bool:
@@ -100,11 +102,11 @@ class UserActionExecutor:
             }
 
         match = matches[0]
-        ok = await self._transitions.manually_classified(match, category)
+        ok = await self._classification.manually_classified(match, category)
         if not ok:
             return {"status": "error", "reason": "条目已被删除", "hash": match}
         return {"status": "ok", "hash": match, "new_category": category}
 
     async def clear_items(self) -> dict:
-        count = await self._transitions.cleared()
+        count = await self._discovery.cleared()
         return {"status": "cleared", "removed": count}

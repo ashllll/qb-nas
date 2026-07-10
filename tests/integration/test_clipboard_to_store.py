@@ -7,7 +7,7 @@ import asyncio
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import MessageBus, Event
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import DiscoveryTransitions
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
 from magnet_harvester.models import MagnetItem, TaskStatus
 
@@ -29,7 +29,7 @@ def test_clipboard_monitor_parses_and_stores_magnet():
     store = InMemoryItemStore()
     bus = _CollectingBus()
     classifier = LocalClassifier()
-    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
+    discovery = DiscoveryTransitions(store=AsyncItemStore(store), bus=bus)
 
     monitor = ClipboardMonitor(
         bus=bus,
@@ -37,7 +37,7 @@ def test_clipboard_monitor_parses_and_stores_magnet():
         classifier=classifier,
         pipeline=None,
         poll_interval=0.1,
-        transitions=transitions,
+        discovery=discovery,
     )
 
     # Simulate what happens when clipboard content arrives
@@ -68,7 +68,7 @@ def test_clipboard_monitor_parses_and_stores_magnet():
             size=item.get("size"),
         )
 
-        stored = loop.run_until_complete(monitor._transitions.clipboard_found(magnet_item))
+        stored = loop.run_until_complete(monitor._discovery.clipboard_found(magnet_item))
         assert stored is True
 
         # Verify item is in store
@@ -85,14 +85,14 @@ def test_clipboard_monitor_ignores_duplicates():
     store = InMemoryItemStore()
     bus = _CollectingBus()
     classifier = LocalClassifier()
-    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
+    discovery = DiscoveryTransitions(store=AsyncItemStore(store), bus=bus)
 
     monitor = ClipboardMonitor(
         bus=bus,
         store=AsyncItemStore(store),
         classifier=classifier,
         pipeline=None,
-        transitions=transitions,
+        discovery=discovery,
     )
 
     duplicate_hash = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
@@ -111,12 +111,12 @@ def test_clipboard_monitor_ignores_duplicates():
         )
 
         # First time — should store
-        first = loop.run_until_complete(monitor._transitions.clipboard_found(magnet_item))
+        first = loop.run_until_complete(monitor._discovery.clipboard_found(magnet_item))
         assert first is True
         assert store.count == 1
 
         # Second time with same hash — should be rejected as duplicate
-        second = loop.run_until_complete(monitor._transitions.clipboard_found(magnet_item))
+        second = loop.run_until_complete(monitor._discovery.clipboard_found(magnet_item))
         assert second is False
         assert store.count == 1  # Still 1
     finally:

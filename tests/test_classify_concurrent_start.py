@@ -78,7 +78,7 @@ async def test_classify_start_is_concurrent():
             self._store = store
             self._bus = bus
 
-        async def classification_started(self, hash_key: str):
+        async def started(self, hash_key: str):
             nonlocal active, max_active
             async with lock:
                 active += 1
@@ -98,7 +98,7 @@ async def test_classify_start_is_concurrent():
         bus=bus,
     )
     # 替换 transitions
-    pipeline._transitions = TrackedTransitions(store, bus)
+    pipeline._classification = TrackedTransitions(store, bus)
 
     items = [make_item(f"hash{i}") for i in range(5)]
     await pipeline._stream_classify(items)

@@ -15,7 +15,7 @@ from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 
 
 class FakePipeline:
@@ -63,12 +63,13 @@ def _make_executor(store=None, pipeline=None, tasks=None, stats=None):
     async_store = AsyncItemStore(store)
     pipeline = pipeline or FakePipeline()
     tasks = tasks or FakeTaskManager()
-    transitions = MagnetItemTransitions(store=async_store, bus=NullBus())
+    bus = NullBus()
     return UserActionExecutor(
         store=async_store,
         pipeline=pipeline,
         task_manager=tasks,
-        transitions=transitions,
+        discovery=DiscoveryTransitions(store=async_store, bus=bus),
+        classification=ClassificationTransitions(store=async_store, bus=bus),
         stats=stats,
     )
 

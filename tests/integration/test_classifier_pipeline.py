@@ -8,7 +8,11 @@ from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import NullBus
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import (
+    ClassificationTransitions,
+    DiscoveryTransitions,
+    DownloadTransitions,
+)
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 from tests.fixtures import FakeCrawler, FakeQbit, make_test_app
@@ -21,7 +25,7 @@ def test_real_classifier_categorizes_items():
     classifier = LocalClassifier()
     qbit = FakeQbit()
     bg_manager = BGTaskManager()
-    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
+    async_store = AsyncItemStore(store)
     crawler = FakeCrawler(items=[
         MagnetItem(hash="HASH001", name="Test.Movie.2024.2160p.BluRay", magnet="magnet:?xt=urn:btih:HASH001"),
         MagnetItem(hash="HASH002", name="Some.Show.S01E02.1080p.WEB-DL", magnet="magnet:?xt=urn:btih:HASH002"),
@@ -31,10 +35,12 @@ def test_real_classifier_categorizes_items():
         crawler=crawler,
         classifier=classifier,
         qbit=qbit,
-        store=AsyncItemStore(store),
+        store=async_store,
         bus=bus,
         task_manager=bg_manager,
-        transitions=transitions,
+        discovery=DiscoveryTransitions(store=async_store, bus=bus),
+        classification=ClassificationTransitions(store=async_store, bus=bus),
+        downloads=DownloadTransitions(store=async_store, bus=bus),
     )
 
     loop = asyncio.new_event_loop()

@@ -34,14 +34,17 @@ Specifically:
 1. **No module-level global variables** in `main.py` or any split-out module.
 2. **`lifespan()` is the sole assembler** — it creates all components, instantiates service classes with explicit constructor dependencies, and starts/stops them.
 3. **All split-out services receive dependencies via constructor injection**:
-   - `QBitSyncLoop(qbit_client, store, bus)`
+   - `QBitSyncLoop(qbit_client, store, bus, downloads)`
    - `WSBroadcaster(bus)`
-   - `UserActionExecutor(store, pipeline, task_manager, transitions, stats)`
+   - `UserActionExecutor(store, pipeline, task_manager, discovery, classification, stats)`
    - `ItemQueryExecutor(store)` for read-only item query formatting
    - `ObservabilitySnapshot(store, qbit, stats, broadcaster, error_handler)`
    - `BGTaskManager()`
 4. **`AppContext` remains the single dependency container** — routed through `app.state.ctx`, retrieved via `Depends(get_context)`.
 5. **`HarvestPipeline` gains a public `replace_download_phase()` method** — eliminating the private-field mutation from `RuntimeContext`.
+6. **Magnet item state changes are injected by lifecycle**: discovery, classification,
+   and download modules own their behavior directly. No compatibility facade sits in
+   front of them; each caller receives only the lifecycle module it uses.
 
 The resulting structure:
 

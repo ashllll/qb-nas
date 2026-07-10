@@ -11,7 +11,11 @@ from typing import Callable, List, Protocol, runtime_checkable
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.crawler import CrawlPhase
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import (
+    ClassificationTransitions,
+    DiscoveryTransitions,
+    DownloadTransitions,
+)
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
@@ -69,7 +73,9 @@ class HarvestPipeline:
         store: ItemStore,
         bus: MessageBus,
         task_manager: BackgroundTaskSpawner | None = None,
-        transitions: MagnetItemTransitions | None = None,
+        discovery: DiscoveryTransitions | None = None,
+        classification: ClassificationTransitions | None = None,
+        downloads: DownloadTransitions | None = None,
     ):
         self._crawler = crawler
         self._classifier = classifier
@@ -77,7 +83,9 @@ class HarvestPipeline:
         self._store = store
         self._bus = bus
         self._task_manager = task_manager
-        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
+        self._discovery = discovery or DiscoveryTransitions(store=store, bus=bus)
+        self._classification = classification or ClassificationTransitions(store=store, bus=bus)
+        self._downloads = downloads or DownloadTransitions(store=store, bus=bus)
 
     def _spawn(self, coro, *, name: str | None = None) -> asyncio.Task:
         task = BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
@@ -137,7 +145,7 @@ class HarvestPipeline:
                 if t == "found":
                     try:
                         item = MagnetItem(**msg["item"])
-                        if await self._transitions.found(item):
+                        if await self._discovery.found(item):
                             new_hashes.append(item.hash)
                     except Exception:
                         log.exception(
@@ -186,7 +194,7 @@ class HarvestPipeline:
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
         results = await asyncio.gather(
-            *[self._transitions.classification_started(item.hash) for item in items],
+            *[self._classification.started(item.hash) for item in items],
             return_exceptions=True,
         )
         for i, result in enumerate(results):
@@ -207,7 +215,7 @@ class HarvestPipeline:
             h = index_to_hash.get(index)
             if h:
                 result_events[index] = self._spawn(
-                    self._transitions.classified(h, result),
+                    self._classification.classified(h, result),
                     name=f"classify:{h}",
                 )
 
@@ -230,7 +238,7 @@ class HarvestPipeline:
                     h = index_to_hash.get(index)
                     log.error("classified result event failed for %s: %s", h, result)
                     if h:
-                        await self._transitions.classification_failed(h, str(result))
+                        await self._classification.failed(h, str(result))
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
 
     async def _rollback_unclassified(
@@ -255,7 +263,7 @@ class HarvestPipeline:
             if current is None or current.status != TaskStatus.classifying:
                 continue
             try:
-                await self._transitions.classification_failed(item.hash, error_msg)
+                await self._classification.failed(item.hash, error_msg)
             except Exception as rollback_exc:
                 log.error(
                     "classification_failed rollback 失败 for %s: %s",
@@ -280,16 +288,16 @@ class HarvestPipeline:
             for i, result in enumerate(results):
                 if isinstance(result, asyncio.CancelledError):
                     log.warning("下载取消 %s，回退状态", hashes[i])
-                    await self._transitions.download_failed(hashes[i], "下载被取消")
+                    await self._downloads.failed(hashes[i], "下载被取消")
                 elif isinstance(result, Exception):
                     log.error("下载失败 %s: %s", hashes[i], result)
-                    await self._transitions.download_failed(hashes[i], str(result))
+                    await self._downloads.failed(hashes[i], str(result))
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
             for h in hashes:
                 item = await self._store.get(h)
                 if item and item.status in {TaskStatus.pending, TaskStatus.adding}:
-                    await self._transitions.download_failed(h, "下载超时")
+                    await self._downloads.failed(h, "下载超时")
 
     async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
         item = await self._store.get(hash_key)
@@ -297,22 +305,22 @@ class HarvestPipeline:
             return
         if not item.category:
             log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
-            await self._transitions.download_failed(hash_key, "分类结果缺少 category")
+            await self._downloads.failed(hash_key, "分类结果缺少 category")
             return
         async with semaphore:
             try:
-                if not await self._transitions.download_submitting(hash_key):
+                if not await self._downloads.submitting(hash_key):
                     return
                 ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
                 if ok:
-                    await self._transitions.download_submitted(hash_key)
+                    await self._downloads.submitted(hash_key)
                 else:
-                    await self._transitions.download_failed(
+                    await self._downloads.failed(
                         hash_key, self._qbit.last_error or "qB 返回失败"
                     )
             except Exception as e:
                 try:
-                    await self._transitions.download_failed(hash_key, str(e))
+                    await self._downloads.failed(hash_key, str(e))
                 except Exception as inner_e:
                     log.error(f"download_failed 回调也失败: {inner_e}")
                     # 兜底：直接通过 store 更新状态，防止条目永久卡在 adding

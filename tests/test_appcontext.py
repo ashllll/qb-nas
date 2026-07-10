@@ -160,13 +160,13 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             store,
             bus,
             task_manager=None,
-            transitions=None,
+            downloads=None,
             poll_interval=2.0,
         ):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
-            self.transitions = transitions
+            self.downloads = downloads
             self.poll_interval = poll_interval
 
         async def start(self):
@@ -269,13 +269,13 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
             store,
             bus,
             task_manager=None,
-            transitions=None,
+            downloads=None,
             poll_interval=2.0,
         ):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
-            self.transitions = transitions
+            self.downloads = downloads
             self.poll_interval = poll_interval
             created["sync_loop"] = self
 
@@ -356,7 +356,11 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
         ClassifyPhase,
         DownloadPhase,
         HarvestPipeline,
-        MagnetItemTransitions,
+    )
+    from magnet_harvester.transitions import (
+        ClassificationTransitions,
+        DiscoveryTransitions,
+        DownloadTransitions,
     )
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.services.user_actions import UserActionExecutor
@@ -371,7 +375,11 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     websocket_hints = WSBroadcaster.__init__.__annotations__
     classify_usage_hints = ClassifyPhase.usage.fget.__annotations__
     download_phase_hints = DownloadPhase.__annotations__
-    transitions_hints = MagnetItemTransitions.__init__.__annotations__
+    transition_hints = [
+        DiscoveryTransitions.__init__.__annotations__,
+        ClassificationTransitions.__init__.__annotations__,
+        DownloadTransitions.__init__.__annotations__,
+    ]
     pipeline_hints = HarvestPipeline.__init__.__annotations__
     action_executor_hints = UserActionExecutor.__init__.__annotations__
     qbit_sync_hints = QBitSyncLoop.__init__.__annotations__
@@ -386,7 +394,7 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     assert "Any" not in str(websocket_hints["store"]), "WSBroadcaster.store"
     assert "Any" not in str(classify_usage_hints["return"]), "ClassifyPhase.usage"
     assert "last_error" in download_phase_hints, "DownloadPhase.last_error"
-    assert "Any" not in str(transitions_hints["store"]), "MagnetItemTransitions.store"
+    assert all("Any" not in str(hints["store"]) for hints in transition_hints)
     assert "Any" not in str(pipeline_hints["store"]), "HarvestPipeline.store"
 
     for field_name in ("store", "pipeline", "task_manager"):

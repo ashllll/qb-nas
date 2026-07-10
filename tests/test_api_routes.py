@@ -21,7 +21,7 @@ from magnet_harvester.bus import NullBus
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.observability import ObservabilitySnapshot
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 
 
 class FakeStats:
@@ -168,12 +168,15 @@ def _make_app():
     bg_manager = FakeBGManager()
     stats = FakeStats()
     async_store = AsyncItemStore(store)
-    transitions = MagnetItemTransitions(store=async_store, bus=NullBus())
+    bus = NullBus()
+    discovery = DiscoveryTransitions(store=async_store, bus=bus)
+    classification = ClassificationTransitions(store=async_store, bus=bus)
     action_executor = UserActionExecutor(
         store=async_store,
         pipeline=pipeline,
         task_manager=bg_manager,
-        transitions=transitions,
+        discovery=discovery,
+        classification=classification,
         stats=stats,
     )
     qbit = FakeQbit()
@@ -226,7 +229,6 @@ def _make_app():
             stats=stats,
             bg_manager=bg_manager,
             error_handler=error_handler,
-            item_transitions=transitions,
         ),
     )
     ctx.qbit_runtime = QBitRuntime(

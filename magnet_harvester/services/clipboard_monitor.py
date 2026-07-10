@@ -19,7 +19,7 @@ import pyperclip
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.context.app_context import UserActionExecutorLike
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import DiscoveryTransitions
 from magnet_harvester.magnet_sources import MagnetSourceExtractor
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
@@ -42,7 +42,7 @@ class ClipboardMonitor:
         pipeline: "HarvestPipeline | None" = None,
         action_executor: UserActionExecutorLike | None = None,
         poll_interval: float = 1.0,
-        transitions: MagnetItemTransitions | None = None,
+        discovery: DiscoveryTransitions | None = None,
         task_manager: BGTaskManager | None = None,
     ):
         self._bus = bus
@@ -51,7 +51,7 @@ class ClipboardMonitor:
         self._pipeline = pipeline
         self._action_executor = action_executor
         self._task_manager = task_manager
-        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
+        self._discovery = discovery or DiscoveryTransitions(store=store, bus=bus)
         self._magnet_sources = MagnetSourceExtractor()
         self._poll_interval = poll_interval
         self._running = False
@@ -203,7 +203,7 @@ class ClipboardMonitor:
         )
 
         # 存储（去重：已存在则跳过）并发布事件
-        if not await self._transitions.clipboard_found(magnet_item):
+        if not await self._discovery.clipboard_found(magnet_item):
             log.debug(f"剪贴板磁力已存在，跳过: {name[:40]}")
             return
 

@@ -23,7 +23,11 @@ from magnet_harvester.context.app_context import (
 )
 from magnet_harvester.crawler import MagnetCrawler
 from magnet_harvester.errors import error_handler
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import (
+    ClassificationTransitions,
+    DiscoveryTransitions,
+    DownloadTransitions,
+)
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
@@ -104,12 +108,16 @@ def _build_core():
 
 def _build_data_layer(store, bus):
     """Data layer: transitions (state machine) and query executor."""
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    discovery = DiscoveryTransitions(store=store, bus=bus)
+    classification = ClassificationTransitions(store=store, bus=bus)
+    downloads = DownloadTransitions(store=store, bus=bus)
     queries = ItemQueryExecutor(store=store)
-    return transitions, queries
+    return discovery, classification, downloads, queries
 
 
-def _build_pipeline(crawler, classifier, qbit, store, bus, bg_manager, transitions):
+def _build_pipeline(
+    crawler, classifier, qbit, store, bus, bg_manager, discovery, classification, downloads
+):
     """Core pipeline: orchestrates crawl → classify → download."""
     pipeline = HarvestPipeline(
         crawler=crawler,
@@ -118,12 +126,25 @@ def _build_pipeline(crawler, classifier, qbit, store, bus, bg_manager, transitio
         store=store,
         bus=bus,
         task_manager=bg_manager,
-        transitions=transitions,
+        discovery=discovery,
+        classification=classification,
+        downloads=downloads,
     )
     return pipeline
 
 
-def _build_services(store, bus, pipeline, qbit, classifier, bg_manager, transitions, stats):
+def _build_services(
+    store,
+    bus,
+    pipeline,
+    qbit,
+    classifier,
+    bg_manager,
+    discovery,
+    classification,
+    downloads,
+    stats,
+):
     """Application services: observability, actions, sync, clipboard."""
     broadcaster = WSBroadcaster(bus=bus, store=store)
     observability = ObservabilitySnapshot(
@@ -138,7 +159,8 @@ def _build_services(store, bus, pipeline, qbit, classifier, bg_manager, transiti
         store=store,
         pipeline=pipeline,
         task_manager=bg_manager,
-        transitions=transitions,
+        discovery=discovery,
+        classification=classification,
         stats=stats,
     )
     sync_loop = QBitSyncLoop(
@@ -146,7 +168,7 @@ def _build_services(store, bus, pipeline, qbit, classifier, bg_manager, transiti
         store=store,
         bus=bus,
         task_manager=bg_manager,
-        transitions=transitions,
+        downloads=downloads,
         poll_interval=settings.QBIT_SYNC_INTERVAL,
     )
     clipboard_monitor = ClipboardMonitor(
@@ -155,7 +177,7 @@ def _build_services(store, bus, pipeline, qbit, classifier, bg_manager, transiti
         classifier=classifier,
         pipeline=pipeline,
         action_executor=action_executor,
-        transitions=transitions,
+        discovery=discovery,
         task_manager=bg_manager,
     )
     return observability, action_executor, sync_loop, clipboard_monitor, broadcaster
@@ -170,8 +192,18 @@ def build_runtime() -> AppRuntime:
     Uses modular sub-builders for readability and testability.
     """
     qbit_lock, site_auth, crawler, qbit, classifier, store, bus, bg_manager = _build_core()
-    transitions, queries = _build_data_layer(store, bus)
-    pipeline = _build_pipeline(crawler, classifier, qbit, store, bus, bg_manager, transitions)
+    discovery, classification, downloads, queries = _build_data_layer(store, bus)
+    pipeline = _build_pipeline(
+        crawler,
+        classifier,
+        qbit,
+        store,
+        bus,
+        bg_manager,
+        discovery,
+        classification,
+        downloads,
+    )
 
     stats = SystemStats()
     observability, action_executor, sync_loop, clipboard_monitor, broadcaster = _build_services(
@@ -181,7 +213,9 @@ def build_runtime() -> AppRuntime:
         qbit=qbit,
         classifier=classifier,
         bg_manager=bg_manager,
-        transitions=transitions,
+        discovery=discovery,
+        classification=classification,
+        downloads=downloads,
         stats=stats,
     )
 
@@ -207,7 +241,6 @@ def build_runtime() -> AppRuntime:
             bg_manager=bg_manager,
             qbit_lock=qbit_lock,
             error_handler=error_handler,
-            item_transitions=transitions,
             qbit_sync=sync_loop,
         ),
     )

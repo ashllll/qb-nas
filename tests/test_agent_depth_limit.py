@@ -7,7 +7,7 @@ import pytest
 from magnet_harvester.services.user_actions import UserActionExecutor
 from magnet_harvester.store import InMemoryItemStore
 from magnet_harvester.bus import MessageBus
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 
 
 class FakePipeline:
@@ -38,12 +38,13 @@ class FakePipeline:
 
 
 def _make_executor(store, pipeline):
-    transitions = MagnetItemTransitions(store=store, bus=MessageBus())
+    bus = MessageBus()
     return UserActionExecutor(
         store=store,
         pipeline=pipeline,
         task_manager=None,
-        transitions=transitions,
+        discovery=DiscoveryTransitions(store=store, bus=bus),
+        classification=ClassificationTransitions(store=store, bus=bus),
     )
 
 

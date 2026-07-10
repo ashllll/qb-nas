@@ -14,7 +14,7 @@ from magnet_harvester.bus import EventType, MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.services.qbit_sync import QBitSyncLoop, SyncBackoffPolicy, _ReconcileProgress
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import DownloadTransitions
 
 
 class FakeQbitClient:
@@ -287,12 +287,12 @@ async def test_sync_failure_backs_off_without_scanning_store():
 
 
 class FakeTransitions:
-    """Records reconcile_download_snapshot calls for delegation assertions."""
+    """Records reconcile_snapshot calls for delegation assertions."""
 
     def __init__(self):
         self.calls = []
 
-    async def reconcile_download_snapshot(
+    async def reconcile_snapshot(
         self,
         hash_key: str,
         item: MagnetItem,
@@ -315,7 +315,7 @@ class SlowAfterFirstTransitions:
     def __init__(self):
         self.calls = 0
 
-    async def reconcile_download_snapshot(
+    async def reconcile_snapshot(
         self,
         hash_key: str,
         item: MagnetItem,
@@ -370,7 +370,7 @@ async def test_sync_delegates_reconciliation_to_transitions():
         store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
     await loop.start()
     await asyncio.sleep(0.15)
@@ -421,7 +421,7 @@ async def test_reconcile_progress_excludes_cancelled_inflight_item():
         store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
 
     with pytest.raises(asyncio.TimeoutError):
@@ -439,7 +439,7 @@ async def test_sync_routine_queued_to_downloading_does_not_emit_download_result(
     qbit = FakeQbitClient()
     store = FakeStore()
     bus = RecordingBus()
-    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
+    transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
     item = MagnetItem(
         hash="OSC",
@@ -456,7 +456,7 @@ async def test_sync_routine_queued_to_downloading_does_not_emit_download_result(
         store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
     await loop.start()
     await asyncio.sleep(0.15)
@@ -474,7 +474,7 @@ async def test_sync_removed_torrent_emits_store_changed_and_download_result():
     qbit = FakeQbitClient()
     store = FakeStore()
     bus = RecordingBus()
-    transitions = MagnetItemTransitions(store=AsyncItemStore(store), bus=bus)
+    transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
     item = MagnetItem(
         hash="GONE",
@@ -491,7 +491,7 @@ async def test_sync_removed_torrent_emits_store_changed_and_download_result():
         store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
     await loop.start()
     await asyncio.sleep(0.15)
