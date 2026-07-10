@@ -1710,6 +1710,13 @@
             renderTable();
             addLog("实时数据已同步", "info");
             break;
+          case "init_page":
+            (msg.items || []).forEach((item) => items.set(item.hash, item));
+            renderTable();
+            break;
+          case "init_done":
+            addLog(`实时数据已全部同步（${msg.total || items.size} 条）`, "info");
+            break;
           case "crawl_start":
             fieldPulse(0.6);
             setProgress(10);

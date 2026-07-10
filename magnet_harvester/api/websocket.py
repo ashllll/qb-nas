@@ -20,6 +20,8 @@ from magnet_harvester.utils.serializers import item_payload
 log = logging.getLogger(__name__)
 router = APIRouter()
 
+_INIT_PAGE_SIZE = 500
+
 
 def _json_serializer(obj: Any) -> str:
     if isinstance(obj, (datetime, date)):
@@ -34,6 +36,7 @@ class WSBroadcaster:
         self._bus = bus
         self._store = store
         self._active_ws: set[WebSocket] = set()
+        self._initializing_ws: dict[WebSocket, list[str]] = {}
         bus.subscribe(None, self._on_event)
 
     def add(self, ws: WebSocket):
@@ -41,6 +44,7 @@ class WSBroadcaster:
 
     def remove(self, ws: WebSocket):
         self._active_ws.discard(ws)
+        self._initializing_ws.pop(ws, None)
 
     def shutdown(self):
         """取消 MessageBus 订阅，断开强引用以允许 GC 回收。
@@ -60,21 +64,81 @@ class WSBroadcaster:
         await ws.send_text(data)
 
     async def send_init_from_store(self, ws: WebSocket):
-        if self._store:
-            items = [item_payload(i) for i in await self._store.list(limit=500)]
-            await self.send_init(ws, items)
-        else:
+        if self._store is None:
             await self.send_init(ws, [])
+            await self._send_init_done(ws, 0)
+            return
+
+        offset = 0
+        delivered: set[str] = set()
+        first_page = True
+        while True:
+            total, page = await self._store.count_and_page(
+                limit=_INIT_PAGE_SIZE,
+                offset=offset,
+            )
+            payloads = [item_payload(item) for item in page if item.hash not in delivered]
+            delivered.update(item["hash"] for item in payloads)
+            if first_page:
+                await self.send_init(ws, payloads)
+                first_page = False
+            elif payloads:
+                await ws.send_text(
+                    json.dumps(
+                        {"type": "init_page", "items": payloads},
+                        ensure_ascii=False,
+                        default=_json_serializer,
+                    )
+                )
+
+            offset += len(page)
+            if offset < total:
+                continue
+            if len(delivered) >= total:
+                await self._send_init_done(ws, len(delivered))
+                return
+            if not page:
+                raise RuntimeError("initial snapshot did not converge")
+            offset = 0
+
+    async def _send_init_done(self, ws: WebSocket, total: int) -> None:
+        await ws.send_text(
+            json.dumps(
+                {"type": "init_done", "total": total},
+                ensure_ascii=False,
+            )
+        )
+
+    async def _finish_initialization(self, ws: WebSocket) -> None:
+        while True:
+            queued = self._initializing_ws.get(ws)
+            if queued is None:
+                return
+            if queued:
+                batch = list(queued)
+                queued.clear()
+                for data in batch:
+                    await ws.send_text(data)
+                continue
+            self._initializing_ws.pop(ws, None)
+            self._active_ws.add(ws)
+            return
 
     async def handle_connection(self, ws: WebSocket):
         """Full WebSocket lifecycle: accept, init, keep-alive, cleanup."""
         await ws.accept()
-        self.add(ws)
+        self._initializing_ws[ws] = []
         try:
             try:
                 await self.send_init_from_store(ws)
+                await self._finish_initialization(ws)
             except Exception:
                 log.exception("send_init_from_store 失败")
+                try:
+                    await ws.close(code=1011, reason="initialization failed")
+                except Exception:
+                    log.debug("WebSocket initialization close 失败", exc_info=True)
+                return
             # 服务端不做主动 keep-alive ping；由客户端负责发送 ping 帧
             # （handle_client_message 已响应 "ping" → "pong"）。
             # 若客户端长时间无消息，反向代理/OS 可能断开空闲连接，
@@ -141,7 +205,7 @@ class WSBroadcaster:
             self.remove(ws)
 
     async def _on_event(self, event: Event):
-        if not self._active_ws:
+        if not self._active_ws and not self._initializing_ws:
             return
         try:
             data = json.dumps(event.as_dict(), ensure_ascii=False, default=_json_serializer)
@@ -168,6 +232,9 @@ class WSBroadcaster:
                     exc_info=True,
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
+
+        for queued in self._initializing_ws.values():
+            queued.append(data)
         _DEAD = b"DEAD"  # sentinel
         _SEND_TIMEOUT = 3.0  # per-client 广播超时
 

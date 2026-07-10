@@ -91,9 +91,9 @@ def test_websocket_ping_pong(app_ctx):
 
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
-        # Consume init message
-        init_raw = ws.receive_text()
-        assert json.loads(init_raw)["type"] == "init"
+        # Consume the complete initial snapshot protocol.
+        assert json.loads(ws.receive_text())["type"] == "init"
+        assert json.loads(ws.receive_text())["type"] == "init_done"
 
         # Send ping
         ws.send_text("ping")
@@ -108,8 +108,9 @@ def test_websocket_json_ping_pong(app_ctx):
 
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
-        # Consume init
-        ws.receive_text()
+        # Consume the complete initial snapshot protocol.
+        assert json.loads(ws.receive_text())["type"] == "init"
+        assert json.loads(ws.receive_text())["type"] == "init_done"
 
         # Send JSON ping
         ws.send_text(json.dumps({"type": "ping"}))
