@@ -23,48 +23,6 @@ log = logging.getLogger(__name__)
 QBitApiObject = dict[str, object]
 
 
-class _ClientSubmissionGateway:
-    """Adapter from QBittorrentClient internals to MagnetSubmitter's gateway."""
-
-    def __init__(self, client: "QBittorrentClient"):
-        self._client = client
-
-    async def request(self, method: str, path: str, **kw) -> httpx.Response:
-        return await self._client._req(method, path, **kw)
-
-    async def ensure_category(self, name: str, save_path: str) -> bool:
-        return await self._client.ensure_category(name, save_path)
-
-    async def get_base_save_path(self) -> str:
-        return await self._client.get_base_save_path()
-
-    async def find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
-        return await self._client._find_torrent_by_prefix(hash_prefix)
-
-
-class _ClientSubmissionRecorder:
-    """Adapter from submission outcomes to QBittorrentClient stats fields."""
-
-    def __init__(self, client: "QBittorrentClient"):
-        self._client = client
-
-    def attempted(self) -> None:
-        self._client.stats.total_added += 1
-
-    def succeeded(self) -> None:
-        self._client.stats.total_success += 1
-        self._client.stats.consecutive_failures = 0
-        self._client.stats.last_success_time = time.monotonic()
-
-    def failed(self) -> None:
-        self._client.stats.total_failed += 1
-        self._client.stats.consecutive_failures += 1
-        self._client.stats.last_failure_time = time.monotonic()
-
-    def error(self, message: str | None) -> None:
-        self._client.last_error = message
-
-
 class QBittorrentClient:
     MAX_CATEGORY_LOCKS = 200  # 分类锁上限（qB 本身限制约 100 个）
 
@@ -88,12 +46,24 @@ class QBittorrentClient:
         # LRU 有界字典，防止异常/恶意分类名导致无限增长（上限 200）
         self._category_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._category_locks_guard = asyncio.Lock()
-        self.last_error: str | None = None
         self._sync_state = QBitSyncState()
         self._path_resolver = QBitPathResolver(
             get_categories=self.get_categories,
             get_torrents=self._get_torrents_list,
         )
+        self._submitter = MagnetSubmitter(
+            gateway=self,
+            fs_base_path=self._config.fs_base_path,
+            recorder=self.stats,
+        )
+
+    @property
+    def last_error(self) -> str | None:
+        return self.stats.last_error
+
+    @last_error.setter
+    def last_error(self, message: str | None) -> None:
+        self.stats.last_error = message
 
     @property
     def _client(self):
@@ -108,6 +78,10 @@ class QBittorrentClient:
 
     async def _req(self, method: str, path: str, **kw) -> httpx.Response:
         return await self._transport.request(method, path, **kw)
+
+    async def request(self, method: str, path: str, **kw) -> httpx.Response:
+        """Submission-facing request operation."""
+        return await self._req(method, path, **kw)
 
     async def ping(self) -> bool:
         now = time.monotonic()
@@ -182,7 +156,7 @@ class QBittorrentClient:
             log.error(f"get_categories 未知异常: {e}", exc_info=True)
             return None
 
-    async def _find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
+    async def find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
         """在 qB 种子列表中查找 hash 前缀匹配的种子（去重检测）。"""
         try:
             r = await self._req("GET", "/torrents/info")
@@ -345,12 +319,7 @@ class QBittorrentClient:
         - add 时不传 savepath，让 qB 根据分类的 savePath 自动路由
         - autoTMM=true 让 qB 自动管理分类目录
         """
-        submitter = MagnetSubmitter(
-            gateway=_ClientSubmissionGateway(self),
-            fs_base_path=self._config.fs_base_path,
-            recorder=_ClientSubmissionRecorder(self),
-        )
-        return await submitter.add_magnet(magnet, category, save_path)
+        return await self._submitter.add_magnet(magnet, category, save_path)
 
     async def get_torrents(
         self,
