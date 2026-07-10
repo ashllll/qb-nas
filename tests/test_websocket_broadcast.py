@@ -6,7 +6,9 @@ P2-14: WebSocket 并发广播测试
 """
 
 import asyncio
+import gc
 import json
+import warnings
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from fastapi import WebSocketDisconnect
@@ -217,3 +219,32 @@ async def test_live_events_are_replayed_after_snapshot_pages():
     )
     assert page_index < live_index
     assert messages[live_index]["item"]["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_cancelling_broadcast_reaps_every_client_coroutine():
+    bus = MagicMock()
+    bus.subscribe = MagicMock()
+    broadcaster = WSBroadcaster(bus)
+
+    async def blocked_send(_data):
+        await asyncio.Event().wait()
+
+    for _ in range(100):
+        ws = MagicMock()
+        ws.send_text = AsyncMock(side_effect=blocked_send)
+        broadcaster.add(ws)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", RuntimeWarning)
+        task = asyncio.create_task(
+            broadcaster._on_event(Event(EventType.STORE_CHANGED, {"test": 1}))
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        gc.collect()
+        await asyncio.sleep(0)
+
+    assert not [warning for warning in caught if "was never awaited" in str(warning.message)]

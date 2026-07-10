@@ -247,13 +247,17 @@ class WSBroadcaster:
                 return _DEAD
             try:
                 await ws.send_text(data)
-            except (Exception, asyncio.CancelledError):
-                # 连接已断开/取消 — 返回 sentinel 由外层统一清理
-                # 注意: asyncio.CancelledError 继承自 BaseException，
-                # 在 Starlette 版本不兼容导致 client_state 无效时，
-                # 这是最后的保护层
+            except Exception:
+                # 连接已断开时由外层统一清理。
+                # CancelledError 必须传播，让 TaskGroup 回收整个 fan-out。
                 return _DEAD
             return None
+
+        async def _send_with_timeout(ws: WebSocket):
+            try:
+                return await asyncio.wait_for(_send(ws), timeout=_SEND_TIMEOUT)
+            except Exception as exc:
+                return exc
 
         # ── 并发模型说明 ──────────────────────────────
         # _active_ws 是普通的 set[WebSocket]，未使用 asyncio.Lock 保护。
@@ -271,10 +275,9 @@ class WSBroadcaster:
         snapshot = list(self._active_ws)
         dead: set[WebSocket] = set()
         try:
-            results = await asyncio.gather(
-                *[asyncio.wait_for(_send(ws), timeout=_SEND_TIMEOUT) for ws in snapshot],
-                return_exceptions=True,
-            )
+            async with asyncio.TaskGroup() as task_group:
+                tasks = [task_group.create_task(_send_with_timeout(ws)) for ws in snapshot]
+            results = [task.result() for task in tasks]
             for ws, result in zip(snapshot, results):
                 if isinstance(result, Exception):
                     if isinstance(result, asyncio.TimeoutError):
@@ -282,7 +285,7 @@ class WSBroadcaster:
                             "WebSocket broadcast 单客户端超时（%.1fs），标记为 DEAD",
                             _SEND_TIMEOUT,
                         )
-                    elif not isinstance(result, asyncio.CancelledError):
+                    else:
                         log.error("WebSocket broadcast 异常: %s", result)
                     dead.add(ws)
                 elif result is _DEAD:
