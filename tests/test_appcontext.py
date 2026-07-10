@@ -370,8 +370,6 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     error_record_hints = ErrorRecord.__annotations__
     metric_snapshot_hints = MetricSnapshot.__annotations__
     qbit_client_hints = QBittorrentClient.get_maindata.__annotations__
-    qbit_props_hints = QBittorrentClient.get_torrent_properties.__annotations__
-    qbit_transfer_hints = QBittorrentClient.get_transfer_info.__annotations__
     websocket_hints = WSBroadcaster.__init__.__annotations__
     classify_usage_hints = ClassifyPhase.usage.fget.__annotations__
     download_phase_hints = DownloadPhase.__annotations__
@@ -389,8 +387,6 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     assert "Any" not in str(error_record_hints["details"]), "ErrorRecord.details"
     assert "Any" not in str(metric_snapshot_hints["values"]), "MetricSnapshot.values"
     assert "Any" not in str(qbit_client_hints["return"]), "QBittorrentClient.get_maindata"
-    assert "Any" not in str(qbit_props_hints["return"]), "QBittorrentClient.get_torrent_properties"
-    assert "Any" not in str(qbit_transfer_hints["return"]), "QBittorrentClient.get_transfer_info"
     assert "Any" not in str(websocket_hints["store"]), "WSBroadcaster.store"
     assert "Any" not in str(classify_usage_hints["return"]), "ClassifyPhase.usage"
     assert "last_error" in download_phase_hints, "DownloadPhase.last_error"

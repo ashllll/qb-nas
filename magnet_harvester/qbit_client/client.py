@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import Dict
 
 import httpx
 
@@ -132,58 +132,30 @@ class QBittorrentClient:
     def map_torrent_status(torrent: dict) -> dict:
         return TorrentStatusMapper.map(torrent)
 
-    async def get_torrent_properties(self, hash: str) -> QBitApiObject:
-        try:
-            r = await self._req("GET", f"/torrents/properties?hash={hash}")
-            if r.status_code == 200:
-                return r.json()
-            return {}
-        except Exception as e:
-            log.warning("get_torrent_properties 异常 hash=%s: %s", hash, e)
-            return {}
-
-    async def get_categories(self) -> dict | None:
-        try:
-            r = await self._req("GET", "/torrents/categories")
-            if r.status_code != 200:
-                log.warning(f"get_categories 返回 {r.status_code}")
-                return {}
-            return r.json()
-        except httpx.TransportError as e:
-            log.error(f"get_categories 网络异常: {e}")
-            return None
-        except Exception as e:
-            log.error(f"get_categories 未知异常: {e}", exc_info=True)
-            return None
+    async def get_categories(self) -> dict:
+        r = await self._req("GET", "/torrents/categories")
+        if r.status_code != 200:
+            raise RuntimeError(f"qB categories 查询失败: HTTP {r.status_code}")
+        return r.json()
 
     async def find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
         """在 qB 种子列表中查找 hash 前缀匹配的种子（去重检测）。"""
-        try:
-            r = await self._req("GET", "/torrents/info")
-            if r.status_code != 200:
-                return None
-            torrents = r.json()
-            prefix_lower = hash_prefix.lower()
-            for t in torrents:
-                if t.get("hash", "").lower().startswith(prefix_lower):
-                    return t
-        except Exception as e:
-            log.debug("按前缀查找 torrent 异常: %s", e)
+        r = await self._req("GET", "/torrents/info")
+        if r.status_code != 200:
+            raise RuntimeError(f"qB torrent 查询失败: HTTP {r.status_code}")
+        torrents = r.json()
+        prefix_lower = hash_prefix.lower()
+        for torrent in torrents:
+            if torrent.get("hash", "").lower().startswith(prefix_lower):
+                return torrent
         return None
 
-    async def _get_torrents_list(self) -> list | None:
-        """辅助方法：获取种子列表（供 QBitPathResolver 使用）。
-
-        异常时返回 None 与"无种子"的 [] 区分，调用方可据此判断是否网络故障。
-        """
-        try:
-            r = await self._req("GET", "/torrents/info")
-            if r.status_code == 200:
-                return r.json()
-            log.warning(f"_get_torrents_list 返回 {r.status_code}")
-        except Exception as e:
-            log.debug("获取种子列表异常: %s", e)
-        return None
+    async def _get_torrents_list(self) -> list:
+        """获取种子列表；失败时传播异常，成功空结果返回 []。"""
+        r = await self._req("GET", "/torrents/info")
+        if r.status_code != 200:
+            raise RuntimeError(f"qB torrents 列表查询失败: HTTP {r.status_code}")
+        return r.json()
 
     async def get_default_save_path(self) -> str | None:
         """获取 qBittorrent 默认保存路径（缓存）。
@@ -254,12 +226,6 @@ class QBittorrentClient:
             for attempt in range(max_retries):
                 try:
                     cats = await self.get_categories()
-                    if cats is None:
-                        log.warning("get_categories 返回 None（网络异常），跳过本轮")
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(1)
-                        continue
-
                     if name not in cats:
                         await self._req(
                             "POST",
@@ -305,8 +271,6 @@ class QBittorrentClient:
         for _ in range(checks):
             await asyncio.sleep(interval)
             cats = await self.get_categories()
-            if cats is None:
-                continue
             if name in cats:
                 return cats
         return cats
@@ -320,61 +284,6 @@ class QBittorrentClient:
         - autoTMM=true 让 qB 自动管理分类目录
         """
         return await self._submitter.add_magnet(magnet, category, save_path)
-
-    async def get_torrents(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-        hashes: Optional[List[str]] = None,
-    ) -> List[dict]:
-        try:
-            params = {}
-            if category:
-                params["category"] = category
-            if status:
-                params["status"] = status
-            if hashes:
-                params["hashes"] = "|".join(hashes)
-
-            r = await self._req("GET", "/torrents/info", params=params)
-
-            if r.status_code == 200:
-                return r.json()
-            return []
-        except Exception as e:
-            log.warning("获取 tracker 列表异常: %s", e)
-            return []
-
-    async def delete_torrent(self, hashes: List[str], delete_files: bool = False) -> bool:
-        try:
-            data = {
-                "hashes": "|".join(hashes),
-                "deleteFiles": "true" if delete_files else "false",
-            }
-            r = await self._req("POST", "/torrents/delete", data=data)
-            return r.text.strip() == "Ok."
-        except Exception as e:
-            log.error(f"delete_torrent 失败: {e}")
-            return False
-
-    async def recheck_torrent(self, hashes: List[str]) -> bool:
-        try:
-            data = {"hashes": "|".join(hashes)}
-            r = await self._req("POST", "/torrents/recheck", data=data)
-            return r.text.strip() == "Ok."
-        except Exception as e:
-            log.warning("recheck torrent 异常: %s", e)
-            return False
-
-    async def get_transfer_info(self) -> QBitApiObject:
-        try:
-            r = await self._req("GET", "/transfer/info")
-            if r.status_code == 200:
-                return r.json()
-            return {}
-        except Exception as e:
-            log.warning("获取传输信息异常: %s", e)
-            return {}
 
     def get_stats(self) -> dict:
         return self.stats.as_dict()
