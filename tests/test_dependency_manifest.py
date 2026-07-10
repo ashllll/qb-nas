@@ -34,7 +34,21 @@ def test_npm_quality_gate_uses_cross_platform_python_launcher():
 
     assert package["scripts"]["lint"].startswith("node scripts/run-python.cjs ")
     assert package["scripts"]["test"].startswith("node scripts/run-python.cjs ")
+    assert package["scripts"]["coverage"].startswith("node scripts/run-python.cjs ")
+    assert "--cov" in package["scripts"]["coverage"]
+    assert package["scripts"]["check"] == "npm run lint && npm run coverage"
     assert ".venv/bin" not in str(package["scripts"])
+
+
+def test_coverage_gate_is_declared_in_dev_dependencies():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dev_dependencies = {
+        _dependency_name(spec) for spec in pyproject["project"]["optional-dependencies"]["dev"]
+    }
+
+    assert "pytest-cov" in dev_dependencies
+    assert pyproject["tool"]["coverage"]["run"]["source"] == ["magnet_harvester"]
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] >= 79
 
 
 def test_python_launcher_forwards_child_exit_code():

@@ -5,7 +5,8 @@
     "prepare": "husky",
     "lint": "node scripts/run-python.cjs -m ruff check magnet_harvester tests",
     "test": "node scripts/run-python.cjs -m pytest tests -q",
-    "check": "npm run lint && npm test"
+    "coverage": "node scripts/run-python.cjs -m pytest tests -q --cov",
+    "check": "npm run lint && npm run coverage"
   },
   "devDependencies": {
     "husky": "^9.1.7",
