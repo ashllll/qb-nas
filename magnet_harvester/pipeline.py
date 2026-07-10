@@ -13,7 +13,7 @@ from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.crawler import CrawlPhase
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import ItemStore
+from magnet_harvester.store import ItemStore, call_store
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 from magnet_harvester.utils.serializers import item_payload
 
@@ -84,6 +84,7 @@ class HarvestPipeline:
         # 确保 task 始终携带 task_id (UUID), 不要回退到 task.get_name()
         if not hasattr(task, "task_id"):
             import uuid as _uuid
+
             try:
                 task.task_id = _uuid.uuid4().hex
             except AttributeError:
@@ -116,6 +117,7 @@ class HarvestPipeline:
         task_id = getattr(task, "task_id", None)
         if task_id is None:
             import uuid as _uuid
+
             task_id = _uuid.uuid4().hex
         return {"status": "started", "url": url, "depth": effective_depth, "task_id": task_id}
 
@@ -161,7 +163,7 @@ class HarvestPipeline:
             if not new_hashes:
                 return
 
-            items = [self._store.get(h) for h in new_hashes]
+            items = await asyncio.gather(*(call_store(self._store, "get", h) for h in new_hashes))
             items = [i for i in items if i is not None]
             await self._stream_classify(items)
 
@@ -245,10 +247,11 @@ class HarvestPipeline:
         """
         for i, item in enumerate(items):
             t = result_events.get(i)
-            if t is not None and t.done() and not t.exception():
-                continue
+            if t is not None and t.done():
+                if not t.cancelled() and t.exception() is None:
+                    continue
             # 前置状态检查：仅回退仍处于 classifying 的条目
-            current = self._store.get(item.hash)
+            current = await call_store(self._store, "get", item.hash)
             if current is None or current.status != TaskStatus.classifying:
                 continue
             try:
@@ -284,12 +287,12 @@ class HarvestPipeline:
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
             for h in hashes:
-                item = self._store.get(h)
+                item = await call_store(self._store, "get", h)
                 if item and item.status in {TaskStatus.pending, TaskStatus.adding}:
                     await self._transitions.download_failed(h, "下载超时")
 
     async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
-        item = self._store.get(hash_key)
+        item = await call_store(self._store, "get", hash_key)
         if not item:
             return
         if not item.category:
@@ -298,10 +301,9 @@ class HarvestPipeline:
             return
         async with semaphore:
             try:
-                await self._transitions.download_submitting(hash_key)
-                ok = await self._qbit.add_magnet(
-                    item.magnet, item.category, item.save_path or ""
-                )
+                if not await self._transitions.download_submitting(hash_key):
+                    return
+                ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
                 if ok:
                     await self._transitions.download_submitted(hash_key)
                 else:
@@ -315,7 +317,9 @@ class HarvestPipeline:
                     log.error(f"download_failed 回调也失败: {inner_e}")
                     # 兜底：直接通过 store 更新状态，防止条目永久卡在 adding
                     try:
-                        self._store.update(
+                        await call_store(
+                            self._store,
+                            "update",
                             hash_key,
                             status=TaskStatus.error,
                             error_msg=str(e),
@@ -323,7 +327,7 @@ class HarvestPipeline:
                             progress=0.0,
                         )
                         # 发射 STORE_CHANGED 确保 UI 刷新
-                        item = self._store.get(hash_key)
+                        item = await call_store(self._store, "get", hash_key)
                         if item is not None:
                             await self._bus.emit(
                                 Event(EventType.STORE_CHANGED, {"item": item_payload(item)})
@@ -346,12 +350,17 @@ class HarvestPipeline:
 
     async def reclassify(self, hashes: List[str]):
         hashes = list(dict.fromkeys(hashes))
-        items = [self._store.get(h) for h in hashes]
+        items = await asyncio.gather(*(call_store(self._store, "get", h) for h in hashes))
         items = [
-            i for i in items
-            if i is not None and i.status not in {
-                TaskStatus.adding, TaskStatus.queued,
-                TaskStatus.downloading, TaskStatus.success,
+            i
+            for i in items
+            if i is not None
+            and i.status
+            not in {
+                TaskStatus.adding,
+                TaskStatus.queued,
+                TaskStatus.downloading,
+                TaskStatus.success,
                 TaskStatus.classifying,
             }
         ]

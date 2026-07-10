@@ -7,6 +7,7 @@ from typing import Protocol
 
 from magnet_harvester.config import settings
 from magnet_harvester.models import TaskStatus
+from magnet_harvester.store import call_store, store_value
 
 
 class StoreLike(Protocol):
@@ -29,6 +30,7 @@ class BroadcasterLike(Protocol):
     """Narrow interface — only exposes `active_count` for status snapshots.
     (Deliberately separate from app_context.BroadcasterLike which also
     exposes handle_connection — Interface Segregation Principle.)"""
+
     @property
     def active_count(self) -> int: ...
 
@@ -36,11 +38,13 @@ class BroadcasterLike(Protocol):
 class ErrorHandlerLike(Protocol):
     """Narrow interface — only exposes `get_error_stats` for status snapshots.
     (Deliberately separate from app_context.ErrorHandlerLike.)"""
+
     def get_error_stats(self) -> dict: ...
 
 
 class ClassifierLike(Protocol):
     """Narrow interface — only exposes `get_cache_stats` for health checks."""
+
     def get_cache_stats(self) -> dict: ...
 
 
@@ -72,7 +76,7 @@ class ObservabilitySnapshot:
             qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
         except (asyncio.TimeoutError, Exception):
             qbit_ok = False
-        by_status = self._store.stats().by_status
+        by_status = (await call_store(self._store, "stats")).by_status
         tracked = sum(
             by_status.get(status.value, 0)
             for status in (TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading)
@@ -82,7 +86,7 @@ class ObservabilitySnapshot:
         return {
             "qbittorrent": "online" if qbit_ok else "offline",
             "classifier": "local_rules",
-            "items_count": self._store.count,
+            "items_count": await store_value(self._store, "count"),
             "tracked_downloads": tracked,
             "qbit_stats": qbit_stats,
             "disk_space": await asyncio.to_thread(settings.check_disk_space),
@@ -100,15 +104,19 @@ class ObservabilitySnapshot:
                 classifier_ok = True
             except Exception:
                 classifier_ok = False
-        return {"healthy": qbit_ok and classifier_ok, "qbittorrent": qbit_ok, "classifier": classifier_ok}
+        return {
+            "healthy": qbit_ok and classifier_ok,
+            "qbittorrent": qbit_ok,
+            "classifier": classifier_ok,
+        }
 
-    def api_stats(self) -> dict:
+    async def api_stats(self) -> dict:
         if self._stats is not None:
             self._stats.record_api_call()
             result = self._stats.as_dict()
         else:
             result = {"api_calls": 0}
-        result["active_items"] = self._store.count
+        result["active_items"] = await store_value(self._store, "count")
         result["websocket_clients"] = (
             self._broadcaster.active_count if self._broadcaster is not None else 0
         )

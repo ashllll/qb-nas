@@ -8,13 +8,22 @@ from __future__ import annotations
 
 import asyncio
 import json
+import warnings
 
 import pytest
-from starlette.testclient import TestClient
+from starlette.exceptions import StarletteDeprecationWarning
 
-from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.bus import Event, EventType
-from tests.fixtures import make_test_app
+warnings.filterwarnings(
+    "ignore",
+    message="Using `httpx` with `starlette.testclient` is deprecated.*",
+    category=StarletteDeprecationWarning,
+)
+
+from starlette.testclient import TestClient  # noqa: E402
+
+from magnet_harvester.models import MagnetItem, TaskStatus  # noqa: E402
+from magnet_harvester.bus import Event, EventType  # noqa: E402
+from tests.fixtures import make_test_app  # noqa: E402
 
 
 @pytest.fixture
@@ -40,13 +49,15 @@ def test_websocket_connect_receives_init_message(app_ctx):
     app, ctx = app_ctx
 
     # Add a seed item so init message has content
-    ctx.store.add(MagnetItem(
-        hash="INIT001",
-        name="Init Test Item",
-        magnet="magnet:?xt=urn:btih:INIT001",
-        category="电影",
-        status=TaskStatus.pending,
-    ))
+    ctx.store.add(
+        MagnetItem(
+            hash="INIT001",
+            name="Init Test Item",
+            magnet="magnet:?xt=urn:btih:INIT001",
+            category="电影",
+            status=TaskStatus.pending,
+        )
+    )
 
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
@@ -138,7 +149,9 @@ def test_websocket_broadcaster_sends_events_directly():
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            bus.emit(Event(EventType.MAGNET_FOUND, {"item": {"hash": "WS001", "name": "WS Event Test"}}))
+            bus.emit(
+                Event(EventType.MAGNET_FOUND, {"item": {"hash": "WS001", "name": "WS Event Test"}})
+            )
         )
         # Retry-loop: wait up to 1s for event delivery (avoids hard-coded sleep)
         for _ in range(100):

@@ -41,6 +41,32 @@ class FakePipeline:
         pass
 
 
+class CloseTrackingAwaitable:
+    def __init__(self):
+        self.closed = False
+
+    def __await__(self):
+        if False:
+            yield None
+        return None
+
+    def close(self):
+        self.closed = True
+
+
+class CloseTrackingPipeline(FakePipeline):
+    def __init__(self):
+        super().__init__()
+        self.download_awaitable = CloseTrackingAwaitable()
+        self.reclassify_awaitable = CloseTrackingAwaitable()
+
+    def download(self, hashes: list[str]):
+        return self.download_awaitable
+
+    def reclassify(self, hashes: list[str]):
+        return self.reclassify_awaitable
+
+
 class StartOnlyPipeline:
     def __init__(self):
         self.calls = []
@@ -84,6 +110,27 @@ def test_start_crawl_uses_pipeline_start_interface():
 
     assert result == {"status": "started", "url": "https://example.com", "depth": 2}
     assert pipeline.calls == [(" https://example.com ", 5, True)]
+
+
+def test_download_and_reclassify_close_coroutines_when_task_manager_missing():
+    store = InMemoryItemStore()
+    bus = MessageBus()
+    pipeline = CloseTrackingPipeline()
+    transitions = MagnetItemTransitions(store=store, bus=bus)
+    executor = UserActionExecutor(
+        store=store,
+        pipeline=pipeline,
+        task_manager=None,
+        transitions=transitions,
+    )
+
+    download_result = asyncio.run(executor.download(["HASH"]))
+    reclassify_result = asyncio.run(executor.reclassify(["HASH"]))
+
+    assert download_result == {"status": "error", "reason": "task manager unavailable"}
+    assert reclassify_result == {"status": "error", "reason": "task manager unavailable"}
+    assert pipeline.download_awaitable.closed is True
+    assert pipeline.reclassify_awaitable.closed is True
 
 
 def test_start_crawl_clamps_depth_to_pipeline_max():

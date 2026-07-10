@@ -7,6 +7,8 @@ import os
 import asyncio
 from typing import AsyncGenerator, List, Optional
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.models import MagnetItem, TaskStatus
@@ -109,6 +111,45 @@ class FakeTaskManager:
     def create(self, coro, name=None):
         self.calls.append(name)
         return asyncio.create_task(coro, name=name)
+
+
+class ExplodingClassifyPhase(FakeClassifyPhase):
+    async def classify_stream_batch(self, items: List[dict], on_result=None):
+        if on_result:
+            on_result(
+                items[0]["index"],
+                {
+                    "category": "电影",
+                    "save_path": "/downloads/电影",
+                    "confidence": "0.95",
+                    "reason": "test",
+                },
+            )
+        raise RuntimeError("classifier exploded")
+
+
+class SlowClassifiedTransitions:
+    def __init__(self, store):
+        self._store = store
+        self.failed: list[tuple[str, str]] = []
+
+    async def found(self, item: MagnetItem) -> bool:
+        return self._store.add(item)
+
+    async def classification_started(self, hash_key: str):
+        self._store.update(hash_key, status=TaskStatus.classifying)
+        return True
+
+    async def classified(self, hash_key: str, result: dict):
+        await asyncio.sleep(10)
+
+    async def classification_failed(self, hash_key: str, error_msg: str):
+        self.failed.append((hash_key, error_msg))
+        return self._store.update(
+            hash_key,
+            status=TaskStatus.error,
+            error_msg=error_msg,
+        )
 
 
 def test_crawl_phase_protocol():
@@ -254,6 +295,34 @@ def test_classify_item_events_are_observable_before_all_done():
     )
 
 
+@pytest.mark.asyncio
+async def test_classify_failure_rolls_back_cancelled_result_task():
+    store = FakeStore()
+    bus = NullBus()
+    item = MagnetItem(
+        hash="CANCELLED01",
+        name="Cancelled classify task",
+        magnet="magnet:?xt=urn:btih:CANCELLED01",
+    )
+    transitions = SlowClassifiedTransitions(store)
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(items=[item]),
+        classifier=ExplodingClassifyPhase(),
+        qbit=FakeDownloadPhase(),
+        store=store,
+        bus=bus,
+        transitions=transitions,
+    )
+
+    with pytest.raises(RuntimeError, match="classifier exploded"):
+        await pipeline.execute("https://example.com", depth=1)
+
+    assert transitions.failed == [("CANCELLED01", "classifier exploded")]
+    current = store.get("CANCELLED01")
+    assert current is not None
+    assert current.status == TaskStatus.error
+
+
 def test_download_result_is_observable_after_queued_store_change():
     """下载提交成功后，queued 状态应先进入 STORE_CHANGED 再发布 DOWNLOAD_RESULT"""
     store = FakeStore()
@@ -294,6 +363,33 @@ def test_download_result_is_observable_after_queued_store_change():
     )
 
     assert queued_store_index < download_result_index
+
+
+def test_download_skips_items_that_cannot_enter_submitting():
+    store = FakeStore()
+    bus = NullBus()
+    item = MagnetItem(
+        hash="DONE",
+        name="Already Done",
+        magnet="magnet:?xt=urn:btih:DONE",
+        category="电影",
+        save_path="/downloads/电影",
+        status=TaskStatus.success,
+    )
+    store.add(item)
+    download_phase = FakeDownloadPhase(success=True)
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(),
+        classifier=FakeClassifyPhase(),
+        qbit=download_phase,
+        store=store,
+        bus=bus,
+    )
+
+    asyncio.run(pipeline.download(["DONE"]))
+
+    assert download_phase.called_with == []
+    assert store.get("DONE").status == TaskStatus.success
 
 
 def test_no_new_items_skips_classify():
@@ -366,6 +462,7 @@ def test_reclassify_includes_error_status_items():
     )
 
     import asyncio
+
     asyncio.run(pipeline.reclassify(["ERR01"]))
 
     # reclassify 应将 error 状态条目发送到分类阶段

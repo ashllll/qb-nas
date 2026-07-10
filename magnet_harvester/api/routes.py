@@ -79,7 +79,7 @@ async def system_status(ctx: AppContext = Depends(get_context)):
 
 @router.get("/api/stats")
 async def get_stats(ctx: AppContext = Depends(get_context)):
-    return _observability(ctx).api_stats()
+    return await _observability(ctx).api_stats()
 
 
 @router.get("/api/items")
@@ -100,15 +100,14 @@ async def get_items(
         except ValueError:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid status: {status}. "
-                f"Valid values: {[v.value for v in TaskStatus]}",
+                detail=f"Invalid status: {status}. Valid values: {[v.value for v in TaskStatus]}",
             )
     if category is not None and category not in VALID_CATEGORIES:
         raise HTTPException(
             status_code=422,
             detail=f"Invalid category: {category}. Valid values: {sorted(VALID_CATEGORIES)}",
         )
-    result = _item_queries(ctx).page_items(
+    result = await _item_queries(ctx).page_items(
         category=category,
         status=status,
         limit=limit,
@@ -125,7 +124,7 @@ async def search_items(
     limit: int = Query(20, ge=1, le=100),
     ctx: AppContext = Depends(get_context),
 ):
-    result = _item_queries(ctx).search_items(query=q, limit=limit)
+    result = await _item_queries(ctx).search_items(query=q, limit=limit)
     if ctx.stats is not None:
         ctx.stats.record_api_call()
     return result
@@ -291,9 +290,7 @@ async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_
 
 @router.get("/api/categories")
 async def get_categories():
-    return {
-        "categories": sorted(VALID_CATEGORIES)
-    }
+    return {"categories": sorted(VALID_CATEGORIES)}
 
 
 @router.get("/api/clipboard")

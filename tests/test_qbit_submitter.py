@@ -211,3 +211,28 @@ async def test_submitter_resolves_relative_save_path():
     )
 
     ensure.assert_awaited_once_with("电影", "/volume1/downloads/电影")
+
+
+@pytest.mark.asyncio
+async def test_submitter_rejects_relative_save_path_escape():
+    request = AsyncMock(return_value=_ok_response())
+    ensure = AsyncMock(return_value=True)
+    recorder = FakeSubmissionRecorder()
+
+    submitter = _make_submitter(
+        request=request,
+        ensure_category=ensure,
+        get_base_save_path=AsyncMock(return_value="/volume1/downloads"),
+        recorder=recorder,
+    )
+
+    assert not await submitter.add_magnet(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+        "电影",
+        "../escape",
+    )
+
+    ensure.assert_not_awaited()
+    request.assert_not_awaited()
+    assert recorder.failures == 1
+    assert recorder.errors and "保存路径" in recorder.errors[-1]

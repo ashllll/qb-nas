@@ -4,11 +4,12 @@
 
 import sys
 import os
+import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.models import MagnetItem
-from magnet_harvester.store import InMemoryItemStore, ItemStore, StoreStats
+from magnet_harvester.store import InMemoryItemStore, ItemStore, SQLiteItemStore, StoreStats
 
 
 def _make_item(hash_key: str, name: str = "Test") -> MagnetItem:
@@ -121,6 +122,49 @@ def run_store_tests(store_factory):
 
 def test_inmemory_behaviors():
     run_store_tests(InMemoryItemStore)
+
+
+def test_search_nonpositive_limit_is_consistent_across_adapters():
+    def seed(store):
+        store.add(_make_item("AAAA", name="Matrix A"))
+        store.add(_make_item("BBBB", name="Matrix B"))
+        return store
+
+    with tempfile.NamedTemporaryFile(suffix=".db") as db:
+        stores = [
+            seed(InMemoryItemStore()),
+            seed(SQLiteItemStore(db.name)),
+        ]
+
+        for store in stores:
+            assert store.search("matrix", limit=0) == []
+            assert store.search("matrix", limit=-1) == []
+
+
+def test_count_and_page_boundary_values_are_consistent_across_adapters():
+    def seed(store):
+        store.add(_make_item("BBBB", name="Bravo"))
+        store.add(_make_item("AAAA", name="Alpha"))
+        return store
+
+    with tempfile.NamedTemporaryFile(suffix=".db") as db:
+        stores = [
+            seed(InMemoryItemStore()),
+            seed(SQLiteItemStore(db.name)),
+        ]
+
+        for store in stores:
+            total, items = store.count_and_page(limit=0)
+            assert total == 2
+            assert items == []
+
+            total, items = store.count_and_page(limit=-1)
+            assert total == 2
+            assert items == []
+
+            total, items = store.count_and_page(limit=1, offset=-1)
+            assert total == 2
+            assert [item.name for item in items] == ["Alpha"]
 
 
 def test_list_uses_limited_top_n_selection(monkeypatch):

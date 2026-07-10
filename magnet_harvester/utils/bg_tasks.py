@@ -135,10 +135,7 @@ class BGTaskManager:
         if len(self._snapshots) <= self.MAX_COMPLETED_SNAPSHOTS:
             return
         # 收集已完成的 snapshot，按 finished_at 排序，删除最旧的
-        finished = [
-            (sid, s) for sid, s in self._snapshots.items()
-            if s.finished_at is not None
-        ]
+        finished = [(sid, s) for sid, s in self._snapshots.items() if s.finished_at is not None]
         finished.sort(key=lambda x: x[1].finished_at or 0)
         to_remove = len(self._snapshots) - self.MAX_COMPLETED_SNAPSHOTS
         for sid, _ in finished[:to_remove]:
@@ -154,7 +151,13 @@ class BGTaskManager:
         full lifecycle management.
         """
         if task_manager is not None:
-            return task_manager.create(coro, name=name)
+            try:
+                return task_manager.create(coro, name=name)
+            except RuntimeError:
+                close = getattr(coro, "close", None)
+                if close is not None:
+                    close()
+                raise
         task = asyncio.create_task(coro, name=name)
         task.add_done_callback(_log_task_exception)
         return task

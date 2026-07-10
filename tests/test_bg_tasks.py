@@ -129,3 +129,28 @@ async def test_shutdown_rejects_new_tasks_without_leaking_coroutine():
 
     with pytest.raises(RuntimeError, match="shutting down"):
         mgr.create(work(), name="late")
+
+
+def test_spawn_closes_coroutine_when_injected_manager_rejects_task():
+    class CloseTrackingAwaitable:
+        def __init__(self):
+            self.closed = False
+
+        def __await__(self):
+            if False:
+                yield
+            return None
+
+        def close(self):
+            self.closed = True
+
+    class RejectingManager:
+        def create(self, coro, name=None):
+            raise RuntimeError("rejected")
+
+    awaitable = CloseTrackingAwaitable()
+
+    with pytest.raises(RuntimeError, match="rejected"):
+        BGTaskManager.spawn(awaitable, task_manager=RejectingManager(), name="late")
+
+    assert awaitable.closed is True

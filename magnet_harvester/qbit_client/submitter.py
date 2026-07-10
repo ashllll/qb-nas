@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import posixpath
 from pathlib import Path
 from typing import Protocol
 
@@ -50,6 +51,15 @@ class NullSubmissionRecorder:
 
     def error(self, message: str | None) -> None:
         pass
+
+
+def _resolve_relative_save_path(base: str, relative_path: str) -> str:
+    base_path = posixpath.normpath(base)
+    candidate = posixpath.normpath(posixpath.join(base_path, relative_path))
+    base_prefix = base_path.rstrip("/") + "/"
+    if candidate != base_path and not candidate.startswith(base_prefix):
+        raise ValueError("保存路径不能逃逸基础下载目录")
+    return candidate
 
 
 class MagnetSubmitter:
@@ -97,7 +107,12 @@ class MagnetSubmitter:
         if category_save_path and not category_save_path.startswith("/"):
             base = await self._gateway.get_base_save_path()
             if base:
-                category_save_path = f"{base}/{category_save_path}"
+                try:
+                    category_save_path = _resolve_relative_save_path(base, category_save_path)
+                except ValueError as exc:
+                    self._recorder.error(str(exc))
+                    self._recorder.failed()
+                    return False
         if not category_save_path:
             category_save_path = await self._gateway.get_base_save_path() or ""
 

@@ -72,37 +72,40 @@ def _make_executor(store=None, pipeline=None, tasks=None, stats=None):
     )
 
 
-def test_get_stats():
+@pytest.mark.asyncio
+async def test_get_stats():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="a", magnet="m:?xt=urn:btih:A", category="电影"))
     store.add(MagnetItem(hash="B", name="b", magnet="m:?xt=urn:btih:B", category="电视剧"))
 
     queries = ItemQueryExecutor(store=store)
-    result = queries.get_stats()
+    result = await queries.get_stats()
 
     assert result["total"] == 2
     assert result["by_category"]["电影"] == 1
     assert result["by_category"]["电视剧"] == 1
 
 
-def test_list_items():
+@pytest.mark.asyncio
+async def test_list_items():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
 
     queries = ItemQueryExecutor(store=store)
-    result = queries.list_items(category="电影")
+    result = await queries.list_items(category="电影")
 
     assert result["count"] == 1
     assert result["items"][0]["name"] == "Alpha"
 
 
-def test_page_items_returns_api_payload_shape():
+@pytest.mark.asyncio
+async def test_page_items_returns_api_payload_shape():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
     store.add(MagnetItem(hash="B", name="Beta", magnet="m:?xt=urn:btih:B", category="电视剧"))
 
     queries = ItemQueryExecutor(store=store)
-    result = queries.page_items(limit=1, offset=1)
+    result = await queries.page_items(limit=1, offset=1)
 
     assert result["total"] == 2
     assert result["limit"] == 1
@@ -111,13 +114,28 @@ def test_page_items_returns_api_payload_shape():
     assert "status" in result["items"][0]
 
 
-def test_search_items():
+@pytest.mark.asyncio
+async def test_page_items_normalizes_internal_pagination_boundaries():
+    store = FakeStore()
+    store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
+
+    queries = ItemQueryExecutor(store=store)
+    result = await queries.page_items(limit=-1, offset=-1)
+
+    assert result["total"] == 1
+    assert result["limit"] == 0
+    assert result["offset"] == 0
+    assert result["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_search_items():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha Movie", magnet="m:?xt=urn:btih:A"))
     store.add(MagnetItem(hash="B", name="Beta Show", magnet="m:?xt=urn:btih:B"))
 
     queries = ItemQueryExecutor(store=store)
-    result = queries.search_items(query="alpha")
+    result = await queries.search_items(query="alpha")
 
     assert result["count"] == 1
     assert result["results"][0]["name"] == "Alpha Movie"

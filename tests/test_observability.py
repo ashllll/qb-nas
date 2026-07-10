@@ -60,7 +60,9 @@ def test_api_stats_combines_stats_with_runtime_context():
         error_handler=FakeErrorHandler(),
     )
 
-    result = snapshot.api_stats()
+    import asyncio
+
+    result = asyncio.run(snapshot.api_stats())
 
     assert result["api_calls"] == 1
     assert result["active_items"] == 1

@@ -23,14 +23,8 @@ configure_logging(
 log = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════
-# Lifespan
-# ═══════════════════════════════════════════════════
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    settings.validate_security_posture()
-
-    # CORS: empty string = disabled (same-origin only); comma-separated list = allowed origins
+def _configure_cors(app: FastAPI) -> None:
+    """在应用启动前配置 CORS 中间件。"""
     cors_origins = [o.strip() for o in settings.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
     if cors_origins:
         app.add_middleware(
@@ -39,6 +33,14 @@ async def lifespan(app: FastAPI):
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+
+# ═══════════════════════════════════════════════════
+# Lifespan
+# ═══════════════════════════════════════════════════
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings.validate_security_posture()
 
     runtime = build_runtime()
     app.state.ctx = runtime.ctx
@@ -74,6 +76,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Magnet Harvester v3.0", lifespan=lifespan)
+
+_configure_cors(app)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(pages_router)

@@ -14,6 +14,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from magnet_harvester.bus import Event, MessageBus
+from magnet_harvester.store import call_store
 from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ class WSBroadcaster:
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store:
-            items = [item_payload(i) for i in self._store.list(limit=500)]
+            items = [item_payload(i) for i in await call_store(self._store, "list", limit=500)]
             await self.send_init(ws, items)
         else:
             await self.send_init(ws, [])
@@ -151,7 +152,9 @@ class WSBroadcaster:
         except Exception as e:
             log.warning(
                 "WebSocket JSON 序列化失败: %s — %s，对 data 字段做安全降级",
-                event.type.value, e, exc_info=True,
+                event.type.value,
+                e,
+                exc_info=True,
             )
             safe_dict: dict[str, object] = {"type": event.type.value}
             for k, v in event.data.items():
@@ -164,11 +167,13 @@ class WSBroadcaster:
                 data = json.dumps(safe_dict, ensure_ascii=False, default=_json_serializer)
             except Exception:
                 log.error(
-                    "WebSocket JSON 降级序列化仍然失败: %s", event.type.value, exc_info=True,
+                    "WebSocket JSON 降级序列化仍然失败: %s",
+                    event.type.value,
+                    exc_info=True,
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
         _DEAD = b"DEAD"  # sentinel
-        _SEND_TIMEOUT = 3.0   # per-client 广播超时
+        _SEND_TIMEOUT = 3.0  # per-client 广播超时
 
         async def _send(ws: WebSocket):
             client_state = getattr(ws, "client_state", None)

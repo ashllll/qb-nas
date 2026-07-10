@@ -87,7 +87,14 @@ class FakeClassifier:
         return {}
 
 
-def _make_runtime(*, old_qbit=None, settings=None, factory=None, app_services=None):
+def _make_runtime(
+    *,
+    old_qbit=None,
+    settings=None,
+    factory=None,
+    app_services=None,
+    qbit_sync=None,
+):
     ctx = AppContext(
         core=CoreServices(
             store=None,
@@ -98,7 +105,7 @@ def _make_runtime(*, old_qbit=None, settings=None, factory=None, app_services=No
             qbit=old_qbit,
         ),
         app_services=app_services or AppServices(),
-        runtime=RuntimeState(qbit_sync=FakeSync()),
+        runtime=RuntimeState(qbit_sync=qbit_sync or FakeSync()),
     )
     return QBitRuntime(
         ctx=ctx,
@@ -260,6 +267,76 @@ async def test_replace_qbit_config_does_not_replace_on_persist_failure():
     assert old_qbit.closed is False
 
 
+async def test_replace_qbit_config_fails_when_runtime_swap_does_not_commit():
+    created = []
+    old_config = QBitConfig(host="http://old:8080")
+    old_qbit = FakeQbit(old_config)
+
+    class TrackedQbit(FakeQbit):
+        def __init__(self, config: QBitConfig):
+            super().__init__(config)
+            created.append(self)
+
+    class NoopReplacementTarget:
+        async def replace(self, new_qbit):
+            return None
+
+    runtime = _make_runtime(old_qbit=old_qbit, factory=TrackedQbit)
+    runtime.replacement_target = NoopReplacementTarget()
+
+    with pytest.raises(RuntimeError):
+        await runtime.replace_qbit_config(
+            host="http://new:8080",
+            username="user",
+            password="pass",
+        )
+
+    assert runtime.ctx.qbit is old_qbit
+    assert created[0].closed is True
+    assert [config.host for config in runtime.settings.persisted] == [
+        "http://new:8080",
+        "http://old:8080",
+    ]
+    assert runtime.settings.committed == [old_config]
+
+
+async def test_replace_qbit_config_rolls_back_dependents_when_runtime_swap_fails():
+    created = []
+    old_config = QBitConfig(host="http://old:8080")
+    old_qbit = FakeQbit(old_config)
+
+    class TrackedQbit(FakeQbit):
+        def __init__(self, config: QBitConfig):
+            super().__init__(config)
+            created.append(self)
+
+    class FailingSync:
+        async def replace_qbit_client(self, new_qbit):
+            raise RuntimeError("sync failed")
+
+    runtime = _make_runtime(
+        old_qbit=old_qbit,
+        factory=TrackedQbit,
+        qbit_sync=FailingSync(),
+    )
+
+    with pytest.raises(RuntimeError):
+        await runtime.replace_qbit_config(
+            host="http://new:8080",
+            username="user",
+            password="pass",
+        )
+
+    assert runtime.ctx.qbit is old_qbit
+    assert runtime.ctx.pipeline.replaced_qbit is old_qbit
+    assert created[0].closed is True
+    assert [config.host for config in runtime.settings.persisted] == [
+        "http://new:8080",
+        "http://old:8080",
+    ]
+    assert runtime.settings.committed == [old_config]
+
+
 async def test_replace_qbit_config_serializes_concurrent_replacements():
     class SlowQbit(FakeQbit):
         active_pings = 0
@@ -327,6 +404,7 @@ async def test_replacement_target_works_without_app_context():
 
 async def test_replace_tolerates_close_failure():
     """旧客户端 close() 抛出异常时，replace() 仍成功完成。"""
+
     class BrokenQbit(FakeQbit):
         async def close(self) -> None:
             raise RuntimeError("close failed")
@@ -375,6 +453,7 @@ async def test_replace_with_same_instance_does_not_close():
 
 async def test_transport_close_clears_client_on_aclose_failure():
     """即使 aclose() 抛出异常，_client 也应被置为 None。"""
+
     class BrokenClient:
         is_closed = False
         cookies = httpx.Cookies()

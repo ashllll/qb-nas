@@ -6,7 +6,7 @@ import logging
 
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
 from magnet_harvester.pipeline import PipelineProtocol
-from magnet_harvester.store import ItemStore
+from magnet_harvester.store import ItemStore, call_store
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -32,12 +32,18 @@ class UserActionExecutor:
 
     def _spawn(self, coro, *, name: str) -> bool:
         if self._task_manager is None:
+            close = getattr(coro, "close", None)
+            if close is not None:
+                close()
             log.warning("task_manager 未配置，跳过后台任务: %s", name)
             return False
         try:
             BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
             return True
         except RuntimeError as e:
+            close = getattr(coro, "close", None)
+            if close is not None:
+                close()
             log.warning("无法创建后台任务 %s: %s", name, e)
             return False
 
@@ -65,7 +71,7 @@ class UserActionExecutor:
         return {"status": "started", "count": len(hashes)}
 
     async def download_pending(self) -> dict:
-        pending = self._store.get_pending()
+        pending = await call_store(self._store, "get_pending")
         hashes = [item.hash for item in pending]
         return await self.download(hashes, task_name="download_batch")
 
@@ -81,7 +87,7 @@ class UserActionExecutor:
         if len(hash_prefix) < 8:
             return {"status": "error", "reason": "hash 至少需要 8 位前缀"}
 
-        matches = self._store.get_hashes_by_prefix(hash_prefix)
+        matches = await call_store(self._store, "get_hashes_by_prefix", hash_prefix)
         if not matches:
             return {"status": "not_found", "hash": hash_prefix}
 

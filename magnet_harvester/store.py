@@ -9,6 +9,7 @@ ItemStore — 磁力链接中央存储（深模块）
 
 from __future__ import annotations
 
+import asyncio
 import heapq
 import logging
 import sqlite3
@@ -90,12 +91,29 @@ class ItemStore(Protocol):
     def clear(self) -> int: ...
 
 
+async def call_store(store: ItemStore, method: str, /, *args, **kwargs):
+    """在异步业务路径中调用 store，避免阻塞型 adapter 占用事件循环。"""
+    operation = getattr(store, method)
+    if getattr(store, "blocks_event_loop", False):
+        return await asyncio.to_thread(operation, *args, **kwargs)
+    return operation(*args, **kwargs)
+
+
+async def store_value(store: ItemStore, attribute: str):
+    """异步读取 store 属性，语义与 :func:`call_store` 一致。"""
+    if getattr(store, "blocks_event_loop", False):
+        return await asyncio.to_thread(getattr, store, attribute)
+    return getattr(store, attribute)
+
+
 class InMemoryItemStore:
     """ItemStore 的默认内存适配器。
 
     接口：add / get / update / remove / list / search / clear / stats / count
     — 7 个调用点共享 1 个接口
     """
+
+    blocks_event_loop = False
 
     def __init__(self):
         self._items: Dict[str, MagnetItem] = {}
@@ -187,6 +205,8 @@ class InMemoryItemStore:
             yield item
 
     def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]:
+        if limit is not None and limit <= 0:
+            return []
         q = query.lower()
         with self._lock:
             results = [i for i in self._items.values() if q in i.name.lower()]
@@ -196,7 +216,9 @@ class InMemoryItemStore:
 
     def get_pending(self) -> List[MagnetItem]:
         with self._lock:
-            return [i for i in self._items.values() if i.status == TaskStatus.pending and i.category]
+            return [
+                i for i in self._items.values() if i.status == TaskStatus.pending and i.category
+            ]
 
     def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         """支持通过 hash 前缀查找完整 hash（Agent 用）"""
@@ -234,9 +256,10 @@ class InMemoryItemStore:
         """单次持锁返回 total + 分页 items，消除 count→list 之间的 TOCTOU。"""
         with self._lock:
             filtered = list(self._iter_filtered_items(category=category, status=status))
-            sorted_items = heapq.nsmallest(
-                offset + limit, filtered, key=_item_name_key
-            )
+            if limit <= 0:
+                return len(filtered), []
+            offset = max(0, offset)
+            sorted_items = heapq.nsmallest(offset + limit, filtered, key=_item_name_key)
             return len(filtered), sorted_items[offset : offset + limit]
 
     def stats(self) -> StoreStats:
@@ -288,6 +311,8 @@ class SQLiteItemStore:
     所有公开方法保持同步签名，与现有 ItemStore Protocol 完全兼容。
     """
 
+    blocks_event_loop = True
+
     def __init__(self, db_path: str | Path = "data/magnet_items.db"):
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -297,7 +322,7 @@ class SQLiteItemStore:
     # ── 数据库连接 ──────────────────────────
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path), isolation_level='DEFERRED')
+        conn = sqlite3.connect(str(self._db_path), isolation_level="DEFERRED")
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
@@ -394,9 +419,7 @@ class SQLiteItemStore:
 
     def get(self, hash_key: str) -> Optional[MagnetItem]:
         with self._lock, self._connect() as db:
-            cursor = db.execute(
-                "SELECT * FROM magnet_items WHERE hash = ?", (hash_key,)
-            )
+            cursor = db.execute("SELECT * FROM magnet_items WHERE hash = ?", (hash_key,))
             return self._row_to_item(cursor.fetchone())
 
     def update(self, hash_key: str, **fields) -> bool:
@@ -407,9 +430,7 @@ class SQLiteItemStore:
 
         with self._lock, self._connect() as db:
             # Read + validate + write in a single lock scope (avoids TOCTOU)
-            cursor = db.execute(
-                "SELECT * FROM magnet_items WHERE hash = ?", (hash_key,)
-            )
+            cursor = db.execute("SELECT * FROM magnet_items WHERE hash = ?", (hash_key,))
             row = cursor.fetchone()
             if row is None:
                 return False
@@ -440,9 +461,7 @@ class SQLiteItemStore:
 
     def remove(self, hash_key: str) -> bool:
         with self._lock, self._connect() as db:
-            cursor = db.execute(
-                "DELETE FROM magnet_items WHERE hash = ?", (hash_key,)
-            )
+            cursor = db.execute("DELETE FROM magnet_items WHERE hash = ?", (hash_key,))
             db.commit()
             return cursor.rowcount > 0
 
@@ -482,6 +501,8 @@ class SQLiteItemStore:
             return [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
 
     def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]:
+        if limit is not None and limit <= 0:
+            return []
         q = f"%{_escape_like(query)}%"
         sql = "SELECT * FROM magnet_items WHERE LOWER(name) LIKE LOWER(?) ESCAPE '\\'"
         params: tuple = (q,)
@@ -565,15 +586,14 @@ class SQLiteItemStore:
             row = cursor.fetchone()
             total = row[0] if row else 0
 
+            if limit <= 0:
+                return total, []
+            offset = max(0, offset)
             cursor = db.execute(
                 f"SELECT * FROM magnet_items {where} ORDER BY name ASC LIMIT ? OFFSET ?",
                 params + [limit, offset],
             )
-            items = [
-                item
-                for r in cursor.fetchall()
-                if (item := self._row_to_item(r)) is not None
-            ]
+            items = [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
 
         return total, items
 
@@ -594,9 +614,7 @@ class SQLiteItemStore:
                 s.by_category[row["cat"]] = row["cnt"]
 
             # By status
-            cursor = db.execute(
-                "SELECT status, COUNT(*) as cnt FROM magnet_items GROUP BY status"
-            )
+            cursor = db.execute("SELECT status, COUNT(*) as cnt FROM magnet_items GROUP BY status")
             for row in cursor.fetchall():
                 s.by_status[row["status"]] = row["cnt"]
 
@@ -635,11 +653,17 @@ class SQLiteItemStore:
                         added += 1
                     db.execute("RELEASE SAVEPOINT add_item")
                 except sqlite3.OperationalError:
-                    log.error("sqlite: add_batch 条目 %s 数据库损坏", item.hash[:16] if item.hash else "?", exc_info=True)
+                    log.error(
+                        "sqlite: add_batch 条目 %s 数据库损坏",
+                        item.hash[:16] if item.hash else "?",
+                        exc_info=True,
+                    )
                     db.execute("ROLLBACK TO SAVEPOINT add_item")
                     db.execute("RELEASE SAVEPOINT add_item")
                 except Exception:
-                    log.exception("sqlite: add_batch 条目 %s 未知错误", item.hash[:16] if item.hash else "?")
+                    log.exception(
+                        "sqlite: add_batch 条目 %s 未知错误", item.hash[:16] if item.hash else "?"
+                    )
                     db.execute("ROLLBACK TO SAVEPOINT add_item")
                     db.execute("RELEASE SAVEPOINT add_item")
                 # 每 _BATCH_COMMIT 条提交一次，防止最终 commit 失败导致全部丢失

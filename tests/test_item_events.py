@@ -15,6 +15,15 @@ from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 
 
+class RecordingBus(MessageBus):
+    def __init__(self):
+        super().__init__()
+        self.events = []
+
+    async def emit(self, event):
+        self.events.append(event)
+
+
 def _make_item(hash_key="ABC123", name="Test", status=TaskStatus.pending):
     return MagnetItem(
         hash=hash_key,
@@ -112,6 +121,48 @@ async def test_routine_oscillation_suppressed():
     events.clear()
     await transitions.download_state_changed("OSC2", previous_status=TaskStatus.downloading)
     assert len(events) == 0, "downloading→queued should be suppressed"
+
+
+async def test_stale_completion_callbacks_do_not_overwrite_newer_state():
+    """过期的分类/提交回调不能覆盖已推进的条目状态。"""
+    store = FakeStore()
+    bus = RecordingBus()
+    transitions = MagnetItemTransitions(store=store, bus=bus)
+
+    submitted = _make_item("SUBMITTED", status=TaskStatus.error)
+    store.add(submitted)
+    await transitions.download_submitted("SUBMITTED")
+    assert store.get("SUBMITTED").status == TaskStatus.error
+    assert bus.events == []
+
+    classified = _make_item("CLASSIFIED", status=TaskStatus.pending)
+    store.add(classified)
+    await transitions.classified("CLASSIFIED", {"category": "电影", "save_path": "/movies"})
+    await transitions.classification_failed("CLASSIFIED", "stale callback")
+    current = store.get("CLASSIFIED")
+    assert current.status == TaskStatus.pending
+    assert current.category is None
+    assert current.error_msg is None
+    assert bus.events == []
+
+
+async def test_completion_callbacks_accept_their_expected_source_state():
+    """adding/classifying 的正常完成路径保持不变。"""
+    store = FakeStore()
+    bus = RecordingBus()
+    transitions = MagnetItemTransitions(store=store, bus=bus)
+
+    submitted = _make_item("ADDING", status=TaskStatus.adding)
+    store.add(submitted)
+    await transitions.download_submitted("ADDING")
+    assert store.get("ADDING").status == TaskStatus.queued
+
+    classifying = _make_item("CLASSIFYING", status=TaskStatus.classifying)
+    store.add(classifying)
+    await transitions.classified("CLASSIFYING", {"category": "电影", "save_path": "/movies"})
+    current = store.get("CLASSIFYING")
+    assert current.status == TaskStatus.pending
+    assert current.category == "电影"
 
 
 if __name__ == "__main__":

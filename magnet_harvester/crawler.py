@@ -124,7 +124,6 @@ class MagnetCrawler:
     ):
         self._config = config if config is not None else settings.crawler
         self._crawler: Optional[Any] = None
-        self._metrics: Optional[CrawlMetrics] = None
         self._session_metrics: ContextVar[CrawlMetrics | None] = ContextVar(
             "crawl_session_metrics",
             default=None,
@@ -243,7 +242,12 @@ class MagnetCrawler:
                 try:
                     msg = await asyncio.wait_for(events.get(), timeout=crawl_timeout)
                 except asyncio.TimeoutError:
-                    log.error("爬取会话超时 url=%s depth=%d timeout=%ds", url, effective_depth, crawl_timeout)
+                    log.error(
+                        "爬取会话超时 url=%s depth=%d timeout=%ds",
+                        url,
+                        effective_depth,
+                        crawl_timeout,
+                    )
                     yield {"type": "error", "msg": f"爬取超时 ({crawl_timeout}s)", "url": url}
                     break
                 if msg is None:
@@ -530,9 +534,7 @@ class MagnetCrawler:
 
     @staticmethod
     def _is_same_site(url: str, root_url: str) -> bool:
-        return (urlparse(url).hostname or "").lower() == (
-            urlparse(root_url).hostname or ""
-        ).lower()
+        return (urlparse(url).hostname or "").lower() == (urlparse(root_url).hostname or "").lower()
 
     @staticmethod
     def _is_detail_url(url: str) -> bool:

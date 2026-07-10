@@ -12,7 +12,7 @@ from typing import Protocol
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import TaskStatus
-from magnet_harvester.store import ItemStore
+from magnet_harvester.store import ItemStore, call_store
 from magnet_harvester.transitions import MagnetItemTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -146,11 +146,16 @@ class QBitSyncLoop:
                 continue
             self._backoff.record_success()
 
-            tracked_items = store.list(
-                status=_SYNC_ACTIVE_STATUSES, limit=_MAX_STORE_ITEMS,
+            tracked_items = await call_store(
+                store,
+                "list",
+                status=_SYNC_ACTIVE_STATUSES,
+                limit=_MAX_STORE_ITEMS,
             )
             if len(tracked_items) >= _MAX_STORE_ITEMS:
-                log.error("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items))
+                log.error(
+                    "tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items)
+                )
                 await self._bus.emit(
                     Event(
                         EventType.ERROR,
