@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -24,3 +27,35 @@ def test_requirements_and_pyproject_runtime_dependencies_are_in_sync():
     }
 
     assert requirements == pyproject_deps
+
+
+def test_npm_quality_gate_uses_cross_platform_python_launcher():
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+
+    assert package["scripts"]["lint"].startswith("node scripts/run-python.cjs ")
+    assert package["scripts"]["test"].startswith("node scripts/run-python.cjs ")
+    assert ".venv/bin" not in str(package["scripts"])
+
+
+def test_python_launcher_forwards_child_exit_code():
+    result = subprocess.run(
+        ["node", "scripts/run-python.cjs", "-c", "import sys; sys.exit(7)"],
+        cwd=ROOT,
+        check=False,
+    )
+
+    assert result.returncode == 7
+
+
+def test_python_launcher_fails_clearly_without_local_virtualenv(tmp_path):
+    result = subprocess.run(
+        ["node", str(ROOT / "scripts" / "run-python.cjs"), "--version"],
+        cwd=tmp_path,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    expected = ".venv\\Scripts\\python.exe" if sys.platform == "win32" else ".venv/bin/python"
+    assert result.returncode != 0
+    assert f"Python virtual environment not found: {expected}" in result.stderr
