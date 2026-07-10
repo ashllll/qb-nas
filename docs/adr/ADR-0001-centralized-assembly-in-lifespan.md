@@ -40,7 +40,10 @@ Specifically:
    - `ItemQueryExecutor(store)` for read-only item query formatting
    - `ObservabilitySnapshot(store, qbit, stats, broadcaster, error_handler)`
    - `BGTaskManager()`
-4. **`AppContext` remains the single dependency container** — routed through `app.state.ctx`, retrieved via `Depends(get_context)`.
+4. **`AppContext` remains the root dependency container** — routed through
+   `app.state.ctx` and retrieved via `Depends(get_context)`. Its interface exposes
+   exactly three semantic containers (`core`, `app_services`, `runtime`); callers
+   access those directly rather than through flat compatibility properties.
 5. **`HarvestPipeline` gains a public `replace_download_phase()` method** — eliminating the private-field mutation from `RuntimeContext`.
 6. **Magnet item state changes are injected by lifecycle**: discovery, classification,
    and download modules own their behavior directly. No compatibility facade sits in

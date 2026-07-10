@@ -73,7 +73,7 @@ def test_real_classifier_with_fallback_category():
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            ctx.store.add(
+            ctx.core.store.add(
                 MagnetItem(
                     hash="HASH099",
                     name="Random.Unrecognizable.File.Name",
@@ -82,8 +82,8 @@ def test_real_classifier_with_fallback_category():
             )
         )
         # Trigger reclassify via pipeline (uses the real LocalClassifier)
-        loop.run_until_complete(ctx.pipeline.reclassify(["HASH099"]))
-        item = loop.run_until_complete(ctx.store.get("HASH099"))
+        loop.run_until_complete(ctx.core.pipeline.reclassify(["HASH099"]))
+        item = loop.run_until_complete(ctx.core.store.get("HASH099"))
     finally:
         loop.close()
 

@@ -51,7 +51,7 @@ class AppRuntime:
     async def start(self):
         # 爬虫和同步循环独立启动，互不阻塞
         try:
-            await self.ctx.crawler.start()
+            await self.ctx.core.crawler.start()
         except Exception as e:
             log.error("crawler 启动失败（降级模式，爬取功能不可用）: %s", e)
         await self.sync_loop.start()
@@ -62,19 +62,19 @@ class AppRuntime:
         except Exception as e:
             log.error("sync_loop 关闭失败: %s", e)
 
-        if self.ctx.bg_manager is not None:
+        if self.ctx.runtime.bg_manager is not None:
             try:
-                await self.ctx.bg_manager.shutdown()
+                await self.ctx.runtime.bg_manager.shutdown()
             except Exception as e:
                 log.error("bg_manager 关闭失败: %s", e)
 
         try:
-            await self.ctx.crawler.stop()
+            await self.ctx.core.crawler.stop()
         except Exception as e:
             log.error("crawler 关闭失败: %s", e)
 
         try:
-            await self.ctx.qbit.close()
+            await self.ctx.core.qbit.close()
         except Exception as e:
             log.error("qbit 关闭失败: %s", e)
 
@@ -248,7 +248,7 @@ def build_runtime() -> AppRuntime:
     # 这是已知的刻意设计：QBitRuntime 需要访问 AppContext 的运行时组件
     # （如 bg_manager、qbit_lock），且两者生命周期一致（应用启动→关闭），
     # 由 Python GC 正常回收，无需 weakref 介入。
-    ctx.qbit_runtime = QBitRuntime(
+    ctx.runtime.qbit_runtime = QBitRuntime(
         ctx=ctx,
         settings=settings,
         client_factory=QBittorrentClient,

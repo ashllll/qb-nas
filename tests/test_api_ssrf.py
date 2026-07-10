@@ -86,7 +86,7 @@ class TestCrawlSSRFProtection:
         assert r.status_code == 422
 
     def test_accepts_valid_public_url(self, client):
-        client.app.state.ctx.pipeline.admit_crawl_target = AsyncMock(
+        client.app.state.ctx.core.pipeline.admit_crawl_target = AsyncMock(
             return_value="https://example.com"
         )
         r = client.post("/api/crawl", json={"url": "https://example.com", "depth": 1})

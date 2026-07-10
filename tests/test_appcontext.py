@@ -45,9 +45,9 @@ def _make_test_context() -> AppContext:
 
 def test_appcontext_holds_deps():
     ctx = _make_test_context()
-    assert ctx.store is not None
-    assert ctx.bus is not None
-    assert ctx.pipeline is not None
+    assert ctx.core.store is not None
+    assert ctx.core.bus is not None
+    assert ctx.core.pipeline is not None
 
 
 def test_appcontext_in_endpoint():
@@ -56,7 +56,7 @@ def test_appcontext_in_endpoint():
 
     @app.get("/test/count")
     async def test_count(ctx: AppContext = Depends(get_context)):
-        return {"count": await ctx.store.count()}
+        return {"count": await ctx.core.store.count()}
 
     app.state.ctx = ctx
 
@@ -66,7 +66,7 @@ def test_appcontext_in_endpoint():
         assert resp.json()["count"] == 0
 
         asyncio.run(
-            ctx.store.add(MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST"))
+            ctx.core.store.add(MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST"))
         )
         resp = client.get("/test/count")
         assert resp.json()["count"] == 1
@@ -84,7 +84,7 @@ def test_appcontext_in_lifespan():
 
     @app.get("/ping")
     async def ping(ctx: AppContext = Depends(get_context)):
-        return {"ok": await ctx.store.count() == 0}
+        return {"ok": await ctx.core.store.count() == 0}
 
     with asgi_client(app) as client:
         resp = client.get("/ping")
@@ -110,15 +110,15 @@ def test_runtime_context_replaces_qbit_everywhere():
             self.replaced_with = new_qbit
 
     ctx = _make_test_context()
-    old_qbit = ctx.qbit
+    old_qbit = ctx.core.qbit
     new_qbit = FakeQbit()
-    ctx.pipeline = FakePipeline()
+    ctx.core.pipeline = FakePipeline()
     runtime = RuntimeContext(ctx=ctx)
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 
-    assert ctx.qbit is new_qbit
-    assert ctx.pipeline.replaced_with is new_qbit
+    assert ctx.core.qbit is new_qbit
+    assert ctx.core.pipeline.replaced_with is new_qbit
     assert old_qbit._client is None
 
 
@@ -191,11 +191,11 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
 
     async with main_module.lifespan(test_app):
         ctx = test_app.state.ctx
-        assert ctx.action_executor is not None
-        assert ctx.broadcaster is not None
-        assert ctx.bg_manager is not None
-        assert ctx.stats is not None
-        assert ctx.qbit_lock is not None
+        assert ctx.app_services.action_executor is not None
+        assert ctx.app_services.broadcaster is not None
+        assert ctx.runtime.bg_manager is not None
+        assert ctx.runtime.stats is not None
+        assert ctx.runtime.qbit_lock is not None
 
 
 @pytest.mark.asyncio
@@ -294,10 +294,10 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
 
     async with main_module.lifespan(test_app):
         ctx = test_app.state.ctx
-        await ctx.pipeline.execute("https://example.com", depth=1, auto_download=True)
+        await ctx.core.pipeline.execute("https://example.com", depth=1, auto_download=True)
 
-        assert await ctx.store.count() == 1
-        item = await ctx.store.get("ABCDEF1234567890")
+        assert await ctx.core.store.count() == 1
+        item = await ctx.core.store.get("ABCDEF1234567890")
         assert item is not None
         assert item.category == "电影"
         assert item.status.value == "queued"

@@ -151,127 +151,16 @@ class RuntimeState:
     qbit_runtime: QBitRuntimeLike | None = None
 
 
-# ── AppContext — 薄外观 + 向后兼容属性 ──────────
+# ── AppContext — semantic container root ─────────
 
 
 @dataclass
 class AppContext:
-    """应用依赖容器（外观）。
-
-    内部持有 3 个语义域子容器，通过属性提供向后兼容访问。
-    """
+    """Root holding the core, application, and runtime containers."""
 
     core: CoreServices
     app_services: AppServices = field(default_factory=AppServices)
     runtime: RuntimeState = field(default_factory=RuntimeState)
-
-    def __post_init__(self):
-        if self.app_services is None:
-            self.app_services = AppServices()
-        if self.runtime is None:
-            self.runtime = RuntimeState()
-
-    # ── 向后兼容属性 ──
-
-    @property
-    def store(self) -> ItemStore:
-        return self.core.store
-
-    @property
-    def bus(self) -> MessageBus:
-        return self.core.bus
-
-    @property
-    def pipeline(self) -> HarvestPipeline:
-        return self.core.pipeline
-
-    @pipeline.setter
-    def pipeline(self, value: HarvestPipeline) -> None:
-        self.core.pipeline = value
-
-    @property
-    def crawler(self) -> MagnetCrawler:
-        return self.core.crawler
-
-    @property
-    def classifier(self) -> LocalClassifier:
-        return self.core.classifier
-
-    @property
-    def qbit(self) -> QBittorrentClient:
-        return self.core.qbit
-
-    @qbit.setter
-    def qbit(self, value: QBittorrentClient) -> None:
-        self.core.qbit = value
-
-    @property
-    def api_key(self) -> str:
-        return self.runtime.api_key
-
-    @api_key.setter
-    def api_key(self, value: str) -> None:
-        self.runtime.api_key = value
-
-    @property
-    def stats(self) -> StatsTracker | None:
-        return self.runtime.stats
-
-    @property
-    def bg_manager(self) -> BackgroundTaskSpawner | None:
-        return self.runtime.bg_manager
-
-    @property
-    def broadcaster(self) -> BroadcasterLike | None:
-        return self.app_services.broadcaster
-
-    @property
-    def action_executor(self) -> UserActionExecutorLike | None:
-        return self.app_services.action_executor
-
-    @action_executor.setter
-    def action_executor(self, value: UserActionExecutorLike | None) -> None:
-        self.app_services.action_executor = value
-
-    @property
-    def qbit_sync(self) -> QBitSyncLike | None:
-        return self.runtime.qbit_sync
-
-    @property
-    def qbit_runtime(self) -> QBitRuntimeLike | None:
-        return self.runtime.qbit_runtime
-
-    @qbit_runtime.setter
-    def qbit_runtime(self, value: QBitRuntimeLike | None) -> None:
-        self.runtime.qbit_runtime = value
-
-    @property
-    def qbit_lock(self) -> asyncio.Lock | None:
-        return self.runtime.qbit_lock
-
-    @property
-    def clipboard_monitor(self) -> ClipboardMonitorLike | None:
-        return self.app_services.clipboard_monitor
-
-    @property
-    def error_handler(self) -> ErrorHandlerLike | None:
-        return self.runtime.error_handler
-
-    @property
-    def observability(self) -> ObservabilityLike | None:
-        return self.app_services.observability
-
-    @observability.setter
-    def observability(self, value: ObservabilityLike | None) -> None:
-        self.app_services.observability = value
-
-    @property
-    def item_queries(self) -> ItemQueryLike | None:
-        return self.app_services.item_queries
-
-    @item_queries.setter
-    def item_queries(self, value: ItemQueryLike | None) -> None:
-        self.app_services.item_queries = value
 
 
 @dataclass
@@ -292,12 +181,12 @@ class QBitReplacementTarget:
     @classmethod
     def from_context(cls, ctx: AppContext) -> "QBitReplacementTarget":
         return cls(
-            lock=ctx.qbit_lock or asyncio.Lock(),
-            get_qbit=lambda: ctx.qbit,
-            set_qbit=lambda value: setattr(ctx, "qbit", value),
-            qbit_sync=ctx.qbit_sync,
-            pipeline=ctx.pipeline,
-            observability=ctx.observability,
+            lock=ctx.runtime.qbit_lock or asyncio.Lock(),
+            get_qbit=lambda: ctx.core.qbit,
+            set_qbit=lambda value: setattr(ctx.core, "qbit", value),
+            qbit_sync=ctx.runtime.qbit_sync,
+            pipeline=ctx.core.pipeline,
+            observability=ctx.app_services.observability,
         )
 
     async def replace(self, new_qbit: QBittorrentClient) -> None:
@@ -333,7 +222,7 @@ class QBitReplacementTarget:
 
             # Phase 3: Cleanup — close old transport without aborting
             # the replacement.  Never close a client that was just
-            # installed (guard against caller passing ctx.qbit as both
+            # installed (guard against caller passing ctx.core.qbit as both
             # old and new).
             if old_qbit is not None and old_qbit is not new_qbit:
                 try:
@@ -405,7 +294,7 @@ class QBitRuntime:
             OSError: if persisting the config fails (maps to HTTP 500).
         """
         async with self.config_lock:
-            old_qbit = self.ctx.qbit
+            old_qbit = self.ctx.core.qbit
             old_config = getattr(old_qbit, "config", None)
             candidate = self.settings.build_qbit_config(
                 host=host,
@@ -425,7 +314,7 @@ class QBitRuntime:
 
             try:
                 await self.replace_qbit(new_qbit)
-                if self.ctx.qbit is not new_qbit:
+                if self.ctx.core.qbit is not new_qbit:
                     raise RuntimeError("热替换 qBittorrent 客户端失败")
             except Exception as exc:
                 await new_qbit.close()

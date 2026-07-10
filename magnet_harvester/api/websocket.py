@@ -250,7 +250,8 @@ async def websocket_endpoint(ws: WebSocket):
         except Exception:
             log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
-    broadcaster = getattr(ctx, "broadcaster", None)
+    app_services = getattr(ctx, "app_services", None)
+    broadcaster = getattr(app_services, "broadcaster", None)
     if broadcaster:
         await broadcaster.handle_connection(ws)
     else:

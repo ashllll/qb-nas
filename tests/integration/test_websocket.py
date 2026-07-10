@@ -32,10 +32,10 @@ def app_ctx():
     app, ctx, _ = make_test_app()
     yield app, ctx
     # Cleanup pending bg tasks to avoid "Task was destroyed" warnings
-    if ctx.bg_manager:
+    if ctx.runtime.bg_manager:
         try:
             loop = asyncio.new_event_loop()
-            loop.run_until_complete(ctx.bg_manager.shutdown())
+            loop.run_until_complete(ctx.runtime.bg_manager.shutdown())
             loop.close()
         except Exception:
             pass
@@ -50,7 +50,7 @@ def test_websocket_connect_receives_init_message(app_ctx):
 
     # Add a seed item so init message has content
     asyncio.run(
-        ctx.store.add(
+        ctx.core.store.add(
             MagnetItem(
                 hash="INIT001",
                 name="Init Test Item",

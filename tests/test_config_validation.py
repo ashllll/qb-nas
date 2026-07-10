@@ -142,7 +142,7 @@ async def test_replace_qbit_closes_old_client():
     await runtime.replace_qbit(new_qbit)
 
     # 旧客户端应被关闭（_client 为 None 或 is_closed）
-    assert ctx.qbit is new_qbit
+    assert ctx.core.qbit is new_qbit
 
 
 async def test_replace_qbit_updates_download_state_sync():
@@ -180,7 +180,7 @@ async def test_replace_qbit_updates_download_state_sync():
     await RuntimeContext(ctx).replace_qbit(new_qbit)
 
     assert sync.qbit is new_qbit
-    assert ctx.qbit is new_qbit
+    assert ctx.core.qbit is new_qbit
     assert old_qbit.closed is True
 
 

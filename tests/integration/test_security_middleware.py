@@ -15,10 +15,10 @@ def app_with_key():
     """Create a test app with API Key auth enabled."""
     store = None
     app, ctx, qbit = make_test_app(store=store)
-    ctx.api_key = "secret"
+    ctx.runtime.api_key = "secret"
     # Seed a pending item
     asyncio.run(
-        ctx.store.add(
+        ctx.core.store.add(
             MagnetItem(
                 hash="ALPHA1234567890",
                 name="Test.Item.2160p",

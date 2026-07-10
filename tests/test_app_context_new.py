@@ -13,7 +13,7 @@ from magnet_harvester.bus import NullBus
 from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, get_context
 
 
-def test_appcontext_holds_all_deps():
+def test_appcontext_exposes_one_semantic_container_shape():
     store = FakeStore()
     bus = NullBus()
     ctx = AppContext(
@@ -26,8 +26,10 @@ def test_appcontext_holds_all_deps():
             qbit=None,
         ),
     )
-    assert ctx.store is store
-    assert ctx.bus is bus
+    assert ctx.core.store is store
+    assert ctx.core.bus is bus
+    assert not hasattr(ctx, "store")
+    assert not hasattr(ctx, "bus")
 
 
 def test_get_context_from_request():
@@ -92,13 +94,13 @@ def test_runtime_context_replace_qbit_updates_pipeline():
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 
-    assert app_ctx.qbit is new_qbit
+    assert app_ctx.core.qbit is new_qbit
     assert pipeline._qbit is new_qbit
     assert old_qbit.closed is True
 
 
 if __name__ == "__main__":
-    test_appcontext_holds_all_deps()
+    test_appcontext_exposes_one_semantic_container_shape()
     test_get_context_from_request()
     test_runtime_context_replace_qbit_updates_pipeline()
     print("=== app_context tests passed! ===")
