@@ -8,9 +8,9 @@ P1-8: Bus 内存泄漏测试
 """
 
 import asyncio
-from pathlib import Path
 import pytest
 from magnet_harvester.bus import MessageBus, Event, EventType
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 
 @pytest.mark.asyncio
@@ -72,8 +72,25 @@ async def test_emit_many_events_no_leak():
     assert call_count == 50, f"期望 50 次调用，实际 {call_count}"
 
 
-def test_message_bus_uses_bg_task_manager_spawn():
-    """MessageBus fan-out 不应直接裸用 asyncio.create_task。"""
-    source = Path("magnet_harvester/bus.py").read_text(encoding="utf-8")
-    assert "BGTaskManager.spawn" in source
-    assert "asyncio.create_task" not in source
+@pytest.mark.asyncio
+async def test_emit_creates_subscriber_tasks_through_managed_spawn(monkeypatch):
+    original_spawn = BGTaskManager.spawn
+    spawned_names: list[str | None] = []
+
+    def tracking_spawn(coro, *, task_manager=None, name=None):
+        spawned_names.append(name)
+        return original_spawn(coro, task_manager=task_manager, name=name)
+
+    monkeypatch.setattr(BGTaskManager, "spawn", tracking_spawn)
+    bus = MessageBus()
+    completed: list[str] = []
+
+    async def subscriber(_event):
+        completed.append("done")
+
+    bus.subscribe(EventType.STORE_CHANGED, subscriber)
+
+    await bus.emit(Event(EventType.STORE_CHANGED, {}))
+
+    assert spawned_names == ["bus:store_changed"]
+    assert completed == ["done"]

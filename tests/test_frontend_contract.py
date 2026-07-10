@@ -47,5 +47,11 @@ def test_frontend_assets_are_local_and_mobile_navigation_exists():
 
 
 def test_app_mounts_static_assets():
-    source = Path("magnet_harvester/main.py").read_text(encoding="utf-8")
-    assert 'app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")' in source
+    from starlette.routing import Mount
+
+    from magnet_harvester.main import app
+
+    static_mounts = [
+        route for route in app.routes if isinstance(route, Mount) and route.path == "/static"
+    ]
+    assert len(static_mounts) == 1
