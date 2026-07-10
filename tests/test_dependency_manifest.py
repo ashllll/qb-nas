@@ -36,7 +36,8 @@ def test_npm_quality_gate_uses_cross_platform_python_launcher():
     assert package["scripts"]["test"].startswith("node scripts/run-python.cjs ")
     assert package["scripts"]["coverage"].startswith("node scripts/run-python.cjs ")
     assert "--cov" in package["scripts"]["coverage"]
-    assert package["scripts"]["check"] == "npm run lint && npm run coverage"
+    assert package["scripts"]["lock:check"] == "uv lock --check"
+    assert package["scripts"]["check"] == ("npm run lock:check && npm run lint && npm run coverage")
     assert ".venv/bin" not in str(package["scripts"])
 
 
@@ -49,6 +50,23 @@ def test_coverage_gate_is_declared_in_dev_dependencies():
     assert "pytest-cov" in dev_dependencies
     assert pyproject["tool"]["coverage"]["run"]["source"] == ["magnet_harvester"]
     assert pyproject["tool"]["coverage"]["report"]["fail_under"] >= 79
+
+
+def test_uv_lock_tracks_all_declared_dependencies():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    project = next(package for package in lock["package"] if package["name"] == "magnet-harvester")
+    locked_names = {dependency["name"] for dependency in project["metadata"]["requires-dist"]}
+    declared = {
+        _dependency_name(spec)
+        for spec in (
+            pyproject["project"]["dependencies"]
+            + pyproject["project"]["optional-dependencies"]["dev"]
+        )
+    }
+
+    assert project["source"] == {"editable": "."}
+    assert locked_names == declared
 
 
 def test_python_launcher_forwards_child_exit_code():

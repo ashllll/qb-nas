@@ -69,6 +69,7 @@ Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
 ### 前置条件
 
 - Python 3.11+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)（依赖锁定与环境同步）
 - 可访问的 qBittorrent Web UI (v4.1+)
 - Playwright Chromium (`playwright install chromium`)
 
@@ -78,8 +79,8 @@ Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
 git clone https://github.com/ashllll/qb-nas.git
 cd qb-nas
 
-python -m pip install -r requirements.txt
-playwright install chromium
+uv sync --extra dev --locked
+uv run playwright install chromium
 
 cp .env.example .env
 # 编辑 .env 填入 qBittorrent 连接信息
