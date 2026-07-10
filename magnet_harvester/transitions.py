@@ -238,8 +238,14 @@ class DownloadTransitions(_TransitionBase):
             hash_key, status=TaskStatus.error, error_msg=error_msg
         ):
             return
-        await self._emit_item_changed(hash_key)
-        await self._emit_download_result(hash_key, previous_status=previous_status)
+        try:
+            await self._emit_item_changed(hash_key)
+        except Exception:
+            log.exception("download failure STORE_CHANGED 发送失败 hash=%s", hash_key)
+        try:
+            await self._emit_download_result(hash_key, previous_status=previous_status)
+        except Exception:
+            log.exception("download failure DOWNLOAD_RESULT 发送失败 hash=%s", hash_key)
 
     async def removed(self, hash_key: str, previous_status: TaskStatus | None):
         """种子已从 qBittorrent 中消失"""

@@ -28,6 +28,13 @@ class RecordingBus(MessageBus):
         self.events.append(event)
 
 
+class FailOnceBus(RecordingBus):
+    async def emit(self, event):
+        self.events.append(event)
+        if len(self.events) == 1:
+            raise RuntimeError("subscriber delivery failed")
+
+
 def _lifecycle_modules(store, bus):
     return (
         ClassificationTransitions(store=store, bus=bus),
@@ -188,6 +195,24 @@ async def test_completion_callbacks_accept_their_expected_source_state():
     current = store.get("CLASSIFYING")
     assert current.status == TaskStatus.pending
     assert current.category == "电影"
+
+
+async def test_download_failure_keeps_lifecycle_consistent_when_one_event_fails():
+    backend = FakeStore()
+    store = AsyncItemStore(backend)
+    bus = FailOnceBus()
+    downloads = DownloadTransitions(store=store, bus=bus)
+    backend.add(_make_item("FAIL-EVENT", status=TaskStatus.adding))
+
+    await downloads.failed("FAIL-EVENT", "qB unavailable")
+
+    current = backend.get("FAIL-EVENT")
+    assert current.status == TaskStatus.error
+    assert current.error_msg == "qB unavailable"
+    assert [event.type for event in bus.events] == [
+        EventType.STORE_CHANGED,
+        EventType.DOWNLOAD_RESULT,
+    ]
 
 
 if __name__ == "__main__":

@@ -19,7 +19,6 @@ from magnet_harvester.transitions import (
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
-from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 
@@ -322,37 +321,7 @@ class HarvestPipeline:
                 try:
                     await self._downloads.failed(hash_key, str(e))
                 except Exception as inner_e:
-                    log.error(f"download_failed 回调也失败: {inner_e}")
-                    # 兜底：直接通过 store 更新状态，防止条目永久卡在 adding
-                    try:
-                        await self._store.update(
-                            hash_key,
-                            status=TaskStatus.error,
-                            error_msg=str(e),
-                            torrent_state=None,
-                            progress=0.0,
-                        )
-                        # 发射 STORE_CHANGED 确保 UI 刷新
-                        item = await self._store.get(hash_key)
-                        if item is not None:
-                            await self._bus.emit(
-                                Event(EventType.STORE_CHANGED, {"item": item_payload(item)})
-                            )
-                            # 兜底后发射 DOWNLOAD_RESULT，确保 WebSocket/UI 能收到状态变更通知
-                            await self._bus.emit(
-                                Event(
-                                    EventType.DOWNLOAD_RESULT,
-                                    {
-                                        "hash": hash_key,
-                                        "status": item.status.value,
-                                        "error_msg": item.error_msg,
-                                        "progress": item.progress,
-                                        "torrent_state": item.torrent_state,
-                                    },
-                                )
-                            )
-                    except Exception as fallback_e:
-                        log.error(f"兜底 store.update 也失败: {fallback_e}")
+                    log.error("download failure lifecycle 失败 %s: %s", hash_key, inner_e)
 
     async def reclassify(self, hashes: List[str]):
         hashes = list(dict.fromkeys(hashes))
