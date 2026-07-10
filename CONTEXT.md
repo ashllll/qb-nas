@@ -26,13 +26,9 @@ The lifecycle that records classification start, success, failure, and manual ca
 
 The lifecycle that records qBittorrent submission and reconciles later download state changes for a Magnet item.
 
-### RuntimeContext
-
-The module responsible for keeping runtime dependencies aligned when adapters are replaced during application lifetime.
-
 ### QBitRuntime
 
-The module responsible for atomically replacing the active qBittorrent adapter across `AppContext`, `QBitSyncLoop`, and the `HarvestPipeline` download phase.
+The module responsible for validating, persisting, and atomically replacing the active qBittorrent configuration across the application context, download state sync, observability, and the Crawl pipeline.
 
 ### Local classification
 

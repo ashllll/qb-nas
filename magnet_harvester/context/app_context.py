@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from fastapi import Request
 
@@ -145,7 +145,6 @@ class RuntimeState:
     api_key: str = ""
     stats: StatsTracker | None = None
     bg_manager: BackgroundTaskSpawner | None = None
-    qbit_lock: asyncio.Lock | None = None
     error_handler: ErrorHandlerLike | None = None
     qbit_sync: QBitSyncLike | None = None
     qbit_runtime: QBitRuntimeLike | None = None
@@ -164,118 +163,15 @@ class AppContext:
 
 
 @dataclass
-class QBitReplacementTarget:
-    """Narrow seam for hot-swapping the active qBittorrent adapter.
-
-    Does not hold the full AppContext; only the lock, callbacks, and
-    optional dependents needed to coordinate a replacement.
-    """
-
-    get_qbit: Callable[[], QBittorrentClient | None]
-    set_qbit: Callable[[QBittorrentClient | None], None]
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    qbit_sync: QBitSyncLike | None = None
-    pipeline: "HarvestPipeline" | None = None
-    observability: ObservabilityLike | None = None
-
-    @classmethod
-    def from_context(cls, ctx: AppContext) -> "QBitReplacementTarget":
-        return cls(
-            lock=ctx.runtime.qbit_lock or asyncio.Lock(),
-            get_qbit=lambda: ctx.core.qbit,
-            set_qbit=lambda value: setattr(ctx.core, "qbit", value),
-            qbit_sync=ctx.runtime.qbit_sync,
-            pipeline=ctx.core.pipeline,
-            observability=ctx.app_services.observability,
-        )
-
-    async def replace(self, new_qbit: QBittorrentClient) -> None:
-        """Hot-swap the active qBittorrent adapter and update dependents.
-
-        Implements verify-then-commit:
-        1. Verify   — confirm all dependents can accept the new client.
-        2. Commit   — update dependents first, then the primary reference.
-        3. Cleanup  — close old transport with exception isolation.
-        """
-        async with self.lock:
-            old_qbit = self.get_qbit()
-
-            # Phase 1: Verify — if any dependent update ever gains
-            # validation logic (e.g. pre-flight health checks), add it
-            # here so the system stays consistent on failure.
-
-            # Phase 2: Commit — dependents first, then primary reference.
-            # If any dependent fails after an earlier one changed, restore
-            # the old adapter before propagating the failure.
-            try:
-                await asyncio.wait_for(
-                    self._commit(new_qbit),
-                    timeout=30.0,
-                )
-            except asyncio.TimeoutError:
-                await self._rollback(old_qbit)
-                log.error("热替换：commit 阶段超时（30s），中止替换")
-                raise RuntimeError("热替换 qBittorrent 客户端超时") from None
-            except Exception:
-                await self._rollback(old_qbit)
-                raise
-
-            # Phase 3: Cleanup — close old transport without aborting
-            # the replacement.  Never close a client that was just
-            # installed (guard against caller passing ctx.core.qbit as both
-            # old and new).
-            if old_qbit is not None and old_qbit is not new_qbit:
-                try:
-                    await asyncio.wait_for(
-                        old_qbit.close(),
-                        timeout=10.0,
-                    )
-                except asyncio.TimeoutError:
-                    log.error("热替换：关闭旧 qBittorrent 客户端超时")
-                except Exception:
-                    log.exception("热替换：关闭旧 qBittorrent 客户端失败")
-
-    async def _commit(self, new_qbit: QBittorrentClient) -> None:
-        """Phase 2: update dependents then primary reference."""
-        if self.pipeline is not None:
-            self.pipeline.replace_download_phase(new_qbit)
-        if self.qbit_sync is not None:
-            await self.qbit_sync.replace_qbit_client(new_qbit)
-        if self.observability is not None:
-            self.observability.replace_qbit_client(new_qbit)
-        self.set_qbit(new_qbit)
-
-    async def _rollback(self, old_qbit: QBittorrentClient | None) -> None:
-        """Best-effort rollback after a failed replacement commit."""
-        if old_qbit is not None and self.pipeline is not None:
-            try:
-                self.pipeline.replace_download_phase(old_qbit)
-            except Exception:
-                log.exception("热替换：回滚 pipeline qBittorrent 客户端失败")
-        if old_qbit is not None and self.qbit_sync is not None:
-            try:
-                await self.qbit_sync.replace_qbit_client(old_qbit)
-            except Exception:
-                log.exception("热替换：回滚 qB 同步客户端失败")
-        if old_qbit is not None and self.observability is not None:
-            try:
-                self.observability.replace_qbit_client(old_qbit)
-            except Exception:
-                log.exception("热替换：回滚观测 qBittorrent 客户端失败")
-        self.set_qbit(old_qbit)
-
-
-@dataclass
 class QBitRuntime:
     ctx: AppContext
     settings: Settings = field(default_factory=lambda: default_settings)
     client_factory: type[QBittorrentClient] = field(default_factory=lambda: QBittorrentClient)
-    replacement_target: QBitReplacementTarget | None = None
-    config_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    transaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    async def replace_qbit(self, new_qbit):
-        target = self.replacement_target or QBitReplacementTarget.from_context(self.ctx)
-        await target.replace(new_qbit)
+    async def replace_qbit(self, new_qbit: QBittorrentClient) -> None:
+        async with self.transaction_lock:
+            await self._replace_runtime(new_qbit)
 
     async def replace_qbit_config(
         self,
@@ -293,7 +189,7 @@ class QBitRuntime:
             ValueError: if the candidate config is invalid (maps to HTTP 422).
             OSError: if persisting the config fails (maps to HTTP 500).
         """
-        async with self.config_lock:
+        async with self.transaction_lock:
             old_qbit = self.ctx.core.qbit
             old_config = getattr(old_qbit, "config", None)
             candidate = self.settings.build_qbit_config(
@@ -313,7 +209,7 @@ class QBitRuntime:
                 raise
 
             try:
-                await self.replace_qbit(new_qbit)
+                await self._replace_runtime(new_qbit)
                 if self.ctx.core.qbit is not new_qbit:
                     raise RuntimeError("热替换 qBittorrent 客户端失败")
             except Exception as exc:
@@ -331,8 +227,61 @@ class QBitRuntime:
             self.settings.commit_qbit_config(candidate)
             return {"status": "ok", "connected": True}
 
+    async def _replace_runtime(self, new_qbit: QBittorrentClient) -> None:
+        """Align every runtime dependent and commit the primary adapter."""
+        old_qbit = self.ctx.core.qbit
+        try:
+            await asyncio.wait_for(self._commit_runtime(new_qbit), timeout=30.0)
+        except asyncio.TimeoutError:
+            await self._rollback_runtime(old_qbit)
+            raise RuntimeError("热替换 qBittorrent 客户端超时") from None
+        except Exception:
+            await self._rollback_runtime(old_qbit)
+            raise
 
-RuntimeContext = QBitRuntime
+        if old_qbit is not None and old_qbit is not new_qbit:
+            try:
+                await asyncio.wait_for(old_qbit.close(), timeout=10.0)
+            except asyncio.TimeoutError:
+                log.error("关闭旧 qBittorrent 客户端超时")
+            except Exception:
+                log.exception("关闭旧 qBittorrent 客户端失败")
+
+    async def _commit_runtime(self, new_qbit: QBittorrentClient) -> None:
+        pipeline = self.ctx.core.pipeline
+        qbit_sync = self.ctx.runtime.qbit_sync
+        observability = self.ctx.app_services.observability
+        if pipeline is not None:
+            pipeline.replace_download_phase(new_qbit)
+        if qbit_sync is not None:
+            await qbit_sync.replace_qbit_client(new_qbit)
+        if observability is not None:
+            observability.replace_qbit_client(new_qbit)
+        self.ctx.core.qbit = new_qbit
+
+    async def _rollback_runtime(self, old_qbit: QBittorrentClient | None) -> None:
+        """Best-effort restoration after a dependent rejects the candidate."""
+        if old_qbit is None:
+            return
+        pipeline = self.ctx.core.pipeline
+        qbit_sync = self.ctx.runtime.qbit_sync
+        observability = self.ctx.app_services.observability
+        if pipeline is not None:
+            try:
+                pipeline.replace_download_phase(old_qbit)
+            except Exception:
+                log.exception("回滚 pipeline qBittorrent 客户端失败")
+        if qbit_sync is not None:
+            try:
+                await qbit_sync.replace_qbit_client(old_qbit)
+            except Exception:
+                log.exception("回滚 qB 同步客户端失败")
+        if observability is not None:
+            try:
+                observability.replace_qbit_client(old_qbit)
+            except Exception:
+                log.exception("回滚可观测 qBittorrent 客户端失败")
+        self.ctx.core.qbit = old_qbit
 
 
 def get_context(request: Request) -> AppContext:

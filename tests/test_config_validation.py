@@ -1,6 +1,6 @@
 """
 TDD 循环 5: 配置验证与动态更新的原子性
-验证 Settings.update_qbit() 的输入校验和 RuntimeContext.replace_qbit() 的资源清理
+验证 Settings.update_qbit() 的输入校验和 QBitRuntime.replace_qbit() 的资源清理
 """
 
 import sys
@@ -110,13 +110,13 @@ def test_security_posture_allows_explicit_insecure_development_override():
 
 
 # ═══════════════════════════════════════════════════
-# 增量测试 4: RuntimeContext.replace_qbit() 应关闭旧客户端
+# 增量测试 4: QBitRuntime.replace_qbit() 应关闭旧客户端
 # ═══════════════════════════════════════════════════
 
 
 async def test_replace_qbit_closes_old_client():
     """替换 qBittorrent 客户端时，旧客户端应被关闭"""
-    from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, RuntimeState
+    from magnet_harvester.context.app_context import AppContext, CoreServices, QBitRuntime, RuntimeState
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.config import QBitConfig
 
@@ -136,7 +136,7 @@ async def test_replace_qbit_closes_old_client():
         ),
         runtime=RuntimeState(stats=None),
     )
-    runtime = RuntimeContext(ctx)
+    runtime = QBitRuntime(ctx)
 
     # 替换
     await runtime.replace_qbit(new_qbit)
@@ -146,7 +146,7 @@ async def test_replace_qbit_closes_old_client():
 
 
 async def test_replace_qbit_updates_download_state_sync():
-    from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, RuntimeState
+    from magnet_harvester.context.app_context import AppContext, CoreServices, QBitRuntime, RuntimeState
 
     class FakeQbit:
         def __init__(self):
@@ -177,7 +177,7 @@ async def test_replace_qbit_updates_download_state_sync():
         runtime=RuntimeState(qbit_sync=sync),
     )
 
-    await RuntimeContext(ctx).replace_qbit(new_qbit)
+    await QBitRuntime(ctx).replace_qbit(new_qbit)
 
     assert sync.qbit is new_qbit
     assert ctx.core.qbit is new_qbit

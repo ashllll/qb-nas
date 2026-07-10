@@ -6,7 +6,6 @@ can be overridden in tests or extended without touching the full wiring.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -95,7 +94,6 @@ def _build_store():
 
 def _build_core():
     """Fundamental singletons: infrastructure layer components."""
-    qbit_lock = asyncio.Lock()
     site_auth = SiteAuth.from_raw(settings.SITE_COOKIES)
     crawler = MagnetCrawler(config=settings.crawler, site_auth=site_auth)
     qbit = QBittorrentClient(config=settings.qbit)
@@ -103,7 +101,7 @@ def _build_core():
     store = _build_store()
     bus = MessageBus()
     bg_manager = BGTaskManager()
-    return qbit_lock, site_auth, crawler, qbit, classifier, store, bus, bg_manager
+    return site_auth, crawler, qbit, classifier, store, bus, bg_manager
 
 
 def _build_data_layer(store, bus):
@@ -191,7 +189,7 @@ def build_runtime() -> AppRuntime:
 
     Uses modular sub-builders for readability and testability.
     """
-    qbit_lock, site_auth, crawler, qbit, classifier, store, bus, bg_manager = _build_core()
+    site_auth, crawler, qbit, classifier, store, bus, bg_manager = _build_core()
     discovery, classification, downloads, queries = _build_data_layer(store, bus)
     pipeline = _build_pipeline(
         crawler,
@@ -239,14 +237,13 @@ def build_runtime() -> AppRuntime:
             api_key=settings.API_KEY,
             stats=stats,
             bg_manager=bg_manager,
-            qbit_lock=qbit_lock,
             error_handler=error_handler,
             qbit_sync=sync_loop,
         ),
     )
     # QBitRuntime 持有 ctx 回引用，与 AppContext 形成循环引用。
     # 这是已知的刻意设计：QBitRuntime 需要访问 AppContext 的运行时组件
-    # （如 bg_manager、qbit_lock），且两者生命周期一致（应用启动→关闭），
+    # （如 bg_manager），且两者生命周期一致（应用启动→关闭），
     # 由 Python GC 正常回收，无需 weakref 介入。
     ctx.runtime.qbit_runtime = QBitRuntime(
         ctx=ctx,

@@ -16,7 +16,7 @@ from tests._client import asgi_client
 from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem
-from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, get_context
+from magnet_harvester.context.app_context import AppContext, CoreServices, QBitRuntime, get_context
 
 
 def _make_test_context() -> AppContext:
@@ -113,7 +113,7 @@ def test_runtime_context_replaces_qbit_everywhere():
     old_qbit = ctx.core.qbit
     new_qbit = FakeQbit()
     ctx.core.pipeline = FakePipeline()
-    runtime = RuntimeContext(ctx=ctx)
+    runtime = QBitRuntime(ctx=ctx)
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 
@@ -195,7 +195,7 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
         assert ctx.app_services.broadcaster is not None
         assert ctx.runtime.bg_manager is not None
         assert ctx.runtime.stats is not None
-        assert ctx.runtime.qbit_lock is not None
+        assert ctx.runtime.qbit_runtime.transaction_lock is not None
 
 
 @pytest.mark.asyncio
@@ -338,7 +338,7 @@ def test_appcontext_runtime_service_slots_are_not_typed_as_any():
 
     # 运行时状态字段在 RuntimeState 上
     runtime_hints = RuntimeState.__annotations__
-    for field_name in ("stats", "bg_manager", "qbit_lock"):
+    for field_name in ("stats", "bg_manager"):
         assert "Any" not in str(runtime_hints[field_name]), f"RuntimeState.{field_name}"
 
     # 用户面向服务字段在 AppServices 上
