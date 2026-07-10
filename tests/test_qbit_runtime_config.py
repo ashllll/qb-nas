@@ -311,6 +311,58 @@ async def test_replace_qbit_config_rolls_back_dependents_when_runtime_swap_fails
     assert runtime.settings.committed == [old_config]
 
 
+async def test_replace_qbit_config_rolls_back_when_runtime_swap_is_cancelled():
+    created = []
+    old_config = QBitConfig(host="http://old:8080")
+    old_qbit = FakeQbit(old_config)
+    swap_started = asyncio.Event()
+
+    class TrackedQbit(FakeQbit):
+        def __init__(self, config: QBitConfig):
+            super().__init__(config)
+            created.append(self)
+
+    class BlockingSync:
+        def __init__(self):
+            self.qbit = old_qbit
+
+        async def replace_qbit_client(self, new_qbit):
+            if new_qbit is not old_qbit:
+                swap_started.set()
+                await asyncio.Event().wait()
+            self.qbit = new_qbit
+
+    sync = BlockingSync()
+    runtime = _make_runtime(
+        old_qbit=old_qbit,
+        factory=TrackedQbit,
+        qbit_sync=sync,
+    )
+    task = asyncio.create_task(
+        runtime.replace_qbit_config(
+            host="http://new:8080",
+            username="user",
+            password="pass",
+        )
+    )
+    await swap_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert runtime.ctx.core.qbit is old_qbit
+    assert runtime.ctx.core.pipeline.replaced_qbit is old_qbit
+    assert sync.qbit is old_qbit
+    assert old_qbit.closed is False
+    assert created[0].closed is True
+    assert [config.host for config in runtime.settings.persisted] == [
+        "http://new:8080",
+        "http://old:8080",
+    ]
+    assert runtime.settings.committed == [old_config]
+
+
 async def test_replace_qbit_config_serializes_concurrent_replacements():
     class SlowQbit(FakeQbit):
         active_pings = 0

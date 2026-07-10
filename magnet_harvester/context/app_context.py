@@ -198,7 +198,12 @@ class QBitRuntime:
                 password=password,
             )
             new_qbit = self.client_factory(config=candidate)
-            if not await new_qbit.ping():
+            try:
+                connected = await new_qbit.ping()
+            except asyncio.CancelledError:
+                await new_qbit.close()
+                raise
+            if not connected:
                 await new_qbit.close()
                 return {"status": "failed", "connected": False}
 
@@ -212,7 +217,7 @@ class QBitRuntime:
                 await self._replace_runtime(new_qbit)
                 if self.ctx.core.qbit is not new_qbit:
                     raise RuntimeError("热替换 qBittorrent 客户端失败")
-            except Exception as exc:
+            except (Exception, asyncio.CancelledError) as exc:
                 await new_qbit.close()
                 if old_config is not None:
                     try:
@@ -220,7 +225,7 @@ class QBitRuntime:
                         self.settings.commit_qbit_config(old_config)
                     except OSError:
                         log.exception("热替换失败后回滚 qBittorrent 配置持久化失败")
-                if isinstance(exc, RuntimeError):
+                if isinstance(exc, (RuntimeError, asyncio.CancelledError)):
                     raise
                 raise RuntimeError("热替换 qBittorrent 客户端失败") from exc
 
@@ -235,6 +240,9 @@ class QBitRuntime:
         except asyncio.TimeoutError:
             await self._rollback_runtime(old_qbit)
             raise RuntimeError("热替换 qBittorrent 客户端超时") from None
+        except asyncio.CancelledError:
+            await self._rollback_runtime(old_qbit)
+            raise
         except Exception:
             await self._rollback_runtime(old_qbit)
             raise
