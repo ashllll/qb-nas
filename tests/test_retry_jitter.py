@@ -87,7 +87,7 @@ def test_dynamic_page_action_uses_crawler_page_options():
             )
         )
         page = FakePage()
-        await crawler._prepare_dynamic_page(page)
+        await crawler._dynamic_page.prepare(page)
         return page
 
     page = asyncio.run(check())

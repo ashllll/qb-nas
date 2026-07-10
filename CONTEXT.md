@@ -14,6 +14,10 @@ The source of truth for discovered Magnet items, including their lifecycle state
 
 The orchestration that crawls a URL, stores new Magnet items, classifies them, and optionally submits them to qBittorrent.
 
+### DynamicPagePolicy
+
+The browser preparation module that removes blocking overlays, scans the full page, and exposes same-origin iframe and shadow DOM content before Magnet extraction.
+
 ### Discovery lifecycle
 
 The lifecycle that admits newly discovered Magnet items into the collection and removes the collection when the user clears it.
