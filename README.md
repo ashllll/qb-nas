@@ -111,6 +111,8 @@ cp .env.example .env
 | `CRAWLER_MAX_SCROLL_STEPS`    | 最大滚动步数               | `8`                         |
 | `CRAWLER_PROCESS_IFRAMES`     | 合并 iframe 内容           | `true`                      |
 | `CRAWLER_FLATTEN_SHADOW_DOM`  | 展开 Shadow DOM            | `true`                      |
+| `CRAWLER_MAX_RETRIES`         | Scrapling 阻断/网络重试次数 | `1`                         |
+| `CRAWLER_CHECK_ROBOTS_TXT`    | 遵守 robots.txt            | `false`                     |
 | `FS_BASE_PATH`                | 本地可写目录（可选）       | 空                          |
 | `MIN_DISK_SPACE_GB`           | 磁盘告警阈值               | `10.0`                      |
 
@@ -300,7 +302,8 @@ qb-nas/
 │   ├── config.py                   # Pydantic 配置 (Settings)
 │   ├── models.py                   # Pydantic 模型
 │   ├── errors.py                   # 错误处理 (ErrorHandler)
-│   ├── crawler.py                  # Scrapling 爬虫 + Cookie 注入
+│   ├── crawler.py                  # Scrapling 事件适配器
+│   ├── scrapling_spider.py         # Scrapling Spider 调度与浏览器安全策略
 │   ├── magnet_parser.py            # magnet 正则提取
 │   ├── pipeline.py                 # 爬取→分类→下载管道
 │   ├── store.py                    # ItemStore (内存存储)
@@ -348,8 +351,9 @@ qb-nas/
 
 - **分类引擎**：关键词精确匹配 + 通用正则，覆盖电影、电视剧、动漫、音乐、游戏、软件、综艺、纪录片和其他资源类型
 - **前端界面**：`static/` 下的无构建步骤多模块工作台；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
-- **爬虫调度**：Scrapling `AsyncDynamicSession` 抓取页面，项目内受限 BFS 负责详情页发现、去重和深度遍历，结果流式回传到 WebSocket
+- **爬虫调度**：Scrapling `Spider.stream()` 负责请求队列、并发、深度跟进、指纹去重、重试与 robots.txt，结果流式回传到 WebSocket
 - **动态页面抓取**：通过 Scrapling 浏览器会话加载动态页面，再解析页面内容中的磁力链接
+- **浏览器网络防护**：Scrapling `page_setup` 在导航前拦截 HTTP/WebSocket 请求，阻止私网、非全局地址和 Service Worker 绕过
 - **Cookie 注入**：`SITE_COOKIES` JSON 配置 → Scrapling 浏览器会话 cookies，支持多域名
 - **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由
 - **状态同步**：QBitSyncLoop 每 2 秒轮询 `/sync/maindata`，仅终态变化时触发前端通知，避免日志刷屏

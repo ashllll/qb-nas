@@ -1,8 +1,6 @@
 """Concurrent Crawl sessions keep independent mutable state."""
 
 import asyncio
-from types import SimpleNamespace
-
 import pytest
 
 from magnet_harvester.config import CrawlerConfig
@@ -19,24 +17,31 @@ async def no_redirect(_url):
 
 
 class OverlappingCrawler(MagnetCrawler):
-    async def start(self):
-        self._crawler = object()
+    def _build_spider(self, root_url, depth):
+        class FakeSpider:
+            errors = []
 
-    async def _fetch_deep_stream(self, root_url, depth):
-        await asyncio.sleep(0.02 if "first" in root_url else 0.01)
-        count = 1 if "first" in root_url else 2
-        magnets = "\n".join(
-            f"magnet:?xt=urn:btih:{str(i + 1) * 40}&dn=Example.{i}.2160p" for i in range(count)
-        )
-        yield SimpleNamespace(
-            url=root_url,
-            success=True,
-            markdown=magnets,
-            cleaned_html="",
-            html="",
-            links={},
-            metadata={"depth": 0},
-        )
+            def set_error_sink(self, sink):
+                self.error_sink = sink
+
+            async def stream(self):
+                await asyncio.sleep(0.02 if "first" in root_url else 0.01)
+                count = 1 if "first" in root_url else 2
+                magnets = "\n".join(
+                    f"magnet:?xt=urn:btih:{str(i + 1) * 40}&dn=Example.{i}.2160p"
+                    for i in range(count)
+                )
+                yield {
+                    "kind": "page",
+                    "url": root_url,
+                    "success": True,
+                    "markdown": magnets,
+                    "cleaned_html": "",
+                    "html": "",
+                    "error_message": "",
+                }
+
+        return FakeSpider()
 
 
 @pytest.mark.asyncio

@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
 
     disk_info = settings.check_disk_space()
     log.info(
-        f"Scrapling 已启动 | qB: {'在线' if qbit_ok else '离线'} "
+        f"Scrapling Spider 已就绪 | qB: {'在线' if qbit_ok else '离线'} "
         f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
     )
 

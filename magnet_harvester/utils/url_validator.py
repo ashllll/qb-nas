@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import re
 import socket
 from collections.abc import Awaitable, Callable
 from urllib.parse import urljoin, urlparse
@@ -16,29 +15,25 @@ class URLValidationError(ValueError):
     """Raised when a URL fails Crawl target admission."""
 
 
-_INVALID_URL_CHARS_RE = re.compile(r"[@\\]")
 Resolver = Callable[[str, int], Awaitable[list[str]]]
 RedirectProbe = Callable[[str], Awaitable[str | None]]
 
 
-_RFC1918_NETS = (
-    ipaddress.IPv4Network("10.0.0.0/8"),
-    ipaddress.IPv4Network("172.16.0.0/12"),
-    ipaddress.IPv4Network("192.168.0.0/16"),
-    ipaddress.IPv4Network("100.64.0.0/10"),  # RFC 6598 CGNAT
-    ipaddress.IPv6Network("fc00::/7"),
-)
 REDIRECT_PROBE_TIMEOUT_SEC = 2.0
+MAX_CRAWL_URL_LENGTH = 8192
 
 
 def _is_unsafe_address(value: str) -> bool:
     ip = ipaddress.ip_address(value)
-    if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
-        return True
-    for net in _RFC1918_NETS:
-        if ip in net:
-            return True
-    return False
+    mapped_ipv4 = getattr(ip, "ipv4_mapped", None)
+    if mapped_ipv4 is not None:
+        return _is_unsafe_address(str(mapped_ipv4))
+    return (
+        not ip.is_global
+        or ip.is_multicast
+        or ip.is_unspecified
+        or getattr(ip, "is_site_local", False)
+    )
 
 
 def _validate_hostname(hostname: str | None) -> None:
@@ -66,9 +61,23 @@ def validate_crawl_url(url: str) -> bool:
     """Validate the literal URL shape before network resolution."""
     if not url or not url.strip():
         raise URLValidationError("URL is empty")
-    parsed = urlparse(url.strip())
+    candidate = url.strip()
+    if len(candidate) > MAX_CRAWL_URL_LENGTH:
+        raise URLValidationError("URL is too long")
+    if any(ord(char) < 32 or ord(char) == 127 for char in candidate):
+        raise URLValidationError("URL contains control characters")
+    try:
+        parsed = urlparse(candidate)
+    except ValueError as exc:
+        raise URLValidationError("URL is invalid") from exc
     _validate_protocol(parsed)
-    if _INVALID_URL_CHARS_RE.search(url):
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise URLValidationError("URL port is invalid") from exc
+    if port is not None and port < 1:
+        raise URLValidationError("URL port is invalid")
+    if parsed.username is not None or parsed.password is not None or "\\" in parsed.netloc:
         raise URLValidationError("URL contains invalid characters (@ or \\)")
     _validate_hostname(parsed.hostname)
     return True
@@ -144,12 +153,15 @@ class CrawlTargetAdmission:
 
     async def admit_redirect_chain(self, url: str) -> str:
         current = await self.admit(url)
-        for _ in range(self._max_redirects):
+        redirects = 0
+        while True:
             try:
                 target = await self._redirect_probe(current)
-            except httpx.HTTPError:
-                return current
+            except httpx.HTTPError as exc:
+                raise URLValidationError("URL redirect chain cannot be verified") from exc
             if target is None:
                 return current
+            if redirects >= self._max_redirects:
+                raise URLValidationError("URL redirects too many times")
             current = await self.admit(target)
-        raise URLValidationError("URL redirects too many times")
+            redirects += 1

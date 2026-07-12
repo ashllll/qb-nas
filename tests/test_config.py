@@ -7,7 +7,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.config import QBitConfig, Settings
+from magnet_harvester.config import CrawlerConfig, QBitConfig, Settings
 
 
 def test_crawler_allowed_resolutions_parse_csv():
@@ -36,11 +36,28 @@ def test_default_crawler_detail_link_limit_keeps_large_result_sets():
     assert cfg.crawler.max_detail_links == 200
 
 
-def test_default_crawler_word_count_threshold_filters_short_text():
-    cfg = Settings()
+def test_crawler_config_normalizes_unsafe_boundaries():
+    config = CrawlerConfig(
+        timeout=0,
+        max_depth=0,
+        concurrency=0,
+        max_detail_links=-1,
+        delay_before_return_html=-1,
+        scroll_delay=-1,
+        max_scroll_steps=-1,
+        max_retries=-1,
+        wait_until="typo",
+    )
 
-    assert cfg.CRAWLER_WORD_COUNT_THRESHOLD == 10
-    assert cfg.crawler.word_count_threshold == 10
+    assert config.timeout == 1
+    assert config.max_depth == 1
+    assert config.concurrency == 1
+    assert config.max_detail_links == 0
+    assert config.delay_before_return_html == 0
+    assert config.scroll_delay == 0
+    assert config.max_scroll_steps == 0
+    assert config.max_retries == 0
+    assert config.wait_until == "load"
 
 
 def test_persist_qbit_config_updates_env_without_dropping_other_values(tmp_path):

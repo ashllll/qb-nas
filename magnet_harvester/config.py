@@ -26,7 +26,6 @@ class CrawlerConfig:
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
     wait_until: str = "load"
     delay_before_return_html: float = 1.0
-    word_count_threshold: int = 10
     scan_full_page: bool = True
     scroll_delay: float = 0.2
     max_scroll_steps: int = 8
@@ -37,9 +36,18 @@ class CrawlerConfig:
     # — v0.9.0 新增 —
     max_retries: int = 1
     check_robots_txt: bool = False
-    simulate_user: bool = False
-    magics: bool = False
-    url_score_depth_bias: bool = True  # BFS 时优先短路径详情页
+
+    def __post_init__(self) -> None:
+        self.timeout = max(1, int(self.timeout))
+        self.max_depth = max(1, int(self.max_depth))
+        self.concurrency = max(1, int(self.concurrency))
+        self.max_detail_links = max(0, int(self.max_detail_links))
+        self.delay_before_return_html = max(0.0, float(self.delay_before_return_html))
+        self.scroll_delay = max(0.0, float(self.scroll_delay))
+        self.max_scroll_steps = max(0, int(self.max_scroll_steps))
+        self.max_retries = max(0, int(self.max_retries))
+        if self.wait_until not in {"load", "networkidle"}:
+            self.wait_until = "load"
 
 
 @dataclass
@@ -76,7 +84,6 @@ class Settings(BaseSettings):
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
     CRAWLER_WAIT_UNTIL: str = "load"
     CRAWLER_DELAY_BEFORE_HTML: float = 1.0
-    CRAWLER_WORD_COUNT_THRESHOLD: int = 10
     CRAWLER_SCAN_FULL_PAGE: bool = True
     CRAWLER_SCROLL_DELAY: float = 0.2
     CRAWLER_MAX_SCROLL_STEPS: int = 8
@@ -86,9 +93,6 @@ class Settings(BaseSettings):
     CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
     CRAWLER_MAX_RETRIES: int = 1
     CRAWLER_CHECK_ROBOTS_TXT: bool = False
-    CRAWLER_SIMULATE_USER: bool = False
-    CRAWLER_MAGICS: bool = False
-    CRAWLER_URL_SCORE_DEPTH_BIAS: bool = True
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
 
@@ -143,7 +147,6 @@ class Settings(BaseSettings):
                 allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
                 wait_until=self.CRAWLER_WAIT_UNTIL,
                 delay_before_return_html=self.CRAWLER_DELAY_BEFORE_HTML,
-                word_count_threshold=self.CRAWLER_WORD_COUNT_THRESHOLD,
                 scan_full_page=self.CRAWLER_SCAN_FULL_PAGE,
                 scroll_delay=self.CRAWLER_SCROLL_DELAY,
                 max_scroll_steps=self.CRAWLER_MAX_SCROLL_STEPS,
@@ -153,9 +156,6 @@ class Settings(BaseSettings):
                 remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
                 max_retries=self.CRAWLER_MAX_RETRIES,
                 check_robots_txt=self.CRAWLER_CHECK_ROBOTS_TXT,
-                simulate_user=self.CRAWLER_SIMULATE_USER,
-                magics=self.CRAWLER_MAGICS,
-                url_score_depth_bias=self.CRAWLER_URL_SCORE_DEPTH_BIAS,
             )
         return self._crawler_config
 

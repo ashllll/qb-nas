@@ -634,7 +634,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "playwright", specifier = ">=1.40" },
+    { name = "playwright", specifier = ">=1.48" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pyperclip", specifier = ">=1.9" },
@@ -642,7 +642,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
-    { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4.9" },
+    { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4.10,<0.5" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27" },
 ]
 provides-extras = ["dev"]

@@ -1,5 +1,9 @@
 # Magnet Harvester 缺陷扫描报告
 
+> 历史快照：本文记录的是迁移前的扫描结果，其中 crawl4ai、旧 crawler 内部方法和已删除
+> 测试文件的描述不再代表当前实现。当前爬虫架构与验收依据见
+> `docs/specs/scrapling-crawler-migration.md`，爬取调度现由 Scrapling Spider 负责。
+
 > 扫描范围：`magnet_harvester/` 全量 Python 源码 + 配置 + 测试
 > 扫描维度：Bug / 安全 / 性能 / 并发 / 架构 / 测试 / 部署
 > 版本：v3.0.0 | 日期：2026-06-19 | 方法：codebase-memory-mcp 知识图谱查询 + Grep + 人工审查
