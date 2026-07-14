@@ -326,6 +326,14 @@ class HarvestPipeline:
                     await self._downloads.submitted(hash_key)
                 else:
                     await self._downloads.failed(hash_key, self._qbit.last_error or "qB 返回失败")
+            except asyncio.CancelledError:
+                try:
+                    await self._downloads.failed(hash_key, "下载被取消")
+                except Exception as rollback_error:
+                    log.error(
+                        "download cancellation rollback 失败 %s: %s", hash_key, rollback_error
+                    )
+                raise
             except Exception as e:
                 try:
                     await self._downloads.failed(hash_key, str(e))

@@ -94,6 +94,20 @@ class FakeDownloadPhase:
         return True
 
 
+class BlockingDownloadPhase(FakeDownloadPhase):
+    """在提交期间阻塞，用于验证任务取消时的状态回退。"""
+
+    def __init__(self):
+        super().__init__()
+        self.started = asyncio.Event()
+
+    async def add_magnet(self, magnet: str, category: str, save_path: str) -> bool:
+        self.called_with.append((magnet[:20], category, save_path))
+        self.started.set()
+        await asyncio.Event().wait()
+        return True
+
+
 class RecordingBus(MessageBus):
     def __init__(self):
         super().__init__()
@@ -383,6 +397,40 @@ def test_download_skips_items_that_cannot_enter_submitting():
 
     assert download_phase.called_with == []
     assert store.get("DONE").status == TaskStatus.success
+
+
+@pytest.mark.asyncio
+async def test_cancelled_download_rolls_back_adding_item():
+    store = FakeStore()
+    item = MagnetItem(
+        hash="CANCELLED02",
+        name="Cancelled download task",
+        magnet="magnet:?xt=urn:btih:CANCELLED02",
+        category="电影",
+        save_path="/downloads/电影",
+    )
+    store.add(item)
+    download_phase = BlockingDownloadPhase()
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(),
+        classifier=FakeClassifyPhase(),
+        qbit=download_phase,
+        store=AsyncItemStore(store),
+        bus=NullBus(),
+    )
+
+    task = asyncio.create_task(pipeline.download([item.hash]))
+    await download_phase.started.wait()
+    assert store.get(item.hash).status == TaskStatus.adding
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    current = store.get(item.hash)
+    assert current is not None
+    assert current.status == TaskStatus.error
+    assert current.error_msg == "下载被取消"
 
 
 def test_no_new_items_skips_classify():
