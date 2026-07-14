@@ -116,6 +116,47 @@ async def test_relogin_updates_client_cookies_after_403():
 
 
 @pytest.mark.asyncio
+async def test_relogin_replays_request_after_http_retry_budget_is_exhausted():
+    """认证恢复不应被先前的临时 HTTP 错误耗尽重试机会。"""
+    client = FakeAsyncClient()
+    transport = _make_transport(client)
+    responses = iter(
+        [
+            FakeResponse(status_code=500),
+            FakeResponse(status_code=500),
+            FakeResponse(text="Forbidden", status_code=403),
+            FakeResponse(text="Ok.", status_code=200),
+        ]
+    )
+    login_calls = 0
+
+    async def fake_post(url, **kw):
+        nonlocal login_calls
+        login_calls += 1
+        return FakeResponse(
+            text="Ok.",
+            status_code=200,
+            cookies=httpx.Cookies({"SID": f"session-{login_calls}"}),
+        )
+
+    async def fake_request(method, url, **kw):
+        return next(responses)
+
+    client._post = fake_post
+    client._request = fake_request
+    transport._retry_config["base_delay"] = 0
+    transport._retry_config["max_delay"] = 0
+
+    try:
+        response = await transport.request("GET", "/app/version")
+        assert response.status_code == 200
+        assert len(client.request_calls) == 4
+        assert login_calls == 2
+    finally:
+        await transport.close()
+
+
+@pytest.mark.asyncio
 async def test_close_clears_session_cookies():
     """close() must drop both the internal cookie sentinel and the httpx
     client's cookie jar.

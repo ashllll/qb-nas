@@ -185,8 +185,9 @@ class QBitTransport:
         last_exception = None
         auth_retry_count = 0
         max_auth_retries = self._max_auth_retries
+        attempt = 0
 
-        for attempt in range(config["max_retries"]):
+        while attempt < config["max_retries"]:
             try:
                 async with self._auth_lock:
                     needs_auth = not self._authenticated
@@ -216,6 +217,7 @@ class QBitTransport:
                         log.warning(
                             f"qBittorrent 请求失败 ({r.status_code})，{delay:.1f}秒后重试..."
                         )
+                        attempt += 1
                         await asyncio.sleep(delay)
                         continue
                     # 最后一次重试仍失败，跳出由底部统一记录+抛出
@@ -238,6 +240,7 @@ class QBitTransport:
             ) as e:
                 last_exception = e
                 await self._handle_network_retry(attempt, "传输异常", e)
+                attempt += 1
 
             except RuntimeError:
                 raise
