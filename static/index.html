@@ -1530,7 +1530,7 @@
                   id="cfgPass"
                   type="password"
                   autocomplete="current-password"
-                  placeholder="保持现有密码"
+                  placeholder="留空保持已保存密码"
                 />
               </div>
               <button
@@ -1542,7 +1542,9 @@
                 <i data-lucide="plug-zap"></i><span>保存并测试</span>
               </button>
             </div>
-            <div class="connection-result" id="cfgResult">尚未测试连接</div>
+            <div class="connection-result" id="cfgResult">
+              尚未测试连接（密码仅保存在服务端，不会回显）
+            </div>
           </section>
           <section class="section">
             <h2 class="section-heading">访问安全</h2>
@@ -1784,6 +1786,11 @@
       }
 
       async function apiFetch(url, options = {}) {
+        if (window.location.protocol === "file:") {
+          throw new Error(
+            "当前页面是直接打开的本地文件，请通过 Magnet Harvester 服务地址访问"
+          );
+        }
         let response;
         try {
           response = await fetch(url, {
@@ -2028,6 +2035,11 @@
           const data = await apiFetch("/api/config");
           document.getElementById("cfgHost").value = data.qbit_host || "";
           document.getElementById("cfgUser").value = data.qbit_username || "";
+          const passwordInput = document.getElementById("cfgPass");
+          passwordInput.value = "";
+          passwordInput.placeholder = data.qbit_password_configured
+            ? "已保存密码，留空保持不变"
+            : "请输入 qBittorrent 密码";
         } catch (error) {
           setConfigResult(error.message, "error");
         }
@@ -2054,7 +2066,10 @@
             body: JSON.stringify(payload),
           });
           if (!data.connected) throw new Error("无法连接 qBittorrent");
-          setConfigResult("连接成功，配置已生效", "success");
+          setConfigResult(
+            password ? "连接成功，配置已保存" : "连接成功，已保留原密码",
+            "success"
+          );
           toast("qBittorrent 连接成功", "success");
           checkStatus();
         } catch (error) {
@@ -2345,11 +2360,17 @@
           addLog(`下载中 ${Math.round(msg.progress || 0)}% · ${name}`, "found");
         else if (msg.status === "success")
           addLog(`下载完成 · ${name}`, "found");
-        else if (msg.status === "error")
+        else if (msg.status === "error") {
+          const definiteFailure =
+            Boolean(msg.error_msg) ||
+            ["error", "missingFiles"].includes(msg.torrent_state);
           addLog(
-            `下载失败 · ${name}${msg.error_msg ? ` · ${msg.error_msg}` : ""}`,
-            "error"
+            definiteFailure
+              ? `下载失败 · ${name}${msg.error_msg ? ` · ${msg.error_msg}` : ""}`
+              : `qB 状态暂时异常，正在重试 · ${name}`,
+            definiteFailure ? "error" : "warn"
           );
+        }
       }
 
       function setButtonBusy(button, busy, label = "") {
@@ -2385,9 +2406,12 @@
             : "qB 离线";
           document.getElementById("configDot").className =
             `dot ${online ? "online" : "offline"}`;
-        } catch {
+        } catch (error) {
           dot.className = "dot offline";
-          document.getElementById("qbitStatus").textContent = "服务不可达";
+          const directFile = window.location.protocol === "file:";
+          document.getElementById("qbitStatus").textContent = directFile
+            ? "请使用服务地址"
+            : "服务不可达";
           document.getElementById("configDot").className = "dot checking";
         }
       }

@@ -11,8 +11,8 @@ readme = "README.md"
 license = {text = "MIT"}
 
 dependencies = [
-    "scrapling[fetchers]>=0.4.9",
-    "playwright>=1.40",
+    "scrapling[fetchers]>=0.4.11,<0.4.12",
+    "apify-fingerprint-datapoints<0.14",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "httpx>=0.27",

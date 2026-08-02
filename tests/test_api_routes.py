@@ -384,6 +384,8 @@ def test_search_clear_health_categories_and_config_routes():
     assert "电影" in categories.json()["categories"]
     assert config.status_code == 200
     assert "qbit_host" in config.json()
+    assert isinstance(config.json()["qbit_password_configured"], bool)
+    assert "qbit_password" not in config.json()
     assert cleared.status_code == 200
     assert cleared.json()["removed"] == 1
 

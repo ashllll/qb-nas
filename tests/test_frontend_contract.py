@@ -19,6 +19,9 @@ def test_frontend_write_requests_can_send_api_key():
 
 def test_qbit_config_does_not_overwrite_password_with_blank_value():
     assert "if (password) payload.qbit_password = password;" in HTML
+    assert 'placeholder="留空保持已保存密码"' in HTML
+    assert "qbit_password_configured" in HTML
+    assert "密码仅保存在服务端，不会回显" in HTML
 
 
 def test_websocket_init_replaces_stale_client_state():

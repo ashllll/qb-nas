@@ -29,6 +29,17 @@ def test_default_crawler_concurrency_is_tuned_for_detail_pages():
     assert cfg.crawler.concurrency == 6
 
 
+def test_default_crawler_uses_scrapling_speed_optimizations():
+    cfg = Settings()
+
+    assert cfg.CRAWLER_DISABLE_RESOURCES is True
+    assert cfg.CRAWLER_BLOCK_ADS is True
+    assert cfg.CRAWLER_HTTP_FIRST is True
+    assert cfg.crawler.http_first is True
+    assert cfg.crawler.disable_resources is True
+    assert cfg.crawler.block_ads is True
+
+
 def test_default_crawler_detail_link_limit_keeps_large_result_sets():
     cfg = Settings()
 

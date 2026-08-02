@@ -23,6 +23,9 @@ class CrawlerConfig:
     concurrency: int = 6
     max_detail_links: int = 200
     headless: bool = True
+    http_first: bool = True
+    disable_resources: bool = True
+    block_ads: bool = True
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
     wait_until: str = "load"
     delay_before_return_html: float = 1.0
@@ -73,6 +76,9 @@ class Settings(BaseSettings):
     CRAWLER_CONCURRENCY: int = 6
     CRAWLER_MAX_DETAIL_LINKS: int = 200
     CRAWLER_HEADLESS: bool = True
+    CRAWLER_HTTP_FIRST: bool = True
+    CRAWLER_DISABLE_RESOURCES: bool = True
+    CRAWLER_BLOCK_ADS: bool = True
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
     CRAWLER_WAIT_UNTIL: str = "load"
     CRAWLER_DELAY_BEFORE_HTML: float = 1.0
@@ -140,6 +146,9 @@ class Settings(BaseSettings):
                 concurrency=self.CRAWLER_CONCURRENCY,
                 max_detail_links=self.CRAWLER_MAX_DETAIL_LINKS,
                 headless=self.CRAWLER_HEADLESS,
+                http_first=self.CRAWLER_HTTP_FIRST,
+                disable_resources=self.CRAWLER_DISABLE_RESOURCES,
+                block_ads=self.CRAWLER_BLOCK_ADS,
                 allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
                 wait_until=self.CRAWLER_WAIT_UNTIL,
                 delay_before_return_html=self.CRAWLER_DELAY_BEFORE_HTML,

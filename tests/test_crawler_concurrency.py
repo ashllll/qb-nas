@@ -36,6 +36,8 @@ class TestCrawlerConcurrency:
         asyncio.run(crawler.stop())
 
         assert captured["max_pages"] == 6
+        assert captured["disable_resources"] is True
+        assert captured["block_ads"] is True
 
     def test_worker_count_is_capped_for_browser_sessions(self):
         crawler = MagnetCrawler(config=CrawlerConfig(concurrency=50))

@@ -21,7 +21,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1   # Windows
 source .venv/bin/activate       # Linux/macOS
 pip install -r requirements.txt
-playwright install chromium
+scrapling install
 cp .env.example .env            # then edit .env with your qB credentials
 
 # Run

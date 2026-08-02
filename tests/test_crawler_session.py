@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 
 from magnet_harvester.config import CrawlerConfig
-from magnet_harvester.crawler import MagnetCrawler
+from magnet_harvester.crawler import MagnetCrawler, ScraplingPageResult
 
 
 def _get_crawler_source() -> str:
@@ -93,6 +93,82 @@ def test_seen_set_passed_as_parameter():
         "_handle_crawl_result 不应使用 self._global_seen"
     )
     assert "hash_key in seen" in result_source, "_handle_crawl_result 应使用 seen 参数"
+
+
+@pytest.mark.asyncio
+async def test_http_first_returns_static_page_without_dynamic_fallback():
+    class StaticSession:
+        async def get(self, _url, **_kwargs):
+            return type(
+                "Response",
+                (),
+                {
+                    "url": "https://example.com/list",
+                    "status": 200,
+                    "html_content": '<a href="/torrent/123">详情</a>',
+                    "text": "",
+                    "body": b"",
+                    "encoding": "utf-8",
+                },
+            )()
+
+    class DynamicSession:
+        def __init__(self):
+            self.calls = 0
+
+        async def fetch(self, _url, **_kwargs):
+            self.calls += 1
+            raise AssertionError("静态页面已有详情链接，不应动态回退")
+
+    crawler = MagnetCrawler(config=CrawlerConfig(http_first=True))
+    dynamic = DynamicSession()
+    crawler._http_session = StaticSession()
+
+    result = await crawler._fetch_page(dynamic, "https://example.com/list")
+
+    assert result.success is True
+    assert dynamic.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_http_first_falls_back_for_empty_static_shell():
+    class StaticSession:
+        async def get(self, _url, **_kwargs):
+            return type(
+                "Response",
+                (),
+                {
+                    "url": "https://example.com/detail",
+                    "status": 200,
+                    "html_content": "<html><body><div id='app'></div></body></html>",
+                    "text": "",
+                    "body": b"",
+                    "encoding": "utf-8",
+                },
+            )()
+
+    class DynamicSession:
+        async def fetch(self, _url, **_kwargs):
+            return type(
+                "Response",
+                (),
+                {
+                    "url": "https://example.com/detail",
+                    "status": 200,
+                    "html_content": "<html><body>rendered</body></html>",
+                    "text": "",
+                    "body": b"",
+                    "encoding": "utf-8",
+                },
+            )()
+
+    crawler = MagnetCrawler(config=CrawlerConfig(http_first=True))
+    crawler._http_session = StaticSession()
+
+    result = await crawler._fetch_page(DynamicSession(), "https://example.com/detail")
+
+    assert isinstance(result, ScraplingPageResult)
+    assert result.html == "<html><body>rendered</body></html>"
 
 
 @pytest.mark.asyncio

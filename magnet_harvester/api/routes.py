@@ -253,6 +253,8 @@ async def get_config(_=Depends(require_api_key)):
     return {
         "qbit_host": settings.QBIT_HOST,
         "qbit_username": settings.QBIT_USERNAME,
+        # 只返回是否已配置，绝不把密码或密码的明文/掩码返回给浏览器。
+        "qbit_password_configured": bool(settings.QBIT_PASSWORD.strip()),
     }
 
 

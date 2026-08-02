@@ -70,7 +70,7 @@ Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
 
 - Python 3.11+
 - 可访问的 qBittorrent Web UI (v4.1+)
-- Playwright Chromium (`playwright install chromium`)
+- Scrapling 抓取器及浏览器依赖（`scrapling install`）
 
 ### 安装
 
@@ -79,7 +79,7 @@ git clone https://github.com/ashllll/qb-nas.git
 cd qb-nas
 
 python -m pip install -r requirements.txt
-playwright install chromium
+scrapling install
 
 cp .env.example .env
 # 编辑 .env 填入 qBittorrent 连接信息
@@ -159,7 +159,7 @@ cd qb-nas
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-playwright install chromium
+scrapling install
 ```
 
 macOS / Linux 使用 `source .venv/bin/activate`，Windows PowerShell 使用：
@@ -184,7 +184,7 @@ SERVICE_HOST=127.0.0.1
 SERVICE_PORT=8899
 ```
 
-也可以首次启动后在前端保存 qBittorrent 地址、用户名和密码；保存成功会写回 `.env`，服务重启后继续使用同一配置。
+也可以首次启动后在前端保存 qBittorrent 地址、用户名和密码；保存成功会写回本机 `.env`，服务重启后继续使用同一配置。密码不会回传到前端，配置面板只显示“已保存密码”，再次保存时密码留空即可保持不变。`.env` 已被 Git 忽略，提交代码前请确认不要手动强制加入它。
 
 如果要让局域网其他设备访问，不要裸露无认证写接口。设置强随机 `API_KEY`：
 
@@ -261,7 +261,7 @@ cd /opt/qb-nas
 git pull --ff-only
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-playwright install chromium
+scrapling install
 sudo systemctl restart magnet-harvester
 ```
 

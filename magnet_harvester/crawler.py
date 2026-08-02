@@ -23,9 +23,10 @@ from typing import Any, AsyncGenerator, List, Optional, Protocol, Set, runtime_c
 from urllib.parse import urldefrag, urljoin, urlparse
 
 try:
-    from scrapling.fetchers import AsyncDynamicSession
+    from scrapling.fetchers import AsyncDynamicSession, FetcherSession
 except ImportError:  # pragma: no cover - dependency is declared, tests may monkeypatch it
     AsyncDynamicSession = None  # type: ignore[assignment]
+    FetcherSession = None  # type: ignore[assignment]
 
 from magnet_harvester.config import CrawlerConfig, settings
 from magnet_harvester.magnet_sources import (
@@ -129,6 +130,8 @@ class MagnetCrawler:
     ):
         self._config = config if config is not None else settings.crawler
         self._crawler: Optional[Any] = None
+        self._http_session: Optional[Any] = None
+        self._http_session_owner: Optional[Any] = None
         self._session_metrics: ContextVar[CrawlMetrics | None] = ContextVar(
             "crawl_session_metrics",
             default=None,
@@ -161,29 +164,53 @@ class MagnetCrawler:
         return metrics
 
     async def start(self):
-        """启动 Scrapling 引擎"""
+        """启动 Scrapling HTTP 会话和动态浏览器会话。"""
         if AsyncDynamicSession is None:
             raise RuntimeError("Scrapling fetchers are not installed. Install scrapling[fetchers].")
+        if FetcherSession is None:
+            raise RuntimeError("Scrapling HTTP fetcher is not installed.")
         site_cookies = self._site_auth.browser_cookies()
+        http_headers = {}
+        if site_cookies:
+            http_headers["Cookie"] = "; ".join(
+                f"{cookie['name']}={cookie['value']}"
+                for cookie in site_cookies
+                if cookie.get("name") and cookie.get("value")
+            )
+
+        http_session = FetcherSession(
+            impersonate="chrome",
+            timeout=self._config.timeout,
+            retries=max(1, self._config.max_retries + 1),
+            headers=http_headers or None,
+        )
 
         session = AsyncDynamicSession(
             headless=self._config.headless,
             timeout=self._config.timeout * 1000,
             network_idle=self._config.wait_until == "networkidle",
             max_pages=self._worker_count,
+            disable_resources=self._config.disable_resources,
+            block_ads=self._config.block_ads,
             retries=max(1, self._config.max_retries + 1),
             cookies=site_cookies if site_cookies else None,
         )
         try:
+            http_session_owner = http_session
+            if hasattr(http_session, "__aenter__"):
+                http_session = await http_session.__aenter__()
             if hasattr(session, "__aenter__"):
                 await session.__aenter__()
         except BaseException:
             # start() 失败时关闭已创建的 session，防止浏览器进程泄漏
             # BaseException 覆盖 CancelledError（它是 BaseException 而非 Exception 的子类）
+            await self._close_session(http_session_owner)
             await self._close_session(session)
             raise
+        self._http_session = http_session
+        self._http_session_owner = http_session_owner
         self._crawler = session
-        log.info("Scrapling 引擎已启动")
+        log.info("Scrapling HTTP/动态双层抓取会话已启动")
 
     async def stop(self):
         """关闭 Scrapling 引擎"""
@@ -194,6 +221,14 @@ class MagnetCrawler:
                 log.warning(f"关闭 Scrapling 时出错: {e}")
             finally:
                 self._crawler = None
+        if self._http_session_owner:
+            try:
+                await self._close_session(self._http_session_owner)
+            except Exception as e:
+                log.warning(f"关闭 Scrapling HTTP 会话时出错: {e}")
+            finally:
+                self._http_session = None
+                self._http_session_owner = None
         if self._target_admission is not None and hasattr(self._target_admission, "close"):
             try:
                 await self._target_admission.close()
@@ -406,14 +441,46 @@ class MagnetCrawler:
                     pending.append((link, current_depth + 1))
 
     async def _fetch_page(self, session, url: str) -> ScraplingPageResult:
+        static_result: ScraplingPageResult | None = None
+        if self._config.http_first and self._http_session is not None:
+            static_result = await self._fetch_with_session(self._http_session, url)
+            if static_result.success and (
+                self._extract_page_items(static_result, source_url=url)
+                or self._has_detail_links(static_result, url)
+            ):
+                return static_result
+
+        dynamic_result = await self._fetch_with_session(
+            session,
+            url,
+            dynamic=True,
+        )
+        if dynamic_result.success or static_result is None:
+            return dynamic_result
+        return static_result
+
+    async def _fetch_with_session(
+        self,
+        session,
+        url: str,
+        *,
+        dynamic: bool = False,
+    ) -> ScraplingPageResult:
         try:
-            response = await session.fetch(
-                url,
-                timeout=self._config.timeout * 1000,
-                network_idle=self._config.wait_until == "networkidle",
-                wait=int(self._config.delay_before_return_html * 1000),
-                page_action=self._prepare_dynamic_page,
-            )
+            if dynamic:
+                response = await session.fetch(
+                    url,
+                    timeout=self._config.timeout * 1000,
+                    network_idle=self._config.wait_until == "networkidle",
+                    wait=int(self._config.delay_before_return_html * 1000),
+                    page_action=self._prepare_dynamic_page,
+                )
+            else:
+                response = await session.get(
+                    url,
+                    timeout=self._config.timeout,
+                    follow_redirects="all",
+                )
         except Exception as exc:
             return ScraplingPageResult(url=url, success=False, error_message=str(exc))
 
@@ -428,6 +495,16 @@ class MagnetCrawler:
             cleaned_html=html,
             markdown=text,
             error_message="" if 200 <= status < 400 else f"HTTP {status}",
+        )
+
+    def _has_detail_links(self, result: ScraplingPageResult, root_url: str) -> bool:
+        parser = LinkExtractor()
+        parser.feed(result.html or result.cleaned_html or result.markdown)
+        return any(
+            self._is_detail_url(candidate)
+            and self._is_same_site(candidate, root_url)
+            for href in parser.links
+            for candidate in [self._normalise_url(urljoin(result.url, href))]
         )
 
     async def _prepare_dynamic_page(self, page) -> None:
