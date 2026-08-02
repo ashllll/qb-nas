@@ -253,9 +253,9 @@ class TestSQLiteItemStore:
 
     def test_update_preserves_unchanged_fields(self, store, sample_item):
         """Updating one field should not reset other fields."""
-        sample_item.category = "电影"
-        sample_item.save_path = "电影"
-        sample_item.progress = 0.75
+        sample_item = sample_item.model_copy(
+            update={"category": "电影", "save_path": "电影", "progress": 0.75}
+        )
         store.add(sample_item)
 
         store.update("TESTHASH001", progress=0.9)

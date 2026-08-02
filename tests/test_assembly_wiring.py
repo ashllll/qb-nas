@@ -9,7 +9,7 @@ async def test_build_runtime_wires_all_components(monkeypatch):
     from magnet_harvester.config import CrawlerConfig, QBitConfig
 
     class FakeCrawler:
-        def __init__(self, config, site_auth=None, tavily=None):
+        def __init__(self, config, site_auth=None, tavily=None, task_manager=None):
             assert isinstance(config, CrawlerConfig)
             self._config = config
             self.site_auth = site_auth

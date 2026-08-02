@@ -17,7 +17,7 @@ import magnet_harvester.assembly as assembly_module
 class _FakeCrawler:
     """Minimal crawler double — avoids real Scrapling/SQLite init."""
 
-    def __init__(self, config, site_auth=None):
+    def __init__(self, config, site_auth=None, task_manager=None):
         self.max_depth = 3
 
     async def start(self):
@@ -42,7 +42,9 @@ class _FakeQbit:
 
 
 class _FakeSyncLoop:
-    def __init__(self, qbit_client, store, bus, task_manager=None, transitions=None, poll_interval=2.0):
+    def __init__(
+        self, qbit_client, store, bus, task_manager=None, transitions=None, poll_interval=2.0
+    ):
         pass
 
     async def start(self):

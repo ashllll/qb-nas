@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
+from magnet_harvester.models import MagnetItem
 from magnet_harvester.pipeline import PipelineProtocol
 from magnet_harvester.store import ItemStore, call_store
 from magnet_harvester.transitions import MagnetItemTransitions
@@ -75,6 +76,20 @@ class UserActionExecutor:
         hashes = [item.hash for item in pending]
         return await self.download(hashes, task_name="download_batch")
 
+    async def ingest(
+        self,
+        items: list[MagnetItem],
+        *,
+        auto_download: bool = False,
+    ) -> list[str]:
+        """统一摄取来源条目，并通过受管任务调度可选下载。"""
+        if self._pipeline is None:
+            return []
+        classified_hashes = await self._pipeline.ingest(items, auto_download=False)
+        if auto_download and classified_hashes:
+            await self.download(classified_hashes, task_name="clipboard_download")
+        return classified_hashes
+
     async def reclassify(self, hashes: list[str]) -> dict:
         if self._pipeline is None:
             return {"status": "error", "reason": "pipeline unavailable"}
@@ -102,7 +117,11 @@ class UserActionExecutor:
         match = matches[0]
         ok = await self._transitions.manually_classified(match, category)
         if not ok:
-            return {"status": "error", "reason": "条目已被删除", "hash": match}
+            return {
+                "status": "error",
+                "reason": "条目不存在或当前状态不可编辑",
+                "hash": match,
+            }
         return {"status": "ok", "hash": match, "new_category": category}
 
     async def clear_items(self) -> dict:

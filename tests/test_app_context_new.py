@@ -10,7 +10,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
-from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, get_context
+from magnet_harvester.context.app_context import (
+    AppContext,
+    CoreServices,
+    QBitReplacementTarget,
+    RuntimeContext,
+    get_context,
+)
 
 
 def test_appcontext_holds_all_deps():
@@ -88,7 +94,9 @@ def test_runtime_context_replace_qbit_updates_pipeline():
             qbit=old_qbit,
         ),
     )
-    runtime = RuntimeContext(ctx=app_ctx)
+    runtime = RuntimeContext(
+        replacement_target=QBitReplacementTarget.from_context(app_ctx),
+    )
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 

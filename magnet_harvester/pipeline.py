@@ -32,6 +32,9 @@ class PipelineProtocol(Protocol):
     async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
     async def reclassify(self, hashes: list[str]): ...
+    async def ingest(
+        self, items: list[MagnetItem], *, auto_download: bool = False
+    ) -> list[str]: ...
     def max_crawl_depth(self) -> int: ...
 
 
@@ -162,13 +165,7 @@ class HarvestPipeline:
 
             if not new_hashes:
                 return
-
-            items = await asyncio.gather(*(call_store(self._store, "get", h) for h in new_hashes))
-            items = [i for i in items if i is not None]
-            await self._stream_classify(items)
-
-            if auto_download:
-                await self._download_items(new_hashes)
+            await self._finalize_ingestion(new_hashes, auto_download=auto_download)
         except Exception:
             log.exception("execute() 顶层异常 url=%s depth=%d", url, depth)
             await self._bus.emit(
@@ -179,19 +176,55 @@ class HarvestPipeline:
             )
             raise
 
-    async def _stream_classify(self, items: List[MagnetItem]):
-        if not items:
-            return
-        index_to_hash = {i: item.hash for i, item in enumerate(items)}
-        classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
+    async def ingest(
+        self,
+        items: list[MagnetItem],
+        *,
+        auto_download: bool = False,
+    ) -> list[str]:
+        """接收外部来源条目，并统一执行去重、分类和可选下载。"""
+        new_hashes = []
+        for item in items:
+            if await self._transitions.found(item):
+                new_hashes.append(item.hash)
+        return await self._finalize_ingestion(new_hashes, auto_download=auto_download)
 
+    async def _finalize_ingestion(
+        self,
+        hashes: list[str],
+        *,
+        auto_download: bool,
+    ) -> list[str]:
+        if not hashes:
+            return []
+        items = await asyncio.gather(*(call_store(self._store, "get", h) for h in hashes))
+        classified_hashes = await self._stream_classify(
+            [item for item in items if item is not None]
+        )
+        if auto_download:
+            await self._download_items(classified_hashes)
+        return classified_hashes
+
+    async def _stream_classify(self, items: List[MagnetItem]) -> list[str]:
+        if not items:
+            return []
         results = await asyncio.gather(
             *[self._transitions.classification_started(item.hash) for item in items],
             return_exceptions=True,
         )
-        for i, result in enumerate(results):
+        admitted_items: list[MagnetItem] = []
+        for item, result in zip(items, results):
             if isinstance(result, Exception):
-                log.error("classification_started failed for %s: %s", items[i].hash, result)
+                log.error("classification_started failed for %s: %s", item.hash, result)
+            elif result is True:
+                admitted_items.append(item)
+
+        if not admitted_items:
+            return []
+
+        items = admitted_items
+        index_to_hash = {i: item.hash for i, item in enumerate(items)}
+        classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
         result_events: dict[int, asyncio.Task] = {}
@@ -232,6 +265,17 @@ class HarvestPipeline:
                     if h:
                         await self._transitions.classification_failed(h, str(result))
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
+        current_items = await asyncio.gather(
+            *(call_store(self._store, "get", item.hash) for item in items)
+        )
+        return [
+            item.hash
+            for item in current_items
+            if item is not None
+            and item.status == TaskStatus.pending
+            and item.category
+            and item.error_msg is None
+        ]
 
     async def _rollback_unclassified(
         self,
@@ -292,18 +336,20 @@ class HarvestPipeline:
                     await self._transitions.download_failed(h, "下载超时")
 
     async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
-        item = await call_store(self._store, "get", hash_key)
-        if not item:
-            return
-        if not item.category:
-            log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
-            await self._transitions.download_failed(hash_key, "分类结果缺少 category")
-            return
         async with semaphore:
             try:
-                if not await self._transitions.download_submitting(hash_key):
+                admitted_item = await self._transitions.download_submitting(hash_key)
+                if admitted_item is None:
                     return
-                ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
+                if not admitted_item.category:
+                    log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
+                    await self._transitions.download_failed(hash_key, "分类结果缺少 category")
+                    return
+                ok = await self._qbit.add_magnet(
+                    admitted_item.magnet,
+                    admitted_item.category or "其他",
+                    admitted_item.save_path or "",
+                )
                 if ok:
                     await self._transitions.download_submitted(hash_key)
                 else:

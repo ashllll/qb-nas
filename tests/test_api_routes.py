@@ -14,7 +14,14 @@ from tests._client import asgi_client
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
 from magnet_harvester.config import QBitConfig
-from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState, QBitRuntime
+from magnet_harvester.context.app_context import (
+    AppContext,
+    AppServices,
+    CoreServices,
+    QBitReplacementTarget,
+    QBitRuntime,
+    RuntimeState,
+)
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
@@ -229,7 +236,7 @@ def _make_app():
         ),
     )
     ctx.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+        replacement_target=QBitReplacementTarget.from_context(ctx),
         settings=RuntimeSettings(),
         client_factory=RuntimeQbit,
     )
@@ -433,7 +440,7 @@ def test_update_config_replaces_qbit_client():
 
     app, ctx = _make_app()
     ctx.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+        replacement_target=QBitReplacementTarget.from_context(ctx),
         settings=CapturingSettings(),
         client_factory=NewQbit,
     )
@@ -500,7 +507,7 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
 
     app, ctx = _make_app()
     ctx.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+        replacement_target=QBitReplacementTarget.from_context(ctx),
         settings=CapturingSettings(),
         client_factory=OfflineQbit,
     )
@@ -545,7 +552,7 @@ def test_update_config_returns_500_when_persist_fails():
 
     app, ctx = _make_app()
     ctx.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+        replacement_target=QBitReplacementTarget.from_context(ctx),
         settings=FailingSettings(),
         client_factory=NewQbit,
     )

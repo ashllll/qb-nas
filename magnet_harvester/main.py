@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     # qBittorrent 连接检查（可降级：离线时服务仍可运行）
     qbit_ok = False
     try:
-        qbit_ok = await runtime.ctx.qbit.ping()
+        qbit_ok = await runtime.ctx.core.qbit.ping()
     except Exception:
         log.warning("qBittorrent 连接检查失败，继续以降级模式运行")
 

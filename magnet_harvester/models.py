@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from magnet_harvester.utils.url_validator import URLValidationError, validate_crawl_url
 
@@ -22,6 +22,8 @@ class TaskStatus(str, Enum):
 
 
 class MagnetItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     hash: str
     name: str
     magnet: str
@@ -76,6 +78,7 @@ class QBitConfigUpdate(BaseModel):
 
     所有字段可选：仅更新显式传入的字段。
     """
+
     qbit_host: Optional[str] = None
     qbit_username: Optional[str] = None
     qbit_password: Optional[str] = None

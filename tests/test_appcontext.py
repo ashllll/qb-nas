@@ -16,7 +16,7 @@ from tests._client import asgi_client
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem
-from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeContext, get_context
+from magnet_harvester.context.app_context import AppContext, CoreServices, QBitReplacementTarget, RuntimeContext, get_context
 
 
 def _make_test_context() -> AppContext:
@@ -111,7 +111,7 @@ def test_runtime_context_replaces_qbit_everywhere():
     old_qbit = ctx.qbit
     new_qbit = FakeQbit()
     ctx.pipeline = FakePipeline()
-    runtime = RuntimeContext(ctx=ctx)
+    runtime = RuntimeContext(replacement_target=QBitReplacementTarget.from_context(ctx))
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 
@@ -126,7 +126,7 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
     import magnet_harvester.assembly as assembly_module
 
     class FakeCrawler:
-        def __init__(self, config, site_auth=None):
+        def __init__(self, config, site_auth=None, task_manager=None):
             self.started = False
             self.stopped = False
             self.max_depth = 3
@@ -204,7 +204,7 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
     created = {}
 
     class FakeCrawler:
-        def __init__(self, config, site_auth=None):
+        def __init__(self, config, site_auth=None, task_manager=None):
             self.started = False
             self.stopped = False
             self.max_depth = 3

@@ -83,6 +83,10 @@ class BrowserCookieProvider(Protocol):
     def browser_cookies(self) -> list[dict]: ...
 
 
+class CrawlTaskSpawner(Protocol):
+    def create(self, coro, name: str | None = None) -> asyncio.Task: ...
+
+
 @dataclass
 class ScraplingPageResult:
     url: str
@@ -121,6 +125,7 @@ class MagnetCrawler:
         config: CrawlerConfig = None,
         target_admission: CrawlTargetAdmission | None = None,
         site_auth: BrowserCookieProvider | None = None,
+        task_manager: CrawlTaskSpawner | None = None,
     ):
         self._config = config if config is not None else settings.crawler
         self._crawler: Optional[Any] = None
@@ -132,6 +137,7 @@ class MagnetCrawler:
         self._start_lock = asyncio.Lock()
         self._target_admission = target_admission or CrawlTargetAdmission()
         self._site_auth = site_auth or SiteAuth.from_raw(settings.SITE_COOKIES)
+        self._task_manager = task_manager
         self._magnet_sources = MagnetSourceExtractor(
             allowed_resolutions=self._config.allowed_resolutions
         )
@@ -233,6 +239,7 @@ class MagnetCrawler:
                 seen=seen,
                 depth=effective_depth,
             ),
+            task_manager=self._task_manager,
             name="crawl-session",
         )
 

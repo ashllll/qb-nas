@@ -31,31 +31,31 @@ router = APIRouter()
 
 
 def _actions(ctx: AppContext) -> UserActionExecutorLike:
-    if ctx.action_executor is None:
+    if ctx.app_services.action_executor is None:
         raise HTTPException(status_code=500, detail="Action executor not configured")
-    return ctx.action_executor
+    return ctx.app_services.action_executor
 
 
 def _qbit_runtime(ctx: AppContext) -> QBitRuntimeLike:
-    if ctx.qbit_runtime is None:
+    if ctx.runtime.qbit_runtime is None:
         raise HTTPException(status_code=500, detail="qBittorrent runtime not configured")
-    return ctx.qbit_runtime
+    return ctx.runtime.qbit_runtime
 
 
 def _observability(ctx: AppContext) -> ObservabilityLike:
-    if ctx.observability is None:
+    if ctx.app_services.observability is None:
         raise HTTPException(status_code=500, detail="Observability snapshot not configured")
-    return ctx.observability
+    return ctx.app_services.observability
 
 
 def _item_queries(ctx: AppContext) -> ItemQueryLike:
-    if ctx.item_queries is None:
+    if ctx.app_services.item_queries is None:
         raise HTTPException(status_code=500, detail="Item queries not configured")
-    return ctx.item_queries
+    return ctx.app_services.item_queries
 
 
 def _task_snapshot(ctx: AppContext, task_id: str) -> dict:
-    task_manager = ctx.bg_manager
+    task_manager = ctx.runtime.bg_manager
     get_task = getattr(task_manager, "get_task", None)
     if not callable(get_task):
         raise HTTPException(status_code=500, detail="Background task manager not configured")
@@ -66,7 +66,7 @@ def _task_snapshot(ctx: AppContext, task_id: str) -> dict:
 
 
 def _classifier_reload(ctx: AppContext) -> dict:
-    reload_rules = getattr(ctx.classifier, "reload_rules", None)
+    reload_rules = getattr(ctx.core.classifier, "reload_rules", None)
     if reload_rules is None:
         raise HTTPException(status_code=500, detail="Classifier reload not configured")
     return reload_rules()
@@ -113,8 +113,8 @@ async def get_items(
         limit=limit,
         offset=offset,
     )
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
+    if ctx.runtime.stats is not None:
+        ctx.runtime.stats.record_api_call()
     return result
 
 
@@ -125,8 +125,8 @@ async def search_items(
     ctx: AppContext = Depends(get_context),
 ):
     result = await _item_queries(ctx).search_items(query=q, limit=limit)
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
+    if ctx.runtime.stats is not None:
+        ctx.runtime.stats.record_api_call()
     return result
 
 
@@ -227,19 +227,19 @@ async def get_errors(
         sev = ErrorSeverity(severity) if severity else None
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid error severity: {severity}")
-    eh = ctx.error_handler
+    eh = ctx.runtime.error_handler
     if eh is None:
         return {"errors": [], "stats": {}}
     errors = eh.get_recent_errors(cat, sev, limit)
-    if ctx.stats is not None:
-        ctx.stats.record_api_call()
+    if ctx.runtime.stats is not None:
+        ctx.runtime.stats.record_api_call()
     return {"errors": [e.to_dict() for e in errors], "stats": eh.get_error_stats()}
 
 
 @router.post("/api/errors/clear")
 async def clear_resolved_errors(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    if ctx.error_handler is not None:
-        ctx.error_handler.clear_all()
+    if ctx.runtime.error_handler is not None:
+        ctx.runtime.error_handler.clear_all()
     return {"status": "cleared", "message": "已清除所有错误"}
 
 
@@ -295,7 +295,7 @@ async def get_categories():
 
 @router.get("/api/clipboard")
 async def clipboard_status(ctx: AppContext = Depends(get_context)):
-    monitor = ctx.clipboard_monitor
+    monitor = ctx.app_services.clipboard_monitor
     if monitor is None:
         return {"running": False, "magnet_count": 0}
     return {"running": monitor.is_running, "magnet_count": monitor.magnet_count}
@@ -303,7 +303,7 @@ async def clipboard_status(ctx: AppContext = Depends(get_context)):
 
 @router.post("/api/clipboard/start")
 async def clipboard_start(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    monitor = ctx.clipboard_monitor
+    monitor = ctx.app_services.clipboard_monitor
     if monitor is None:
         raise HTTPException(status_code=501, detail="Clipboard monitor not available")
     try:
@@ -316,7 +316,7 @@ async def clipboard_start(ctx: AppContext = Depends(get_context), _=Depends(requ
 
 @router.post("/api/clipboard/stop")
 async def clipboard_stop(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    monitor = ctx.clipboard_monitor
+    monitor = ctx.app_services.clipboard_monitor
     if monitor is None:
         raise HTTPException(status_code=501, detail="Clipboard monitor not available")
     try:

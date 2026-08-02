@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Protocol
 
 from magnet_harvester.api.websocket import WSBroadcaster
 from magnet_harvester.bus import MessageBus
@@ -18,6 +19,7 @@ from magnet_harvester.context.app_context import (
     AppContext,
     AppServices,
     CoreServices,
+    QBitReplacementTarget,
     QBitRuntime,
     RuntimeState,
 )
@@ -39,15 +41,36 @@ from magnet_harvester.utils.bg_tasks import BGTaskManager
 log = logging.getLogger(__name__)
 
 
+class RuntimeSyncLoop(Protocol):
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+
+
+class RuntimeCrawler(Protocol):
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+
+
+class RuntimeQbit(Protocol):
+    async def close(self) -> None: ...
+
+
+class RuntimeTasks(Protocol):
+    async def shutdown(self) -> None: ...
+
+
 @dataclass
 class AppRuntime:
     ctx: AppContext
-    sync_loop: QBitSyncLoop
+    sync_loop: RuntimeSyncLoop
+    crawler: RuntimeCrawler
+    qbit: RuntimeQbit
+    task_manager: RuntimeTasks
 
     async def start(self):
         # 爬虫和同步循环独立启动，互不阻塞
         try:
-            await self.ctx.crawler.start()
+            await self.crawler.start()
         except Exception as e:
             log.error("crawler 启动失败（降级模式，爬取功能不可用）: %s", e)
         await self.sync_loop.start()
@@ -58,19 +81,18 @@ class AppRuntime:
         except Exception as e:
             log.error("sync_loop 关闭失败: %s", e)
 
-        if self.ctx.bg_manager is not None:
-            try:
-                await self.ctx.bg_manager.shutdown()
-            except Exception as e:
-                log.error("bg_manager 关闭失败: %s", e)
+        try:
+            await self.task_manager.shutdown()
+        except Exception as e:
+            log.error("bg_manager 关闭失败: %s", e)
 
         try:
-            await self.ctx.crawler.stop()
+            await self.crawler.stop()
         except Exception as e:
             log.error("crawler 关闭失败: %s", e)
 
         try:
-            await self.ctx.qbit.close()
+            await self.qbit.close()
         except Exception as e:
             log.error("qbit 关闭失败: %s", e)
 
@@ -92,13 +114,17 @@ def _build_store():
 def _build_core():
     """Fundamental singletons: infrastructure layer components."""
     qbit_lock = asyncio.Lock()
+    bg_manager = BGTaskManager()
     site_auth = SiteAuth.from_raw(settings.SITE_COOKIES)
-    crawler = MagnetCrawler(config=settings.crawler, site_auth=site_auth)
+    crawler = MagnetCrawler(
+        config=settings.crawler,
+        site_auth=site_auth,
+        task_manager=bg_manager,
+    )
     qbit = QBittorrentClient(config=settings.qbit)
     classifier = LocalClassifier()
     store = _build_store()
     bus = MessageBus()
-    bg_manager = BGTaskManager()
     return qbit_lock, site_auth, crawler, qbit, classifier, store, bus, bg_manager
 
 
@@ -151,11 +177,7 @@ def _build_services(store, bus, pipeline, qbit, classifier, bg_manager, transiti
     )
     clipboard_monitor = ClipboardMonitor(
         bus=bus,
-        store=store,
-        classifier=classifier,
-        pipeline=pipeline,
-        action_executor=action_executor,
-        transitions=transitions,
+        ingestion=action_executor,
         task_manager=bg_manager,
     )
     return observability, action_executor, sync_loop, clipboard_monitor, broadcaster
@@ -185,15 +207,16 @@ def build_runtime() -> AppRuntime:
         stats=stats,
     )
 
+    core = CoreServices(
+        store=store,
+        bus=bus,
+        pipeline=pipeline,
+        crawler=crawler,
+        classifier=classifier,
+        qbit=qbit,
+    )
     ctx = AppContext(
-        core=CoreServices(
-            store=store,
-            bus=bus,
-            pipeline=pipeline,
-            crawler=crawler,
-            classifier=classifier,
-            qbit=qbit,
-        ),
+        core=core,
         app_services=AppServices(
             action_executor=action_executor,
             observability=observability,
@@ -211,13 +234,23 @@ def build_runtime() -> AppRuntime:
             qbit_sync=sync_loop,
         ),
     )
-    # QBitRuntime 持有 ctx 回引用，与 AppContext 形成循环引用。
-    # 这是已知的刻意设计：QBitRuntime 需要访问 AppContext 的运行时组件
-    # （如 bg_manager、qbit_lock），且两者生命周期一致（应用启动→关闭），
-    # 由 Python GC 正常回收，无需 weakref 介入。
-    ctx.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+    replacement_target = QBitReplacementTarget(
+        get_qbit=lambda: core.qbit,
+        set_qbit=lambda value: setattr(core, "qbit", value),
+        lock=qbit_lock,
+        qbit_sync=sync_loop,
+        pipeline=pipeline,
+        observability=observability,
+    )
+    ctx.runtime.qbit_runtime = QBitRuntime(
+        replacement_target=replacement_target,
         settings=settings,
         client_factory=QBittorrentClient,
     )
-    return AppRuntime(ctx=ctx, sync_loop=sync_loop)
+    return AppRuntime(
+        ctx=ctx,
+        sync_loop=sync_loop,
+        crawler=crawler,
+        qbit=qbit,
+        task_manager=bg_manager,
+    )

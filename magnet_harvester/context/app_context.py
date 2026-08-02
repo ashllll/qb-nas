@@ -15,6 +15,7 @@ from magnet_harvester.config import Settings, settings as default_settings
 from magnet_harvester.qbit_client import QBittorrentClient
 
 if TYPE_CHECKING:
+    from magnet_harvester.models import MagnetItem
     from magnet_harvester.store import ItemStore
     from magnet_harvester.bus import MessageBus
     from magnet_harvester.pipeline import HarvestPipeline
@@ -46,6 +47,12 @@ class BroadcasterLike(Protocol):
 
 
 class UserActionExecutorLike(Protocol):
+    async def ingest(
+        self,
+        items: list[MagnetItem],
+        *,
+        auto_download: bool = False,
+    ) -> list[str]: ...
     async def start_crawl(
         self, url: str, *, depth: int = 1, auto_download: bool = False
     ) -> dict: ...
@@ -298,12 +305,12 @@ class QBitReplacementTarget:
     @classmethod
     def from_context(cls, ctx: AppContext) -> "QBitReplacementTarget":
         return cls(
-            lock=ctx.qbit_lock or asyncio.Lock(),
-            get_qbit=lambda: ctx.qbit,
-            set_qbit=lambda value: setattr(ctx, "qbit", value),
-            qbit_sync=ctx.qbit_sync,
-            pipeline=ctx.pipeline,
-            observability=ctx.observability,
+            lock=ctx.runtime.qbit_lock or asyncio.Lock(),
+            get_qbit=lambda: ctx.core.qbit,
+            set_qbit=lambda value: setattr(ctx.core, "qbit", value),
+            qbit_sync=ctx.runtime.qbit_sync,
+            pipeline=ctx.core.pipeline,
+            observability=ctx.app_services.observability,
         )
 
     async def replace(self, new_qbit: QBittorrentClient) -> None:
@@ -384,15 +391,13 @@ class QBitReplacementTarget:
 
 @dataclass
 class QBitRuntime:
-    ctx: AppContext
+    replacement_target: QBitReplacementTarget
     settings: Settings = field(default_factory=lambda: default_settings)
     client_factory: type[QBittorrentClient] = field(default_factory=lambda: QBittorrentClient)
-    replacement_target: QBitReplacementTarget | None = None
     config_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def replace_qbit(self, new_qbit):
-        target = self.replacement_target or QBitReplacementTarget.from_context(self.ctx)
-        await target.replace(new_qbit)
+        await self.replacement_target.replace(new_qbit)
 
     async def replace_qbit_config(
         self,
@@ -411,7 +416,7 @@ class QBitRuntime:
             OSError: if persisting the config fails (maps to HTTP 500).
         """
         async with self.config_lock:
-            old_qbit = self.ctx.qbit
+            old_qbit = self.replacement_target.get_qbit()
             old_config = getattr(old_qbit, "config", None)
             candidate = self.settings.build_qbit_config(
                 host=host,
@@ -431,7 +436,7 @@ class QBitRuntime:
 
             try:
                 await self.replace_qbit(new_qbit)
-                if self.ctx.qbit is not new_qbit:
+                if self.replacement_target.get_qbit() is not new_qbit:
                     raise RuntimeError("热替换 qBittorrent 客户端失败")
             except Exception as exc:
                 await new_qbit.close()

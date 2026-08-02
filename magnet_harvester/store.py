@@ -39,6 +39,19 @@ def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _validated_update(item: MagnetItem, fields: dict) -> MagnetItem | None:
+    """构造经过 Pydantic 校验的新条目，不修改原对象。"""
+    if "hash" in fields or any(key not in MagnetItem.model_fields for key in fields):
+        return None
+    data = item.model_dump()
+    data.update(fields)
+    data["updated_at"] = datetime.now()
+    try:
+        return MagnetItem.model_validate(data)
+    except ValidationError:
+        return None
+
+
 @dataclass
 class StoreStats:
     total: int = 0
@@ -62,6 +75,12 @@ class ItemStore(Protocol):
     def add(self, item: MagnetItem) -> bool: ...
     def get(self, hash_key: str) -> Optional[MagnetItem]: ...
     def update(self, hash_key: str, **fields) -> bool: ...
+    def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool: ...
     def remove(self, hash_key: str) -> bool: ...
     def list(
         self,
@@ -144,17 +163,29 @@ class InMemoryItemStore:
             if not item:
                 return False
 
-            # 拒绝未知字段
-            unknown = [k for k in fields if k not in MagnetItem.model_fields]
-            if unknown:
+            new_item = _validated_update(item, fields)
+            if new_item is None:
                 return False
 
-            data = item.model_dump()
-            data.update(fields)
-            data["updated_at"] = datetime.now()
-            try:
-                new_item = MagnetItem.model_validate(data)
-            except ValidationError:
+            self._items[hash_key] = new_item
+            return True
+
+    def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool:
+        """仅当当前状态匹配时更新；状态比较与写入共享同一把锁。"""
+        if not expected_statuses:
+            return False
+        with self._lock:
+            item = self._items.get(hash_key)
+            if item is None or item.status not in expected_statuses:
+                return False
+
+            new_item = _validated_update(item, fields)
+            if new_item is None:
                 return False
 
             self._items[hash_key] = new_item
@@ -394,6 +425,44 @@ class SQLiteItemStore:
             log.error("sqlite 行反序列化失败 hash=%s: %s", hash_val, e)
             return None
 
+    @classmethod
+    def _write_updated_fields(
+        cls,
+        db: sqlite3.Connection,
+        current_hash: str,
+        item: MagnetItem,
+        fields: dict,
+        expected_statuses: set[TaskStatus] | None = None,
+    ) -> bool:
+        serialized = cls._item_to_row(item)
+        params: dict[str, object] = {"current_hash": current_hash}
+        assignments: list[str] = []
+        for column in dict.fromkeys([*fields, "updated_at"]):
+            parameter = f"value_{column}"
+            assignments.append(f"{column} = :{parameter}")
+            params[parameter] = serialized[column]
+
+        status_guard = ""
+        if expected_statuses is not None:
+            if not expected_statuses:
+                return False
+            names = []
+            for index, status in enumerate(
+                sorted(expected_statuses, key=lambda value: value.value)
+            ):
+                name = f"expected_status_{index}"
+                names.append(f":{name}")
+                params[name] = status.value
+            status_guard = f" AND status IN ({', '.join(names)})"
+
+        cursor = db.execute(
+            f"UPDATE magnet_items SET {', '.join(assignments)} "
+            f"WHERE hash = :current_hash{status_guard}",
+            params,
+        )
+        db.commit()
+        return cursor.rowcount > 0
+
     # ── 核心操作 ──────────────────────────────
 
     def add(self, item: MagnetItem) -> bool:
@@ -429,7 +498,7 @@ class SQLiteItemStore:
             return False
 
         with self._lock, self._connect() as db:
-            # Read + validate + write in a single lock scope (avoids TOCTOU)
+            # 读取用于模型校验；SQL 仅写入请求字段，避免覆盖其他连接的无关修改。
             cursor = db.execute("SELECT * FROM magnet_items WHERE hash = ?", (hash_key,))
             row = cursor.fetchone()
             if row is None:
@@ -438,26 +507,43 @@ class SQLiteItemStore:
             if item is None:
                 return False
 
-            try:
-                data = item.model_dump()
-                data.update(fields)
-                data["updated_at"] = datetime.now()
-                new_item = MagnetItem.model_validate(data)
-            except ValidationError:
+            new_item = _validated_update(item, fields)
+            if new_item is None:
+                return False
+            return self._write_updated_fields(db, hash_key, new_item, fields)
+
+    def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool:
+        """仅当当前状态匹配时更新；SQL 条件保证比较与写入原子化。"""
+        if not expected_statuses:
+            return False
+        unknown = [key for key in fields if key not in MagnetItem.model_fields]
+        if unknown:
+            return False
+
+        with self._lock, self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM magnet_items WHERE hash = ?",
+                (hash_key,),
+            ).fetchone()
+            item = self._row_to_item(row)
+            if item is None or item.status not in expected_statuses:
                 return False
 
-            row_data = self._item_to_row(new_item)
-            cursor = db.execute(
-                """UPDATE magnet_items SET
-                   name=:name, magnet=:magnet, size=:size, source_url=:source_url,
-                   category=:category, save_path=:save_path, status=:status,
-                   progress=:progress, torrent_state=:torrent_state, error_msg=:error_msg,
-                   created_at=:created_at, updated_at=:updated_at
-                WHERE hash = :hash""",
-                row_data,
+            new_item = _validated_update(item, fields)
+            if new_item is None:
+                return False
+            return self._write_updated_fields(
+                db,
+                hash_key,
+                new_item,
+                fields,
+                expected_statuses,
             )
-            db.commit()
-            return cursor.rowcount > 0
 
     def remove(self, hash_key: str) -> bool:
         with self._lock, self._connect() as db:

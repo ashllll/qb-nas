@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import FakeStore
 from magnet_harvester.bus import NullBus, Event, EventType, MessageBus
+from magnet_harvester.transitions import MagnetItemTransitions
 
 
 # ── Phase Protocols（从 pipeline.py 导入） ──
@@ -392,6 +393,44 @@ def test_download_skips_items_that_cannot_enter_submitting():
     assert store.get("DONE").status == TaskStatus.success
 
 
+@pytest.mark.asyncio
+async def test_download_uses_item_snapshot_returned_by_admission():
+    """并发元数据更新先于下载准入时，qB 必须收到准入后的快照。"""
+
+    class UpdatingAdmission(MagnetItemTransitions):
+        async def download_submitting(self, hash_key: str):
+            self._store.update(
+                hash_key,
+                magnet="magnet:?xt=urn:btih:CURRENT",
+                category="电视剧",
+                save_path="/downloads/current",
+            )
+            return await super().download_submitting(hash_key)
+
+    store = FakeStore()
+    bus = NullBus()
+    store.add(
+        MagnetItem(
+            hash="SNAPSHOT",
+            name="Snapshot",
+            magnet="magnet:?xt=urn:btih:STALE",
+        )
+    )
+    download_phase = FakeDownloadPhase()
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(),
+        classifier=FakeClassifyPhase(),
+        qbit=download_phase,
+        store=store,
+        bus=bus,
+        transitions=UpdatingAdmission(store=store, bus=bus),
+    )
+
+    await pipeline.download(["SNAPSHOT"])
+
+    assert download_phase.called_with == [("magnet:?xt=urn:btih:", "电视剧", "/downloads/current")]
+
+
 def test_no_new_items_skips_classify():
     """没有新磁力链接时跳过分类和下载"""
     store = FakeStore()
@@ -417,11 +456,39 @@ def test_no_new_items_skips_classify():
     assert len(download_phase.called_with) == 0, "无新条目时不应下载"
 
 
+@pytest.mark.asyncio
+async def test_ingest_items_owns_discovery_classification_and_download():
+    store = FakeStore()
+    classifier = FakeClassifyPhase(category="电影")
+    download = FakeDownloadPhase()
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(),
+        classifier=classifier,
+        qbit=download,
+        store=store,
+        bus=NullBus(),
+    )
+    item = MagnetItem(
+        hash="INGEST",
+        name="Shared ingestion",
+        magnet="magnet:?xt=urn:btih:INGEST",
+        source_url="clipboard://",
+    )
+
+    classified_hashes = await pipeline.ingest([item], auto_download=True)
+
+    assert classified_hashes == ["INGEST"]
+    assert classifier.called_with == [[{"index": 0, "name": "Shared ingestion"}]]
+    assert len(download.called_with) == 1
+    assert store.get("INGEST").status == TaskStatus.queued
+
+
 def test_classify_stream_uses_injected_task_manager():
     store = FakeStore()
     bus = NullBus()
     tasks = FakeTaskManager()
     item = MagnetItem(hash="FFFF", name="UsesTaskManager", magnet="magnet:?xt=urn:btih:FFFF")
+    store.add(item)
 
     pipeline = HarvestPipeline(
         crawler=FakeCrawlPhase(),
@@ -470,6 +537,82 @@ def test_reclassify_includes_error_status_items():
     classified_items = classify_phase.called_with[0]
     assert len(classified_items) == 1
     assert classified_items[0]["name"] == "Error Item"
+
+
+@pytest.mark.asyncio
+async def test_reclassify_skips_items_rejected_by_state_admission():
+    """并发操作已占用条目时，不应继续调用分类 adapter。"""
+
+    class RejectingTransitions:
+        async def classification_started(self, hash_key: str) -> bool:
+            return False
+
+    class RecordingClassifier(FakeClassifyPhase):
+        async def classify_stream_batch(self, items: List[dict], on_result=None):
+            self.called_with.append(items)
+
+    store = FakeStore()
+    store.add(
+        MagnetItem(
+            hash="REJECTED",
+            name="Concurrent classify",
+            magnet="magnet:?xt=urn:btih:REJECTED",
+            status=TaskStatus.pending,
+        )
+    )
+    classifier = RecordingClassifier()
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(),
+        classifier=classifier,
+        qbit=FakeDownloadPhase(),
+        store=store,
+        bus=NullBus(),
+        transitions=RejectingTransitions(),
+    )
+
+    await pipeline.reclassify(["REJECTED"])
+
+    assert classifier.called_with == []
+
+
+@pytest.mark.asyncio
+async def test_auto_download_uses_only_items_admitted_and_classified_in_this_run():
+    class RejectFirstTransitions(MagnetItemTransitions):
+        async def found(self, item: MagnetItem) -> bool:
+            if item.hash == "REJECTED-AUTO":
+                item = item.model_copy(update={"status": TaskStatus.classifying})
+            return await super().found(item)
+
+    rejected = MagnetItem(
+        hash="REJECTED-AUTO",
+        name="Rejected concurrent item",
+        magnet="magnet:?xt=urn:btih:REJECTED-AUTO",
+    )
+    admitted = MagnetItem(
+        hash="ADMITTED-AUTO",
+        name="Admitted item",
+        magnet="magnet:?xt=urn:btih:ADMITTED-AUTO",
+    )
+    store = FakeStore()
+    bus = NullBus()
+    classifier = FakeClassifyPhase(category="电影")
+    download = FakeDownloadPhase()
+    transitions = RejectFirstTransitions(store=store, bus=bus)
+    pipeline = HarvestPipeline(
+        crawler=FakeCrawlPhase(items=[rejected, admitted]),
+        classifier=classifier,
+        qbit=download,
+        store=store,
+        bus=bus,
+        transitions=transitions,
+    )
+
+    await pipeline.execute("https://example.com", auto_download=True)
+
+    assert classifier.called_with == [[{"index": 0, "name": "Admitted item"}]]
+    assert len(download.called_with) == 1
+    assert store.get("REJECTED-AUTO").status == TaskStatus.classifying
+    assert store.get("ADMITTED-AUTO").status == TaskStatus.queued
 
 
 if __name__ == "__main__":

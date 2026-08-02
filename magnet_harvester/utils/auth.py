@@ -18,7 +18,7 @@ async def require_api_key(request: Request, x_api_key: str | None = Header(None)
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service initializing",
         )
-    key = ctx.api_key.strip() if ctx.api_key else ""
+    key = ctx.runtime.api_key.strip() if ctx.runtime.api_key else ""
     if not key:
         return
 

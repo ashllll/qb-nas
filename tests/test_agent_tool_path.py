@@ -43,3 +43,53 @@ async def test_reclassify_item_updates_category_and_save_path():
     item = store.get("abc123def")
     assert item.category == "电影"
     assert item.save_path == "其他"  # 保留原有 save_path，不因手动分类而清空
+
+
+@pytest.mark.asyncio
+async def test_manual_reclassify_does_not_overwrite_concurrent_save_path():
+    class ConcurrentPathStore(InMemoryItemStore):
+        def update(self, hash_key: str, **fields) -> bool:
+            InMemoryItemStore.update(self, hash_key, save_path="/concurrent")
+            return InMemoryItemStore.update(self, hash_key, **fields)
+
+        def update_if_status(self, hash_key, expected_statuses, **fields) -> bool:
+            InMemoryItemStore.update(self, hash_key, save_path="/concurrent")
+            return InMemoryItemStore.update_if_status(
+                self,
+                hash_key,
+                expected_statuses,
+                **fields,
+            )
+
+    store = ConcurrentPathStore()
+    bus = MessageBus()
+    transitions = MagnetItemTransitions(store=store, bus=bus)
+    store.add(make_item("concurrent-path"))
+
+    assert await transitions.manually_classified("concurrent-path", "电影") is True
+    current = store.get("concurrent-path")
+    assert current is not None
+    assert current.category == "电影"
+    assert current.save_path == "/concurrent"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    [
+        TaskStatus.classifying,
+        TaskStatus.adding,
+        TaskStatus.queued,
+        TaskStatus.downloading,
+        TaskStatus.success,
+    ],
+)
+async def test_manual_reclassify_rejects_non_editable_states(status):
+    store = InMemoryItemStore()
+    bus = MessageBus()
+    transitions = MagnetItemTransitions(store=store, bus=bus)
+    item = make_item(f"blocked-{status.value}").model_copy(update={"status": status})
+    store.add(item)
+
+    assert await transitions.manually_classified(item.hash, "电影") is False
+    assert store.get(item.hash).category == "其他"

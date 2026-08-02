@@ -86,6 +86,7 @@ async def test_classify_start_is_concurrent():
             await asyncio.sleep(0.05)
             async with lock:
                 active -= 1
+            return True
 
         async def classified(self, hash_key: str, result: dict):
             pass

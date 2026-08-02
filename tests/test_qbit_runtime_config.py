@@ -107,11 +107,13 @@ def _make_runtime(
         app_services=app_services or AppServices(),
         runtime=RuntimeState(qbit_sync=qbit_sync or FakeSync()),
     )
-    return QBitRuntime(
-        ctx=ctx,
+    runtime = QBitRuntime(
+        replacement_target=QBitReplacementTarget.from_context(ctx),
         settings=settings or FakeSettings(),
         client_factory=factory or FakeQbit,
     )
+    runtime.test_ctx = ctx
+    return runtime
 
 
 async def test_replace_qbit_config_rejects_invalid_input():
@@ -173,9 +175,9 @@ async def test_replace_qbit_config_raises_oserror_and_closes_client_on_persist_f
             password="pass",
         )
 
-    assert runtime.ctx.qbit is None
-    assert runtime.ctx.pipeline.replaced_qbit is None
-    assert runtime.ctx.qbit_sync.qbit is None
+    assert runtime.test_ctx.qbit is None
+    assert runtime.test_ctx.pipeline.replaced_qbit is None
+    assert runtime.test_ctx.qbit_sync.qbit is None
     assert runtime.settings.committed == []
 
 
@@ -214,13 +216,13 @@ async def test_replace_qbit_config_replaces_and_commits_on_success():
     )
 
     assert result == {"status": "ok", "connected": True}
-    assert runtime.ctx.qbit is not old_qbit
-    assert runtime.ctx.qbit.config.host == "http://new:8080"
-    assert runtime.ctx.pipeline.replaced_qbit is runtime.ctx.qbit
-    assert runtime.ctx.qbit_sync.qbit is runtime.ctx.qbit
+    assert runtime.test_ctx.qbit is not old_qbit
+    assert runtime.test_ctx.qbit.config.host == "http://new:8080"
+    assert runtime.test_ctx.pipeline.replaced_qbit is runtime.test_ctx.qbit
+    assert runtime.test_ctx.qbit_sync.qbit is runtime.test_ctx.qbit
     assert old_qbit.closed is True
-    assert runtime.settings.persisted == [runtime.ctx.qbit.config]
-    assert runtime.settings.committed == [runtime.ctx.qbit.config]
+    assert runtime.settings.persisted == [runtime.test_ctx.qbit.config]
+    assert runtime.settings.committed == [runtime.test_ctx.qbit.config]
 
 
 async def test_replace_qbit_config_refreshes_observability_qbit():
@@ -263,7 +265,7 @@ async def test_replace_qbit_config_does_not_replace_on_persist_failure():
             password="pass",
         )
 
-    assert runtime.ctx.qbit is old_qbit
+    assert runtime.test_ctx.qbit is old_qbit
     assert old_qbit.closed is False
 
 
@@ -278,6 +280,9 @@ async def test_replace_qbit_config_fails_when_runtime_swap_does_not_commit():
             created.append(self)
 
     class NoopReplacementTarget:
+        def get_qbit(self):
+            return old_qbit
+
         async def replace(self, new_qbit):
             return None
 
@@ -291,7 +296,7 @@ async def test_replace_qbit_config_fails_when_runtime_swap_does_not_commit():
             password="pass",
         )
 
-    assert runtime.ctx.qbit is old_qbit
+    assert runtime.test_ctx.qbit is old_qbit
     assert created[0].closed is True
     assert [config.host for config in runtime.settings.persisted] == [
         "http://new:8080",
@@ -327,8 +332,8 @@ async def test_replace_qbit_config_rolls_back_dependents_when_runtime_swap_fails
             password="pass",
         )
 
-    assert runtime.ctx.qbit is old_qbit
-    assert runtime.ctx.pipeline.replaced_qbit is old_qbit
+    assert runtime.test_ctx.qbit is old_qbit
+    assert runtime.test_ctx.pipeline.replaced_qbit is old_qbit
     assert created[0].closed is True
     assert [config.host for config in runtime.settings.persisted] == [
         "http://new:8080",
@@ -400,6 +405,32 @@ async def test_replacement_target_works_without_app_context():
     assert sync.qbit is new_qbit
     assert pipeline.replaced_qbit is new_qbit
     assert old_qbit.closed is True
+
+
+async def test_qbit_runtime_uses_replacement_target_without_app_context():
+    old_qbit = FakeQbit(QBitConfig(host="http://old:8080"))
+    holder = {"qbit": old_qbit}
+    target = QBitReplacementTarget(
+        get_qbit=lambda: holder["qbit"],
+        set_qbit=lambda value: holder.update(qbit=value),
+        qbit_sync=FakeSync(),
+        pipeline=FakePipeline(),
+    )
+    runtime = QBitRuntime(
+        replacement_target=target,
+        settings=FakeSettings(),
+        client_factory=FakeQbit,
+    )
+
+    result = await runtime.replace_qbit_config(
+        host="http://new:8080",
+        username="user",
+        password="pass",
+    )
+
+    assert result == {"status": "ok", "connected": True}
+    assert holder["qbit"].config.host == "http://new:8080"
+    assert not hasattr(runtime, "ctx")
 
 
 async def test_replace_tolerates_close_failure():

@@ -4,10 +4,16 @@ TDD 循环 3: 爬虫并发控制与生命周期管理
 """
 
 import ast
+import asyncio
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+import pytest
+
+from magnet_harvester.config import CrawlerConfig
+from magnet_harvester.crawler import MagnetCrawler
 
 
 def _get_crawler_source() -> str:
@@ -87,6 +93,42 @@ def test_seen_set_passed_as_parameter():
         "_handle_crawl_result 不应使用 self._global_seen"
     )
     assert "hash_key in seen" in result_source, "_handle_crawl_result 应使用 seen 参数"
+
+
+@pytest.mark.asyncio
+async def test_crawl_session_task_is_owned_by_injected_task_manager():
+    class Admission:
+        async def admit(self, url):
+            return url
+
+        async def admit_redirect_chain(self, url):
+            return url
+
+    class Tasks:
+        def __init__(self):
+            self.names = []
+
+        def create(self, coro, name=None):
+            self.names.append(name)
+            return asyncio.create_task(coro, name=name)
+
+    tasks = Tasks()
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(),
+        target_admission=Admission(),
+        task_manager=tasks,
+    )
+    crawler._crawler = object()
+
+    async def finish_session(**kwargs):
+        await kwargs["events"].put(None)
+
+    crawler._run_crawl_session = finish_session
+
+    messages = [message async for message in crawler.crawl("https://example.com")]
+
+    assert messages == []
+    assert tasks.names == ["crawl-session"]
 
 
 if __name__ == "__main__":

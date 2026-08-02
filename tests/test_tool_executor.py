@@ -23,6 +23,7 @@ class FakePipeline:
         self.crawl_urls = []
         self.download_hashes = []
         self.reclassify_hashes = []
+        self.ingested_items = []
 
     def max_crawl_depth(self):
         return 2
@@ -47,6 +48,10 @@ class FakePipeline:
 
     async def reclassify(self, hashes):
         self.reclassify_hashes.extend(hashes)
+
+    async def ingest(self, items, *, auto_download=False):
+        self.ingested_items.extend(items)
+        return [item.hash for item in items]
 
 
 class FakeTaskManager:
@@ -181,6 +186,22 @@ async def test_add_to_queue():
     assert result["count"] == 2
     assert pipeline.download_hashes == ["A", "B"]
     assert tasks.calls == ["download_batch"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_schedules_download_through_managed_action_path():
+    pipeline = FakePipeline()
+    tasks = FakeTaskManager()
+    actions = _make_executor(pipeline=pipeline, tasks=tasks)
+    item = MagnetItem(hash="CLIP", name="Clipboard", magnet="magnet:?xt=urn:btih:CLIP")
+
+    accepted = await actions.ingest([item], auto_download=True)
+    await asyncio.sleep(0)
+
+    assert accepted == ["CLIP"]
+    assert pipeline.ingested_items == [item]
+    assert pipeline.download_hashes == ["CLIP"]
+    assert tasks.calls == ["clipboard_download"]
 
 
 def test_manually_reclassify():

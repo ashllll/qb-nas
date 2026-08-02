@@ -54,6 +54,50 @@ def test_runtime_shutdown_waits_for_tasks_before_closing_resources():
         runtime=RuntimeState(bg_manager=Tasks()),
     )
 
-    asyncio.run(AppRuntime(ctx=ctx, sync_loop=SyncLoop()).stop())
+    asyncio.run(
+        AppRuntime(
+            ctx=ctx,
+            sync_loop=SyncLoop(),
+            task_manager=ctx.bg_manager,
+            crawler=ctx.crawler,
+            qbit=ctx.qbit,
+        ).stop()
+    )
+
+    assert order == ["sync", "tasks", "crawler", "qbit"]
+
+
+def test_runtime_lifecycle_uses_explicit_dependencies_not_context_facade():
+    import asyncio
+
+    from magnet_harvester.assembly import AppRuntime
+
+    order = []
+
+    class SyncLoop:
+        async def stop(self):
+            order.append("sync")
+
+    class Tasks:
+        async def shutdown(self):
+            order.append("tasks")
+
+    class Crawler:
+        async def stop(self):
+            order.append("crawler")
+
+    class Qbit:
+        async def close(self):
+            order.append("qbit")
+
+    runtime = AppRuntime(
+        ctx=object(),
+        sync_loop=SyncLoop(),
+        task_manager=Tasks(),
+        crawler=Crawler(),
+        qbit=Qbit(),
+    )
+
+    asyncio.run(runtime.stop())
 
     assert order == ["sync", "tasks", "crawler", "qbit"]
