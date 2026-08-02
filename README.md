@@ -305,7 +305,7 @@ qb-nas/
 │   ├── crawler.py                  # Scrapling 爬虫 + Cookie 注入
 │   ├── magnet_parser.py            # magnet 正则提取
 │   ├── pipeline.py                 # 爬取→分类→下载管道
-│   ├── store.py                    # ItemStore (内存存储)
+│   ├── store.py                    # ItemStore adapter（内存 + SQLite）
 │   ├── bus.py                      # MessageBus (事件总线)
 │   ├── assembly.py                 # 运行时装配 (build_runtime)
 │   ├── api/
@@ -352,7 +352,7 @@ qb-nas/
 - **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由
 - **状态同步**：QBitSyncLoop 每 2 秒轮询 `/sync/maindata`，仅终态变化时触发前端通知，避免日志刷屏
 - **URL 安全**：RFC 1918 精确检查（10/172.16/192.168 + fc00::/7），DNS 解析后验证，防 SSRF
-- **剪贴板监控**：`pyperclip` 轮询系统剪贴板 (1s)，提取 `btih` + `dn=` 名称，经过本地规则分类后发布 `MAGNET_FOUND` 事件，实时显示在 Web UI 表格中
+- **剪贴板监控**：`pyperclip` 轮询系统剪贴板 (1s)，提取磁力条目后经 `UserActionExecutor.ingest()` 复用 pipeline 的去重与分类，并通过受管后台任务自动下载
 
 ## License
 

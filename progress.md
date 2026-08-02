@@ -11,3 +11,17 @@
 - 最终复审：新增/修改的 4 个文件通过 Ruff check、Ruff format check 与 `git diff --check`；最后一次 CORS/状态机定向验证为 7 passed（仅有上游 FastAPI TestClient 弃用警告）。
 - C-004 双重验证：SQLite 写锁实验测得协程内同步 update 等待约 264ms 时 ticker 仅运行 8 次；实际装配与调用点确认该阻塞可进入 API、管线、同步和 WebSocket 路径。
 - C-004 修复验证：共享 async store seam 已覆盖 transitions、pipeline、qB sync、用户操作、查询、观测、路由和 WebSocket 初始化；真实 SQLite 写锁下 threaded update 同期 ticker 运行 32 次。全量测试 450 passed，Ruff check 与改动范围格式检查通过。
+- 2026-07-17：读取领域文档、ADR-0001、README，并对照 Scrapling 0.4.9 官方文档和已安装源码复核 `AsyncDynamicSession`；当前 crawler 的 async context、`max_pages`、`page_action` 与毫秒单位均符合文档。
+- 架构探索确认 4 个候选：状态转换原子性、摄取流程分叉、后台任务所有权、AppContext 兼容外观；报告已生成至 `/tmp/architecture-review-qb-nas-20260717-143637.html`。
+- C-005 TDD：准入返回值测试 RED -> GREEN；pipeline 拒绝项测试 RED -> GREEN；相关回归 20 passed。
+- C-006 TDD：双 adapter 条件更新契约 RED -> GREEN；并发 transition 测试以两次成功稳定复现旧竞态，迁移原子 seam 后 GREEN。
+- 原子 seam 定向回归：store、transition、pipeline、qB sync 共 77 passed；去重重构后 store/transition 共 49 passed。
+- 第一次独立 diff 复核发现 SQLite 旧快照全行覆盖、auto-download 误用原始 hash 集合、reconcile 假报成功等问题；均新增失败测试后修复。
+- 第二次独立 diff 复核确认上述高风险问题已消除，并指出并发测试协调点与可变 `hash` 的剩余风险；测试已分层加固，跨 adapter 统一禁止主键更新。
+- 最终门禁：`npm run check` 通过，Ruff 全库无错误，pytest `461 passed in 31.57s`；改动范围 Ruff format check 通过。
+- 剩余优化 TDD：下载准入快照、手动分类竞态和冻结领域对象均先 RED 后 GREEN；相关第一批回归 69 passed。
+- 摄取与任务所有权：新增 pipeline ingestion interface，ClipboardMonitor 收敛为单一 ingestion 依赖，crawl session 纳入应用 BGTaskManager。
+- Context 收窄：QBitRuntime 移除 AppContext 回引用，AppRuntime 显式依赖生命周期 protocol，routes 迁移到语义子容器。
+- 本地 Claude Code 实现执行器再次返回 401；按持久流程降级为 Codex 直接实施并执行独立 diff 复核。
+- 用户提供的临时 RTFD 路径已失效；已将当前确认流程持久化到 `docs/agents/development-workflow.md` 并由 `AGENTS.md` 链接。
+- 剩余优化全量门禁：`npm run check` 通过，Ruff 全库无错误；压缩格式噪音后的最终 pytest 为 `475 passed in 31.19s`。

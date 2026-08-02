@@ -231,6 +231,8 @@ All settings in `.env` (see `.env.example`). Key categories:
 
 斜杠命令：`/spec` `/plan` `/build` `/test` `/review` `/code-simplify` `/ship`
 
+架构与缺陷优化必须遵循 [docs/agents/development-workflow.md](docs/agents/development-workflow.md)：先定 seam，再按 TDD 垂直切片实施，独立复核后通过全量门禁；提交和推送始终由用户显式触发。
+
 ## Notes
 
 <!-- Quick-add space for per-session notes -->

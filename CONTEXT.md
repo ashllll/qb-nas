@@ -8,11 +8,25 @@ A discovered magnet link plus the metadata needed to classify it, show it in the
 
 ### Crawl pipeline
 
-The orchestration that crawls a URL, stores new Magnet items, classifies them, and optionally submits them to qBittorrent.
+The orchestration that accepts Magnet items from crawler and clipboard sources, stores new items,
+classifies them, and optionally submits them to qBittorrent through one ingestion interface.
+
+### Magnet ingestion
+
+The `HarvestPipeline.ingest()` interface owns deduplication and classification for non-crawler
+sources. `UserActionExecutor.ingest()` adds managed optional download scheduling, so source adapters
+do not reproduce lifecycle or background-task logic.
 
 ### MagnetItemTransitions
 
-The module responsible for applying a Magnet item state change to `ItemStore` and publishing the matching `MessageBus` events in observable order.
+The module responsible for admitting Magnet item lifecycle changes, applying them through
+`ItemStore` atomic conditional updates, and publishing matching `MessageBus` events only after a
+successful state change.
+
+### ItemStore
+
+The seam for storing and querying Magnet items. The in-memory and SQLite adapters both guarantee
+that status comparison and field updates are atomic when a lifecycle transition is admitted.
 
 ### RuntimeContext
 
@@ -20,7 +34,8 @@ The module responsible for keeping runtime dependencies aligned when adapters ar
 
 ### QBitRuntime
 
-The module responsible for atomically replacing the active qBittorrent adapter across `AppContext`, `QBitSyncLoop`, and the `HarvestPipeline` download phase.
+The module responsible for atomically replacing the active qBittorrent adapter through a narrow
+`QBitReplacementTarget`, without retaining the full `AppContext`.
 
 ### Local classification
 
@@ -60,4 +75,5 @@ The query module that builds user-facing runtime snapshots for status, health, a
 
 ### BGTaskManager
 
-The utility module that wraps `asyncio.create_task` with exception logging via `add_done_callback`, providing a uniform way to spawn and monitor background coroutines.
+The owner of application background coroutines, including crawl sessions, pipeline jobs, qB sync,
+and clipboard monitoring, from creation through application shutdown.

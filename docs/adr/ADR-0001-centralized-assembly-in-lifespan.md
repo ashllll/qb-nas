@@ -100,3 +100,19 @@ Split `main.py` into multiple files but keep `_store`, `_bus`, etc. as module-le
 
 - `CONTEXT.md` — glossary terms `WSBroadcaster`, `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `BGTaskManager` added.
 - `pipeline.py` — `HarvestPipeline.replace_download_phase()` public method added.
+
+## 2026-07-17 Amendment: Narrow Runtime Dependencies
+
+Centralized assembly remains the decision, but assembled modules no longer receive the whole
+`AppContext` when a smaller interface is sufficient:
+
+- `AppRuntime` receives crawler, qB client, task manager, and sync loop explicitly for lifecycle
+  operations. `ctx` remains only the FastAPI dependency root.
+- `QBitRuntime` receives `QBitReplacementTarget`; it no longer holds an `AppContext` back-reference.
+- REST routes access `core`, `app_services`, and `runtime` subcontainers directly. Top-level
+  forwarding properties remain a compatibility layer, not the production dependency interface.
+- `ClipboardMonitor` submits source items through `UserActionExecutor.ingest()`, which delegates
+  storage/classification to `HarvestPipeline.ingest()` and schedules download through the managed
+  user-action task path.
+- `MagnetCrawler` receives the application `BGTaskManager`, so crawl-session tasks share the same
+  ownership and shutdown model as other runtime tasks.
