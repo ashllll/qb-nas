@@ -122,7 +122,11 @@ async def test_handle_connection_replies_to_ping_message():
 
     assert ws.accepted is True
     assert broadcaster.active_count == 0
-    assert [json.loads(message)["type"] for message in ws.sent] == ["init", "pong"]
+    assert [json.loads(message)["type"] for message in ws.sent] == [
+        "init",
+        "init_done",
+        "pong",
+    ]
 
 
 @pytest.mark.asyncio

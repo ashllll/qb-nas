@@ -13,25 +13,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Protocol
 
 import pyperclip
 
 from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.classifier.local_classifier import LocalClassifier
+from magnet_harvester.context.app_context import UserActionExecutorLike
+from magnet_harvester.transitions import DiscoveryTransitions
 from magnet_harvester.magnet_sources import MagnetSourceExtractor
-from magnet_harvester.models import MagnetItem
+from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.pipeline import HarvestPipeline
+from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
-
-
-class MagnetIngestion(Protocol):
-    async def ingest(
-        self,
-        items: list[MagnetItem],
-        *,
-        auto_download: bool = False,
-    ) -> list[str]: ...
 
 
 class ClipboardMonitor:
@@ -42,13 +37,21 @@ class ClipboardMonitor:
     def __init__(
         self,
         bus: MessageBus,
-        ingestion: MagnetIngestion,
+        store: ItemStore,
+        classifier: LocalClassifier,
+        pipeline: "HarvestPipeline | None" = None,
+        action_executor: UserActionExecutorLike | None = None,
         poll_interval: float = 1.0,
+        discovery: DiscoveryTransitions | None = None,
         task_manager: BGTaskManager | None = None,
     ):
         self._bus = bus
-        self._ingestion = ingestion
+        self._store = store
+        self._classifier = classifier
+        self._pipeline = pipeline
+        self._action_executor = action_executor
         self._task_manager = task_manager
+        self._discovery = discovery or DiscoveryTransitions(store=store, bus=bus)
         self._magnet_sources = MagnetSourceExtractor()
         self._poll_interval = poll_interval
         self._running = False
@@ -184,17 +187,49 @@ class ClipboardMonitor:
             log.warning("剪贴板条目缺少必要字段（name/hash/magnet），跳过: %s", item)
             return
 
+        # 分类
+        result = self._classifier.classify_one(name)
+        category = result.get("category", "其他") or "其他"
+        save_path = result.get("save_path", category) or category
+
+        # 构建 MagnetItem
         magnet_item = MagnetItem(
             hash=hash_val,
             name=name,
             magnet=magnet,
+            category=category,
+            save_path=save_path,
+            status=TaskStatus.pending,
             source_url="clipboard://",
             size=item.get("size"),
         )
-        classified_hashes = await self._ingestion.ingest([magnet_item], auto_download=True)
-        if hash_val not in classified_hashes:
+
+        # 存储（去重：已存在则跳过）并发布事件
+        if not await self._discovery.clipboard_found(magnet_item):
             log.debug(f"剪贴板磁力已存在，跳过: {name[:40]}")
             return
 
         self._magnet_count += 1
-        log.info("剪贴板捕获并提交磁力: %s", name[:50])
+
+        log.info(f"剪贴板捕获磁力: {name[:50]} → {category}")
+
+        # 自动发送到 qBittorrent（通过 action_executor 统一入口，确保 stats 计数和未来保护措施生效）
+        if self._action_executor:
+            result = await self._action_executor.download(
+                [magnet_item.hash], task_name="clipboard_download"
+            )
+            if result.get("status") == "started":
+                log.info(f"剪贴板自动下载: {name[:40]}")
+            else:
+                log.warning(
+                    "剪贴板自动下载失败: %s, 原因: %s", name[:40], result.get("reason", "未知")
+                )
+        elif self._pipeline:
+            # 向后兼容：未注入 action_executor 时回退到 pipeline
+            await self._pipeline.download([magnet_item.hash])
+            log.info(f"剪贴板自动下载: {name[:40]}")
+        else:
+            log.warning(
+                "剪贴板捕获了磁力但 action_executor 和 pipeline 均为 None，无法自动下载: %s",
+                name[:50],
+            )

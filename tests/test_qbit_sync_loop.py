@@ -12,9 +12,9 @@ import pytest
 
 from magnet_harvester.bus import EventType, MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.services.qbit_sync import QBitSyncLoop, SyncBackoffPolicy, _ReconcileProgress
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import DownloadTransitions
 
 
 class FakeQbitClient:
@@ -129,7 +129,7 @@ async def test_lifecycle_start_stop():
     store = FakeStore()
     bus = MessageBus()
 
-    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+    loop = QBitSyncLoop(qbit_client=qbit, store=AsyncItemStore(store), bus=bus, poll_interval=0.05)
 
     await loop.start()
     assert loop._task is not None
@@ -148,7 +148,7 @@ async def test_start_uses_injected_task_manager():
 
     loop = QBitSyncLoop(
         qbit_client=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
         task_manager=tasks,
@@ -179,7 +179,7 @@ async def test_sync_updates_tracked_item_status():
     # qB reports it as downloading
     qbit._snapshot = {"aaaa": {"state": "downloading", "progress": 0.42}}
 
-    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+    loop = QBitSyncLoop(qbit_client=qbit, store=AsyncItemStore(store), bus=bus, poll_interval=0.05)
     await loop.start()
     await asyncio.sleep(0.15)  # Let one poll cycle run
     await loop.stop()
@@ -204,7 +204,7 @@ async def test_sync_maps_qbit_snapshot_without_adapter_mapper():
     store.add(item)
     qbit._snapshot = {"cccc": {"state": "stalledDL", "progress": 0.875}}
 
-    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+    loop = QBitSyncLoop(qbit_client=qbit, store=AsyncItemStore(store), bus=bus, poll_interval=0.05)
     await loop.start()
     await asyncio.sleep(0.15)
     await loop.stop()
@@ -231,7 +231,7 @@ async def test_sync_detects_removed_torrent():
 
     qbit._removed = {"bbbb"}
 
-    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+    loop = QBitSyncLoop(qbit_client=qbit, store=AsyncItemStore(store), bus=bus, poll_interval=0.05)
     await loop.start()
     await asyncio.sleep(0.15)
     await loop.stop()
@@ -247,7 +247,7 @@ async def test_no_tracked_items_skips_poll():
     store = FakeStore()
     bus = MessageBus()
 
-    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+    loop = QBitSyncLoop(qbit_client=qbit, store=AsyncItemStore(store), bus=bus, poll_interval=0.05)
     await loop.start()
     await asyncio.sleep(0.15)
     await loop.stop()
@@ -272,7 +272,7 @@ async def test_sync_failure_backs_off_without_scanning_store():
 
     loop = QBitSyncLoop(
         qbit_client=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.01,
         max_failure_backoff=0.05,
@@ -287,12 +287,12 @@ async def test_sync_failure_backs_off_without_scanning_store():
 
 
 class FakeTransitions:
-    """Records reconcile_download_snapshot calls for delegation assertions."""
+    """Records reconcile_snapshot calls for delegation assertions."""
 
     def __init__(self):
         self.calls = []
 
-    async def reconcile_download_snapshot(
+    async def reconcile_snapshot(
         self,
         hash_key: str,
         item: MagnetItem,
@@ -315,7 +315,7 @@ class SlowAfterFirstTransitions:
     def __init__(self):
         self.calls = 0
 
-    async def reconcile_download_snapshot(
+    async def reconcile_snapshot(
         self,
         hash_key: str,
         item: MagnetItem,
@@ -367,10 +367,10 @@ async def test_sync_delegates_reconciliation_to_transitions():
 
     loop = QBitSyncLoop(
         qbit_client=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
     await loop.start()
     await asyncio.sleep(0.15)
@@ -418,10 +418,10 @@ async def test_reconcile_progress_excludes_cancelled_inflight_item():
     progress = _ReconcileProgress()
     loop = QBitSyncLoop(
         qbit_client=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
 
     with pytest.raises(asyncio.TimeoutError):
@@ -439,7 +439,7 @@ async def test_sync_routine_queued_to_downloading_does_not_emit_download_result(
     qbit = FakeQbitClient()
     store = FakeStore()
     bus = RecordingBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
     item = MagnetItem(
         hash="OSC",
@@ -453,10 +453,10 @@ async def test_sync_routine_queued_to_downloading_does_not_emit_download_result(
 
     loop = QBitSyncLoop(
         qbit_client=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
     await loop.start()
     await asyncio.sleep(0.15)
@@ -474,7 +474,7 @@ async def test_sync_removed_torrent_emits_store_changed_and_download_result():
     qbit = FakeQbitClient()
     store = FakeStore()
     bus = RecordingBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
     item = MagnetItem(
         hash="GONE",
@@ -488,10 +488,10 @@ async def test_sync_removed_torrent_emits_store_changed_and_download_result():
 
     loop = QBitSyncLoop(
         qbit_client=qbit,
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
         poll_interval=0.05,
-        transitions=transitions,
+        downloads=transitions,
     )
     await loop.start()
     await asyncio.sleep(0.15)
@@ -511,7 +511,7 @@ async def test_concurrent_start_creates_only_one_task():
     store = FakeStore()
     bus = MessageBus()
 
-    loop = QBitSyncLoop(qbit_client=qbit, store=store, bus=bus, poll_interval=0.05)
+    loop = QBitSyncLoop(qbit_client=qbit, store=AsyncItemStore(store), bus=bus, poll_interval=0.05)
 
     # 并发发起多个 start()
     await asyncio.gather(loop.start(), loop.start(), loop.start())

@@ -34,9 +34,7 @@ def test_configure_logging_with_file():
     try:
         configure_logging(level="DEBUG", log_file=log_path)
         file_handlers = [
-            h
-            for h in root.handlers
-            if isinstance(h, logging.handlers.RotatingFileHandler)
+            h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
         ]
         assert len(file_handlers) >= 1
 

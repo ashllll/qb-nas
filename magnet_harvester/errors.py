@@ -64,7 +64,9 @@ class ErrorHandler:
         self._max_errors = 1000
         self._lock = threading.Lock()
 
-    def _generate_error_id(self, category: ErrorCategory, message: str, details: dict[str, object] | None = None) -> str:
+    def _generate_error_id(
+        self, category: ErrorCategory, message: str, details: dict[str, object] | None = None
+    ) -> str:
         key = f"{category.value}:{message}"
         if details:
             detail_parts = sorted(f"{k}={v!r}" for k, v in details.items())

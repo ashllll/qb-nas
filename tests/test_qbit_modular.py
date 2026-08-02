@@ -127,6 +127,26 @@ def test_stats_zero_division():
     assert stats.success_rate == 0.0
 
 
+def test_stats_records_submission_outcomes_and_last_error():
+    from magnet_harvester.qbit_client import QBittorrentStats
+
+    stats = QBittorrentStats()
+    stats.attempted()
+    stats.failed()
+    stats.error("qB rejected")
+    stats.attempted()
+    stats.succeeded()
+    stats.error(None)
+
+    assert stats.total_added == 2
+    assert stats.total_success == 1
+    assert stats.total_failed == 1
+    assert stats.consecutive_failures == 0
+    assert stats.last_error is None
+    assert stats.last_success_time is not None
+    assert stats.last_failure_time is not None
+
+
 def test_qbit_ping_uses_short_cache():
     """连续状态轮询应复用短缓存，避免 qB 离线时反复慢连接"""
     import asyncio

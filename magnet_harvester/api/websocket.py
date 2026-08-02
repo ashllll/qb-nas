@@ -8,17 +8,19 @@ import asyncio
 import json
 import logging
 from datetime import date, datetime
-from typing import Any, Protocol
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from magnet_harvester.bus import Event, MessageBus
-from magnet_harvester.store import call_store
+from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+_INIT_PAGE_SIZE = 500
 
 
 def _json_serializer(obj: Any) -> str:
@@ -27,17 +29,14 @@ def _json_serializer(obj: Any) -> str:
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-class BroadcasterStore(Protocol):
-    def list(self, limit: int = 20): ...
-
-
 class WSBroadcaster:
     """Subscribes to MessageBus and broadcasts events to all active WebSocket clients."""
 
-    def __init__(self, bus: MessageBus, store: BroadcasterStore | None = None):
+    def __init__(self, bus: MessageBus, store: ItemStore | None = None):
         self._bus = bus
         self._store = store
         self._active_ws: set[WebSocket] = set()
+        self._initializing_ws: dict[WebSocket, list[str]] = {}
         bus.subscribe(None, self._on_event)
 
     def add(self, ws: WebSocket):
@@ -45,6 +44,7 @@ class WSBroadcaster:
 
     def remove(self, ws: WebSocket):
         self._active_ws.discard(ws)
+        self._initializing_ws.pop(ws, None)
 
     def shutdown(self):
         """取消 MessageBus 订阅，断开强引用以允许 GC 回收。
@@ -64,21 +64,81 @@ class WSBroadcaster:
         await ws.send_text(data)
 
     async def send_init_from_store(self, ws: WebSocket):
-        if self._store:
-            items = [item_payload(i) for i in await call_store(self._store, "list", limit=500)]
-            await self.send_init(ws, items)
-        else:
+        if self._store is None:
             await self.send_init(ws, [])
+            await self._send_init_done(ws, 0)
+            return
+
+        offset = 0
+        delivered: set[str] = set()
+        first_page = True
+        while True:
+            total, page = await self._store.count_and_page(
+                limit=_INIT_PAGE_SIZE,
+                offset=offset,
+            )
+            payloads = [item_payload(item) for item in page if item.hash not in delivered]
+            delivered.update(item["hash"] for item in payloads)
+            if first_page:
+                await self.send_init(ws, payloads)
+                first_page = False
+            elif payloads:
+                await ws.send_text(
+                    json.dumps(
+                        {"type": "init_page", "items": payloads},
+                        ensure_ascii=False,
+                        default=_json_serializer,
+                    )
+                )
+
+            offset += len(page)
+            if offset < total:
+                continue
+            if len(delivered) >= total:
+                await self._send_init_done(ws, len(delivered))
+                return
+            if not page:
+                raise RuntimeError("initial snapshot did not converge")
+            offset = 0
+
+    async def _send_init_done(self, ws: WebSocket, total: int) -> None:
+        await ws.send_text(
+            json.dumps(
+                {"type": "init_done", "total": total},
+                ensure_ascii=False,
+            )
+        )
+
+    async def _finish_initialization(self, ws: WebSocket) -> None:
+        while True:
+            queued = self._initializing_ws.get(ws)
+            if queued is None:
+                return
+            if queued:
+                batch = list(queued)
+                queued.clear()
+                for data in batch:
+                    await ws.send_text(data)
+                continue
+            self._initializing_ws.pop(ws, None)
+            self._active_ws.add(ws)
+            return
 
     async def handle_connection(self, ws: WebSocket):
         """Full WebSocket lifecycle: accept, init, keep-alive, cleanup."""
         await ws.accept()
-        self.add(ws)
+        self._initializing_ws[ws] = []
         try:
             try:
                 await self.send_init_from_store(ws)
+                await self._finish_initialization(ws)
             except Exception:
                 log.exception("send_init_from_store 失败")
+                try:
+                    await ws.close(code=1011, reason="initialization failed")
+                except Exception:
+                    log.debug("WebSocket initialization close 失败", exc_info=True)
+                return
             # 服务端不做主动 keep-alive ping；由客户端负责发送 ping 帧
             # （handle_client_message 已响应 "ping" → "pong"）。
             # 若客户端长时间无消息，反向代理/OS 可能断开空闲连接，
@@ -145,7 +205,7 @@ class WSBroadcaster:
             self.remove(ws)
 
     async def _on_event(self, event: Event):
-        if not self._active_ws:
+        if not self._active_ws and not self._initializing_ws:
             return
         try:
             data = json.dumps(event.as_dict(), ensure_ascii=False, default=_json_serializer)
@@ -172,6 +232,9 @@ class WSBroadcaster:
                     exc_info=True,
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
+
+        for queued in self._initializing_ws.values():
+            queued.append(data)
         _DEAD = b"DEAD"  # sentinel
         _SEND_TIMEOUT = 3.0  # per-client 广播超时
 
@@ -184,13 +247,17 @@ class WSBroadcaster:
                 return _DEAD
             try:
                 await ws.send_text(data)
-            except (Exception, asyncio.CancelledError):
-                # 连接已断开/取消 — 返回 sentinel 由外层统一清理
-                # 注意: asyncio.CancelledError 继承自 BaseException，
-                # 在 Starlette 版本不兼容导致 client_state 无效时，
-                # 这是最后的保护层
+            except Exception:
+                # 连接已断开时由外层统一清理。
+                # CancelledError 必须传播，让 TaskGroup 回收整个 fan-out。
                 return _DEAD
             return None
+
+        async def _send_with_timeout(ws: WebSocket):
+            try:
+                return await asyncio.wait_for(_send(ws), timeout=_SEND_TIMEOUT)
+            except Exception as exc:
+                return exc
 
         # ── 并发模型说明 ──────────────────────────────
         # _active_ws 是普通的 set[WebSocket]，未使用 asyncio.Lock 保护。
@@ -208,10 +275,9 @@ class WSBroadcaster:
         snapshot = list(self._active_ws)
         dead: set[WebSocket] = set()
         try:
-            results = await asyncio.gather(
-                *[asyncio.wait_for(_send(ws), timeout=_SEND_TIMEOUT) for ws in snapshot],
-                return_exceptions=True,
-            )
+            async with asyncio.TaskGroup() as task_group:
+                tasks = [task_group.create_task(_send_with_timeout(ws)) for ws in snapshot]
+            results = [task.result() for task in tasks]
             for ws, result in zip(snapshot, results):
                 if isinstance(result, Exception):
                     if isinstance(result, asyncio.TimeoutError):
@@ -219,7 +285,7 @@ class WSBroadcaster:
                             "WebSocket broadcast 单客户端超时（%.1fs），标记为 DEAD",
                             _SEND_TIMEOUT,
                         )
-                    elif not isinstance(result, asyncio.CancelledError):
+                    else:
                         log.error("WebSocket broadcast 异常: %s", result)
                     dead.add(ws)
                 elif result is _DEAD:
@@ -254,7 +320,8 @@ async def websocket_endpoint(ws: WebSocket):
         except Exception:
             log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
-    broadcaster = getattr(ctx, "broadcaster", None)
+    app_services = getattr(ctx, "app_services", None)
+    broadcaster = getattr(app_services, "broadcaster", None)
     if broadcaster:
         await broadcaster.handle_connection(ws)
     else:

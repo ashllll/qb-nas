@@ -68,9 +68,9 @@ def test_appcontext_accepts_error_handler():
         ),
         runtime=RuntimeState(error_handler=eh),
     )
-    assert ctx.error_handler is eh
+    assert ctx.runtime.error_handler is eh
     # Verify the field is usable through context
-    stats = ctx.error_handler.get_error_stats()
+    stats = ctx.runtime.error_handler.get_error_stats()
     assert isinstance(stats, dict)
 
 
@@ -79,7 +79,7 @@ def test_appcontext_accepts_error_handler():
 
 def test_no_module_level_error_handler_global():
     """error_handler exists at module level for assembly injection, but should NOT be imported by route/service modules.
-    Routes access it through AppContext (ctx.error_handler), not directly from errors module.
+    Routes access it through AppContext (ctx.runtime.error_handler), not directly from errors module.
     """
     import magnet_harvester.errors as err_mod
 

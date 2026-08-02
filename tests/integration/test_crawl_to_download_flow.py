@@ -32,7 +32,7 @@ def test_api_crawl_auto_download_flow_reaches_qbit_and_items_view():
         assert started.status_code == 200
         task_id = started.json()["task_id"]
 
-        snapshot = _wait_for_task(client, ctx.bg_manager, task_id)
+        snapshot = _wait_for_task(client, ctx.runtime.bg_manager, task_id)
         assert snapshot["status"] == "completed"
 
         listed = client.get("/api/items")
@@ -57,7 +57,7 @@ def test_crawl_without_auto_download_does_not_call_qbit():
         assert started.status_code == 200
         task_id = started.json()["task_id"]
 
-        snapshot = _wait_for_task(client, ctx.bg_manager, task_id)
+        snapshot = _wait_for_task(client, ctx.runtime.bg_manager, task_id)
         assert snapshot["status"] == "completed"
 
         listed = client.get("/api/items")

@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 
 from magnet_harvester.classifier.local_classifier import LocalClassifier
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import MessageBus, Event
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import DiscoveryTransitions
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
-from magnet_harvester.models import TaskStatus
+from magnet_harvester.models import MagnetItem, TaskStatus
 
 
 class _CollectingBus(MessageBus):
@@ -24,38 +24,20 @@ class _CollectingBus(MessageBus):
         await super().emit(event)
 
 
-class _Ingestion:
-    def __init__(self, classifier, transitions):
-        self._classifier = classifier
-        self._transitions = transitions
-
-    async def ingest(self, items, *, auto_download=False):
-        accepted = []
-        for item in items:
-            result = self._classifier.classify_one(item.name)
-            category = result.get("category", "其他") or "其他"
-            enriched = item.model_copy(
-                update={
-                    "category": category,
-                    "save_path": result.get("save_path", category) or category,
-                }
-            )
-            if await self._transitions.found(enriched):
-                accepted.append(item.hash)
-        return accepted
-
-
 def test_clipboard_monitor_parses_and_stores_magnet():
     """ClipboardMonitor should extract magnet from clipboard text and store it."""
     store = InMemoryItemStore()
     bus = _CollectingBus()
     classifier = LocalClassifier()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    discovery = DiscoveryTransitions(store=AsyncItemStore(store), bus=bus)
 
     monitor = ClipboardMonitor(
         bus=bus,
-        ingestion=_Ingestion(classifier, transitions),
+        store=AsyncItemStore(store),
+        classifier=classifier,
+        pipeline=None,
         poll_interval=0.1,
+        discovery=discovery,
     )
 
     # Simulate what happens when clipboard content arrives
@@ -70,8 +52,24 @@ def test_clipboard_monitor_parses_and_stores_magnet():
         items = monitor._magnet_sources.from_clipboard_text(magnet_text)
         assert len(items) >= 1
 
+        # Manually trigger the handle_item logic
         item = items[0]
-        loop.run_until_complete(monitor._handle_item(item))
+        result = classifier.classify_one(item["name"])
+        category = result.get("category", "其他") or "其他"
+
+        magnet_item = MagnetItem(
+            hash=item["hash"],
+            name=item["name"],
+            magnet=item["magnet"],
+            category=category,
+            save_path=category,
+            status=TaskStatus.pending,
+            source_url="clipboard://",
+            size=item.get("size"),
+        )
+
+        stored = loop.run_until_complete(monitor._discovery.clipboard_found(magnet_item))
+        assert stored is True
 
         # Verify item is in store
         retrieved = store.get(item["hash"])
@@ -87,11 +85,14 @@ def test_clipboard_monitor_ignores_duplicates():
     store = InMemoryItemStore()
     bus = _CollectingBus()
     classifier = LocalClassifier()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    discovery = DiscoveryTransitions(store=AsyncItemStore(store), bus=bus)
 
     monitor = ClipboardMonitor(
         bus=bus,
-        ingestion=_Ingestion(classifier, transitions),
+        store=AsyncItemStore(store),
+        classifier=classifier,
+        pipeline=None,
+        discovery=discovery,
     )
 
     duplicate_hash = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
@@ -99,18 +100,24 @@ def test_clipboard_monitor_ignores_duplicates():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        item = {
-            "hash": duplicate_hash,
-            "name": "Duplicate Movie",
-            "magnet": f"magnet:?xt=urn:btih:{duplicate_hash}&dn=Duplicate+Movie",
-        }
+        magnet_item = MagnetItem(
+            hash=duplicate_hash,
+            name="Duplicate Movie",
+            magnet=f"magnet:?xt=urn:btih:{duplicate_hash}&dn=Duplicate+Movie",
+            category="电影",
+            save_path="电影",
+            status=TaskStatus.pending,
+            source_url="clipboard://",
+        )
 
         # First time — should store
-        loop.run_until_complete(monitor._handle_item(item))
+        first = loop.run_until_complete(monitor._discovery.clipboard_found(magnet_item))
+        assert first is True
         assert store.count == 1
 
         # Second time with same hash — should be rejected as duplicate
-        loop.run_until_complete(monitor._handle_item(item))
+        second = loop.run_until_complete(monitor._discovery.clipboard_found(magnet_item))
+        assert second is False
         assert store.count == 1  # Still 1
     finally:
         loop.close()

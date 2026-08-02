@@ -6,16 +6,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable, List, Protocol, runtime_checkable
+from typing import Callable, List, Protocol
 
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.crawler import CrawlPhase
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import (
+    ClassificationTransitions,
+    DiscoveryTransitions,
+    DownloadTransitions,
+)
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import ItemStore, call_store
+from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.bg_tasks import BGTaskManager
-from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +26,6 @@ log = logging.getLogger(__name__)
 # ── Phase Protocols ──────────────────────────
 
 
-@runtime_checkable
 class PipelineProtocol(Protocol):
     async def start_crawl(
         self, url: str, *, depth: int = 1, auto_download: bool = False
@@ -32,18 +34,13 @@ class PipelineProtocol(Protocol):
     async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
     async def reclassify(self, hashes: list[str]): ...
-    async def ingest(
-        self, items: list[MagnetItem], *, auto_download: bool = False
-    ) -> list[str]: ...
     def max_crawl_depth(self) -> int: ...
 
 
-@runtime_checkable
 class UsageStats(Protocol):
     def as_dict(self) -> dict: ...
 
 
-@runtime_checkable
 class ClassifyPhase(Protocol):
     async def classify_stream_batch(
         self, items: List[dict], on_result: Callable[[int, dict], None] | None = None
@@ -53,7 +50,6 @@ class ClassifyPhase(Protocol):
     def get_cache_stats(self) -> dict: ...
 
 
-@runtime_checkable
 class DownloadPhase(Protocol):
     last_error: str | None
 
@@ -72,7 +68,9 @@ class HarvestPipeline:
         store: ItemStore,
         bus: MessageBus,
         task_manager: BackgroundTaskSpawner | None = None,
-        transitions: MagnetItemTransitions | None = None,
+        discovery: DiscoveryTransitions | None = None,
+        classification: ClassificationTransitions | None = None,
+        downloads: DownloadTransitions | None = None,
     ):
         self._crawler = crawler
         self._classifier = classifier
@@ -80,7 +78,9 @@ class HarvestPipeline:
         self._store = store
         self._bus = bus
         self._task_manager = task_manager
-        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
+        self._discovery = discovery or DiscoveryTransitions(store=store, bus=bus)
+        self._classification = classification or ClassificationTransitions(store=store, bus=bus)
+        self._downloads = downloads or DownloadTransitions(store=store, bus=bus)
 
     def _spawn(self, coro, *, name: str | None = None) -> asyncio.Task:
         task = BGTaskManager.spawn(coro, task_manager=self._task_manager, name=name)
@@ -140,7 +140,7 @@ class HarvestPipeline:
                 if t == "found":
                     try:
                         item = MagnetItem(**msg["item"])
-                        if await self._transitions.found(item):
+                        if await self._discovery.found(item):
                             new_hashes.append(item.hash)
                     except Exception:
                         log.exception(
@@ -165,7 +165,13 @@ class HarvestPipeline:
 
             if not new_hashes:
                 return
-            await self._finalize_ingestion(new_hashes, auto_download=auto_download)
+
+            items = await asyncio.gather(*(self._store.get(h) for h in new_hashes))
+            items = [i for i in items if i is not None]
+            await self._stream_classify(items)
+
+            if auto_download:
+                await self._download_items(new_hashes)
         except Exception:
             log.exception("execute() 顶层异常 url=%s depth=%d", url, depth)
             await self._bus.emit(
@@ -176,55 +182,19 @@ class HarvestPipeline:
             )
             raise
 
-    async def ingest(
-        self,
-        items: list[MagnetItem],
-        *,
-        auto_download: bool = False,
-    ) -> list[str]:
-        """接收外部来源条目，并统一执行去重、分类和可选下载。"""
-        new_hashes = []
-        for item in items:
-            if await self._transitions.found(item):
-                new_hashes.append(item.hash)
-        return await self._finalize_ingestion(new_hashes, auto_download=auto_download)
-
-    async def _finalize_ingestion(
-        self,
-        hashes: list[str],
-        *,
-        auto_download: bool,
-    ) -> list[str]:
-        if not hashes:
-            return []
-        items = await asyncio.gather(*(call_store(self._store, "get", h) for h in hashes))
-        classified_hashes = await self._stream_classify(
-            [item for item in items if item is not None]
-        )
-        if auto_download:
-            await self._download_items(classified_hashes)
-        return classified_hashes
-
-    async def _stream_classify(self, items: List[MagnetItem]) -> list[str]:
+    async def _stream_classify(self, items: List[MagnetItem]):
         if not items:
-            return []
-        results = await asyncio.gather(
-            *[self._transitions.classification_started(item.hash) for item in items],
-            return_exceptions=True,
-        )
-        admitted_items: list[MagnetItem] = []
-        for item, result in zip(items, results):
-            if isinstance(result, Exception):
-                log.error("classification_started failed for %s: %s", item.hash, result)
-            elif result is True:
-                admitted_items.append(item)
-
-        if not admitted_items:
-            return []
-
-        items = admitted_items
+            return
         index_to_hash = {i: item.hash for i, item in enumerate(items)}
         classify_input = [{"index": i, "name": item.name} for i, item in enumerate(items)]
+
+        results = await asyncio.gather(
+            *[self._classification.started(item.hash) for item in items],
+            return_exceptions=True,
+        )
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                log.error("classification_started failed for %s: %s", items[i].hash, result)
 
         await self._bus.emit(Event(EventType.CLASSIFY_START, {"count": len(items)}))
         result_events: dict[int, asyncio.Task] = {}
@@ -240,7 +210,7 @@ class HarvestPipeline:
             h = index_to_hash.get(index)
             if h:
                 result_events[index] = self._spawn(
-                    self._transitions.classified(h, result),
+                    self._classification.classified(h, result),
                     name=f"classify:{h}",
                 )
 
@@ -263,19 +233,8 @@ class HarvestPipeline:
                     h = index_to_hash.get(index)
                     log.error("classified result event failed for %s: %s", h, result)
                     if h:
-                        await self._transitions.classification_failed(h, str(result))
+                        await self._classification.failed(h, str(result))
         await self._bus.emit(Event(EventType.CLASSIFY_ALL_DONE, {}))
-        current_items = await asyncio.gather(
-            *(call_store(self._store, "get", item.hash) for item in items)
-        )
-        return [
-            item.hash
-            for item in current_items
-            if item is not None
-            and item.status == TaskStatus.pending
-            and item.category
-            and item.error_msg is None
-        ]
 
     async def _rollback_unclassified(
         self,
@@ -295,11 +254,11 @@ class HarvestPipeline:
                 if not t.cancelled() and t.exception() is None:
                     continue
             # 前置状态检查：仅回退仍处于 classifying 的条目
-            current = await call_store(self._store, "get", item.hash)
+            current = await self._store.get(item.hash)
             if current is None or current.status != TaskStatus.classifying:
                 continue
             try:
-                await self._transitions.classification_failed(item.hash, error_msg)
+                await self._classification.failed(item.hash, error_msg)
             except Exception as rollback_exc:
                 log.error(
                     "classification_failed rollback 失败 for %s: %s",
@@ -324,79 +283,43 @@ class HarvestPipeline:
             for i, result in enumerate(results):
                 if isinstance(result, asyncio.CancelledError):
                     log.warning("下载取消 %s，回退状态", hashes[i])
-                    await self._transitions.download_failed(hashes[i], "下载被取消")
+                    await self._downloads.failed(hashes[i], "下载被取消")
                 elif isinstance(result, Exception):
                     log.error("下载失败 %s: %s", hashes[i], result)
-                    await self._transitions.download_failed(hashes[i], str(result))
+                    await self._downloads.failed(hashes[i], str(result))
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
             for h in hashes:
-                item = await call_store(self._store, "get", h)
+                item = await self._store.get(h)
                 if item and item.status in {TaskStatus.pending, TaskStatus.adding}:
-                    await self._transitions.download_failed(h, "下载超时")
+                    await self._downloads.failed(h, "下载超时")
 
     async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
+        item = await self._store.get(hash_key)
+        if not item:
+            return
+        if not item.category:
+            log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
+            await self._downloads.failed(hash_key, "分类结果缺少 category")
+            return
         async with semaphore:
             try:
-                admitted_item = await self._transitions.download_submitting(hash_key)
-                if admitted_item is None:
+                if not await self._downloads.submitting(hash_key):
                     return
-                if not admitted_item.category:
-                    log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
-                    await self._transitions.download_failed(hash_key, "分类结果缺少 category")
-                    return
-                ok = await self._qbit.add_magnet(
-                    admitted_item.magnet,
-                    admitted_item.category or "其他",
-                    admitted_item.save_path or "",
-                )
+                ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
                 if ok:
-                    await self._transitions.download_submitted(hash_key)
+                    await self._downloads.submitted(hash_key)
                 else:
-                    await self._transitions.download_failed(
-                        hash_key, self._qbit.last_error or "qB 返回失败"
-                    )
+                    await self._downloads.failed(hash_key, self._qbit.last_error or "qB 返回失败")
             except Exception as e:
                 try:
-                    await self._transitions.download_failed(hash_key, str(e))
+                    await self._downloads.failed(hash_key, str(e))
                 except Exception as inner_e:
-                    log.error(f"download_failed 回调也失败: {inner_e}")
-                    # 兜底：直接通过 store 更新状态，防止条目永久卡在 adding
-                    try:
-                        await call_store(
-                            self._store,
-                            "update",
-                            hash_key,
-                            status=TaskStatus.error,
-                            error_msg=str(e),
-                            torrent_state=None,
-                            progress=0.0,
-                        )
-                        # 发射 STORE_CHANGED 确保 UI 刷新
-                        item = await call_store(self._store, "get", hash_key)
-                        if item is not None:
-                            await self._bus.emit(
-                                Event(EventType.STORE_CHANGED, {"item": item_payload(item)})
-                            )
-                            # 兜底后发射 DOWNLOAD_RESULT，确保 WebSocket/UI 能收到状态变更通知
-                            await self._bus.emit(
-                                Event(
-                                    EventType.DOWNLOAD_RESULT,
-                                    {
-                                        "hash": hash_key,
-                                        "status": item.status.value,
-                                        "error_msg": item.error_msg,
-                                        "progress": item.progress,
-                                        "torrent_state": item.torrent_state,
-                                    },
-                                )
-                            )
-                    except Exception as fallback_e:
-                        log.error(f"兜底 store.update 也失败: {fallback_e}")
+                    log.error("download failure lifecycle 失败 %s: %s", hash_key, inner_e)
 
     async def reclassify(self, hashes: List[str]):
         hashes = list(dict.fromkeys(hashes))
-        items = await asyncio.gather(*(call_store(self._store, "get", h) for h in hashes))
+        items = await asyncio.gather(*(self._store.get(h) for h in hashes))
         items = [
             i
             for i in items

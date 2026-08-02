@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import DownloadTransitions
 
 
 class _SnapshotQBit:
@@ -34,10 +34,14 @@ class _SnapshotQBit:
 def _reconcile(store, transitions, snapshot, removed_hashes):
     """Drive a single reconciliation pass over tracked items."""
     tracked = [
-        it for it in store.list(limit=store.count)
-        if it.status in {
-            TaskStatus.adding, TaskStatus.queued,
-            TaskStatus.downloading, TaskStatus.error,
+        it
+        for it in store.list(limit=store.count)
+        if it.status
+        in {
+            TaskStatus.adding,
+            TaskStatus.queued,
+            TaskStatus.downloading,
+            TaskStatus.error,
         }
     ]
     for t_item in tracked:
@@ -53,22 +57,27 @@ def test_qbit_sync_marks_downloaded_item_as_success():
     """When qB reports a torrent as 'completed', the item should be marked success."""
     store = InMemoryItemStore()
     bus = NullBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
-    store.add(MagnetItem(
-        hash="SYNCTEST001",
-        name="Sync.Test",
-        magnet="magnet:?xt=urn:btih:SYNCTEST001",
-        category="电影",
-        status=TaskStatus.downloading,
-        progress=0.5,
-        torrent_state="downloading",
-    ))
+    store.add(
+        MagnetItem(
+            hash="SYNCTEST001",
+            name="Sync.Test",
+            magnet="magnet:?xt=urn:btih:SYNCTEST001",
+            category="电影",
+            status=TaskStatus.downloading,
+            progress=0.5,
+            torrent_state="downloading",
+        )
+    )
 
     snapshot = {
         "synctest001": {
-            "hash": "synctest001", "name": "Sync.Test",
-            "progress": 1.0, "state": "completed", "amount_left": 0,
+            "hash": "synctest001",
+            "name": "Sync.Test",
+            "progress": 1.0,
+            "state": "completed",
+            "amount_left": 0,
         }
     }
 
@@ -76,7 +85,7 @@ def test_qbit_sync_marks_downloaded_item_as_success():
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            transitions.reconcile_download_snapshot(
+            transitions.reconcile_snapshot(
                 "SYNCTEST001",
                 store.get("SYNCTEST001"),
                 snapshot.get("synctest001"),
@@ -94,23 +103,25 @@ def test_qbit_sync_marks_removed_torrent_as_error():
     """When a tracked torrent disappears from qB, it should be marked as error/removed."""
     store = InMemoryItemStore()
     bus = NullBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
 
-    store.add(MagnetItem(
-        hash="REMOVED001",
-        name="Removed.Torrent",
-        magnet="magnet:?xt=urn:btih:REMOVED001",
-        category="电视剧",
-        status=TaskStatus.downloading,
-        progress=0.3,
-        torrent_state="downloading",
-    ))
+    store.add(
+        MagnetItem(
+            hash="REMOVED001",
+            name="Removed.Torrent",
+            magnet="magnet:?xt=urn:btih:REMOVED001",
+            category="电视剧",
+            status=TaskStatus.downloading,
+            progress=0.3,
+            torrent_state="downloading",
+        )
+    )
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            transitions.reconcile_download_snapshot(
+            transitions.reconcile_snapshot(
                 "REMOVED001",
                 store.get("REMOVED001"),
                 None,

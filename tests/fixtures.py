@@ -24,8 +24,12 @@ from magnet_harvester.models import MagnetItem
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.store import InMemoryItemStore
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
+from magnet_harvester.transitions import (
+    ClassificationTransitions,
+    DiscoveryTransitions,
+    DownloadTransitions,
+)
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 # ═══════════════════════════════════════════════════
@@ -35,6 +39,7 @@ from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 class FakeCrawler:
     """Produces a configurable set of fake magnet items."""
+
     max_depth = 2
 
     def __init__(self, items: list[MagnetItem] | None = None, fail: bool = False):
@@ -65,6 +70,7 @@ class FakeCrawler:
 
 class FakeClassifier:
     """Always returns a fixed classification for every item."""
+
     usage = type("Usage", (), {"as_dict": lambda self: {"total": 0}})()
 
     def __init__(self, category: str = "电影", confidence: str = "high"):
@@ -75,12 +81,15 @@ class FakeClassifier:
         for item in items:
             idx = item.get("index", -1)
             if on_result and idx >= 0:
-                on_result(idx, {
-                    "category": self._category,
-                    "save_path": self._category,
-                    "confidence": self._confidence,
-                    "reason": "test_fake",
-                })
+                on_result(
+                    idx,
+                    {
+                        "category": self._category,
+                        "save_path": self._category,
+                        "confidence": self._confidence,
+                        "reason": "test_fake",
+                    },
+                )
 
     def get_cache_stats(self) -> dict:
         return {}
@@ -99,6 +108,7 @@ class FakeClassifier:
 
 class FakeQbit:
     """Records added magnets for assertion."""
+
     last_error: str | None = None
 
     def __init__(self, fail_add: bool = False):
@@ -124,6 +134,7 @@ class FakeQbit:
 
 class FakeBus:
     """Records emitted events for assertion."""
+
     def __init__(self):
         self.events: list[Event] = []
 
@@ -139,17 +150,20 @@ class FakeBus:
 
 class FakeErrorHandler:
     """Records errors for assertion."""
+
     def __init__(self):
         self.errors: list[dict] = []
 
     def record(self, category, severity, message, details=None, exc=None):
         cat_val = category.value if hasattr(category, "value") else str(category)
         sev_val = severity.value if hasattr(severity, "value") else str(severity)
-        self.errors.append({
-            "category": cat_val,
-            "severity": sev_val,
-            "message": message,
-        })
+        self.errors.append(
+            {
+                "category": cat_val,
+                "severity": sev_val,
+                "message": message,
+            }
+        )
 
     def get_error_stats(self) -> dict:
         return {"total_errors": len(self.errors), "unique_errors": len(self.errors)}
@@ -165,12 +179,15 @@ class FakeErrorHandler:
         if severity:
             sev_val = severity.value if hasattr(severity, "value") else str(severity)
             filtered = [e for e in filtered if e["severity"] == sev_val]
+
         # Return objects with to_dict() like the real ErrorRecord
         class _FakeRecord:
             def __init__(self, data):
                 self._data = data
+
             def to_dict(self):
                 return self._data
+
         return [_FakeRecord(e) for e in filtered[:limit]]
 
 
@@ -209,7 +226,9 @@ def make_test_app(
     classifier: FakeClassifier | LocalClassifier | None = None,
     qbit: FakeQbit | None = None,
     bg_manager: BGTaskManager | None = None,
-    transitions: MagnetItemTransitions | None = None,
+    discovery: DiscoveryTransitions | None = None,
+    classification: ClassificationTransitions | None = None,
+    downloads: DownloadTransitions | None = None,
     pipeline: HarvestPipeline | None = None,
     action_executor: UserActionExecutor | None = None,
     error_handler: FakeErrorHandler | None = None,
@@ -220,13 +239,16 @@ def make_test_app(
     Any component not provided gets a sensible default Fake. Returns
     (app, ctx, qbit) where qbit is the FakeQbit instance for assertions.
     """
-    _store = store or InMemoryItemStore()
+    _backend = store or InMemoryItemStore()
+    _store = AsyncItemStore(_backend)
     _bus = bus or NullBus()
     _crawler = crawler or FakeCrawler()
     _classifier = classifier or FakeClassifier()
     _qbit = qbit or FakeQbit()
     _bg_manager = bg_manager or BGTaskManager()
-    _transitions = transitions or MagnetItemTransitions(store=_store, bus=_bus)
+    _discovery = discovery or DiscoveryTransitions(store=_store, bus=_bus)
+    _classification = classification or ClassificationTransitions(store=_store, bus=_bus)
+    _downloads = downloads or DownloadTransitions(store=_store, bus=_bus)
     _pipeline = pipeline or HarvestPipeline(
         crawler=_crawler,
         classifier=_classifier,
@@ -234,13 +256,16 @@ def make_test_app(
         store=_store,
         bus=_bus,
         task_manager=_bg_manager,
-        transitions=_transitions,
+        discovery=_discovery,
+        classification=_classification,
+        downloads=_downloads,
     )
     _action_executor = action_executor or UserActionExecutor(
         store=_store,
         pipeline=_pipeline,
         task_manager=_bg_manager,
-        transitions=_transitions,
+        discovery=_discovery,
+        classification=_classification,
     )
     _error_handler = error_handler or FakeErrorHandler()
     _broadcaster = WSBroadcaster(bus=_bus, store=_store)
@@ -261,7 +286,6 @@ def make_test_app(
         ),
         runtime=RuntimeState(
             bg_manager=_bg_manager,
-            item_transitions=_transitions,
             error_handler=_error_handler,
             stats=stats or FakeStats(),
         ),

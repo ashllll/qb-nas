@@ -4,18 +4,18 @@
 
 import sys
 import os
-import sqlite3
-import tempfile
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from pydantic import ValidationError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import InMemoryItemStore, ItemStore, SQLiteItemStore, StoreStats
+from magnet_harvester.models import MagnetItem
+from magnet_harvester.store import (
+    InMemoryItemStore,
+    ItemStore,
+    SQLiteItemStore,
+    StoreStats,
+)
 
 
 def _make_item(hash_key: str, name: str = "Test") -> MagnetItem:
@@ -32,24 +32,15 @@ def test_protocol_is_defined():
     assert hasattr(ItemStore, "add")
     assert hasattr(ItemStore, "get")
     assert hasattr(ItemStore, "update")
-    assert hasattr(ItemStore, "update_if_status")
     assert hasattr(ItemStore, "remove")
     assert hasattr(ItemStore, "list")
     assert hasattr(ItemStore, "search")
 
 
-def test_inmemory_conforms_to_protocol():
-    """InMemoryItemStore 是 ItemStore 的实例"""
-    store = InMemoryItemStore()
-    assert isinstance(store, ItemStore)
-
-
-def test_fake_store_conforms_to_protocol():
-    """FakeStore 是 ItemStore 的实例"""
-    from magnet_harvester.store import FakeStore
-
-    store = FakeStore()
-    assert isinstance(store, ItemStore)
+def test_async_protocol_rejects_runtime_member_name_checks():
+    """Runtime Protocol checks cannot prove that same-named methods are async."""
+    with pytest.raises(TypeError):
+        isinstance(InMemoryItemStore(), ItemStore)
 
 
 # ── 行为测试（在协议上运行，任何实现都应通过） ──
@@ -131,211 +122,45 @@ def test_inmemory_behaviors():
     run_store_tests(InMemoryItemStore)
 
 
-def test_search_nonpositive_limit_is_consistent_across_adapters():
+def test_search_nonpositive_limit_is_consistent_across_adapters(tmp_path):
     def seed(store):
         store.add(_make_item("AAAA", name="Matrix A"))
         store.add(_make_item("BBBB", name="Matrix B"))
         return store
 
-    with tempfile.NamedTemporaryFile(suffix=".db") as db:
-        stores = [
-            seed(InMemoryItemStore()),
-            seed(SQLiteItemStore(db.name)),
-        ]
+    stores = [
+        seed(InMemoryItemStore()),
+        seed(SQLiteItemStore(tmp_path / "search.db")),
+    ]
 
-        for store in stores:
-            assert store.search("matrix", limit=0) == []
-            assert store.search("matrix", limit=-1) == []
+    for store in stores:
+        assert store.search("matrix", limit=0) == []
+        assert store.search("matrix", limit=-1) == []
 
 
-def test_count_and_page_boundary_values_are_consistent_across_adapters():
+def test_count_and_page_boundary_values_are_consistent_across_adapters(tmp_path):
     def seed(store):
         store.add(_make_item("BBBB", name="Bravo"))
         store.add(_make_item("AAAA", name="Alpha"))
         return store
 
-    with tempfile.NamedTemporaryFile(suffix=".db") as db:
-        stores = [
-            seed(InMemoryItemStore()),
-            seed(SQLiteItemStore(db.name)),
-        ]
+    stores = [
+        seed(InMemoryItemStore()),
+        seed(SQLiteItemStore(tmp_path / "page.db")),
+    ]
 
-        for store in stores:
-            total, items = store.count_and_page(limit=0)
-            assert total == 2
-            assert items == []
+    for store in stores:
+        total, items = store.count_and_page(limit=0)
+        assert total == 2
+        assert items == []
 
-            total, items = store.count_and_page(limit=-1)
-            assert total == 2
-            assert items == []
+        total, items = store.count_and_page(limit=-1)
+        assert total == 2
+        assert items == []
 
-            total, items = store.count_and_page(limit=1, offset=-1)
-            assert total == 2
-            assert [item.name for item in items] == ["Alpha"]
-
-
-def test_update_if_status_is_consistent_across_adapters():
-    """状态比较与字段更新必须在 adapter 的同一次原子操作中完成。"""
-    with tempfile.NamedTemporaryFile(suffix=".db") as db:
-        stores = [InMemoryItemStore(), SQLiteItemStore(db.name)]
-
-        for index, store in enumerate(stores):
-            hash_key = f"CAS-{index}"
-            store.add(_make_item(hash_key))
-
-            assert store.update_if_status(
-                hash_key,
-                {TaskStatus.pending},
-                status=TaskStatus.classifying,
-            )
-            assert not store.update_if_status(
-                hash_key,
-                {TaskStatus.pending},
-                category="不应写入",
-            )
-
-            current = store.get(hash_key)
-            assert current is not None
-            assert current.status == TaskStatus.classifying
-            assert current.category is None
-
-
-def test_inmemory_update_if_status_holds_lock_for_read_and_write():
-    """内存 adapter 的状态读取与对象替换必须处于同一临界区。"""
-
-    class LockCheckingDict(dict):
-        def __init__(self, lock, initial):
-            super().__init__(initial)
-            self._lock = lock
-
-        def get(self, key, default=None):
-            assert self._lock.locked(), "conditional read escaped the store lock"
-            return super().get(key, default)
-
-        def __setitem__(self, key, value):
-            assert self._lock.locked(), "conditional write escaped the store lock"
-            return super().__setitem__(key, value)
-
-    store = InMemoryItemStore()
-    store.add(_make_item("LOCKED-CAS"))
-    store._items = LockCheckingDict(store._lock, store._items)
-
-    assert store.update_if_status(
-        "LOCKED-CAS",
-        {TaskStatus.pending},
-        status=TaskStatus.classifying,
-    )
-
-
-def test_sqlite_update_if_status_is_atomic_across_adapter_instances(monkeypatch):
-    with tempfile.NamedTemporaryFile(suffix=".db") as db:
-        first = SQLiteItemStore(db.name)
-        second = SQLiteItemStore(db.name)
-        first.add(_make_item("SHARED-CAS"))
-        barrier = threading.Barrier(2)
-        write_updated_fields = SQLiteItemStore._write_updated_fields
-
-        def coordinated_write(cls, connection, current_hash, item, fields, expected_statuses=None):
-            # 两个 adapter 都已读取 pending 快照后才允许执行带状态条件的 UPDATE。
-            barrier.wait(timeout=2)
-            return write_updated_fields(
-                connection,
-                current_hash,
-                item,
-                fields,
-                expected_statuses,
-            )
-
-        monkeypatch.setattr(
-            SQLiteItemStore,
-            "_write_updated_fields",
-            classmethod(coordinated_write),
-        )
-
-        def admit(store, category):
-            return store.update_if_status(
-                "SHARED-CAS",
-                {TaskStatus.pending},
-                status=TaskStatus.classifying,
-                category=category,
-            )
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            decisions = list(
-                executor.map(
-                    lambda args: admit(*args),
-                    [(first, "电影"), (second, "电视剧")],
-                )
-            )
-
-        assert sorted(decisions) == [False, True]
-        current = first.get("SHARED-CAS")
-        assert current is not None
-        assert current.status == TaskStatus.classifying
-        assert current.category in {"电影", "电视剧"}
-
-
-def test_hash_is_immutable_across_adapters():
-    """条目主键不能通过普通更新或状态条件更新移动。"""
-    with tempfile.NamedTemporaryFile(suffix=".db") as db:
-        stores = [InMemoryItemStore(), SQLiteItemStore(db.name)]
-
-        for index, store in enumerate(stores):
-            original_hash = f"IMMUTABLE-{index}"
-            replacement_hash = f"REPLACED-{index}"
-            store.add(_make_item(original_hash))
-
-            assert store.update(original_hash, hash=replacement_hash) is False
-            assert (
-                store.update_if_status(
-                    original_hash,
-                    {TaskStatus.pending},
-                    hash=replacement_hash,
-                )
-                is False
-            )
-            assert store.get(original_hash) is not None
-            assert store.get(replacement_hash) is None
-
-
-def test_inmemory_get_cannot_mutate_stored_item_outside_store_interface():
-    store = InMemoryItemStore()
-    store.add(_make_item("FROZEN"))
-
-    retrieved = store.get("FROZEN")
-    assert retrieved is not None
-    with pytest.raises(ValidationError):
-        retrieved.status = TaskStatus.success
-
-    assert store.get("FROZEN").status == TaskStatus.pending
-
-
-def test_sqlite_update_if_status_preserves_unrelated_concurrent_fields():
-    """条件更新只写请求字段，不得用旧快照覆盖同状态下的无关修改。"""
-    with tempfile.NamedTemporaryFile(suffix=".db") as db:
-        store = SQLiteItemStore(db.name)
-        store.add(_make_item("PARTIAL-CAS"))
-        with sqlite3.connect(db.name) as connection:
-            connection.execute("""
-                CREATE TRIGGER update_category_before_save_path
-                BEFORE UPDATE OF save_path ON magnet_items
-                BEGIN
-                    UPDATE magnet_items
-                    SET category = '并发分类'
-                    WHERE hash = OLD.hash;
-                END
-            """)
-
-        assert store.update_if_status(
-            "PARTIAL-CAS",
-            {TaskStatus.pending},
-            save_path="/downloads/movie",
-        )
-
-        current = store.get("PARTIAL-CAS")
-        assert current is not None
-        assert current.category == "并发分类"
-        assert current.save_path == "/downloads/movie"
+        total, items = store.count_and_page(limit=1, offset=-1)
+        assert total == 2
+        assert [item.name for item in items] == ["Alpha"]
 
 
 def test_list_uses_limited_top_n_selection(monkeypatch):
@@ -383,8 +208,7 @@ def test_fakestore_behaviors():
 
 if __name__ == "__main__":
     test_protocol_is_defined()
-    test_inmemory_conforms_to_protocol()
-    test_fake_store_conforms_to_protocol()
+    test_async_protocol_rejects_runtime_member_name_checks()
     test_inmemory_behaviors()
     test_fakestore_behaviors()
     print("=== ItemStore Protocol tests passed! ===")

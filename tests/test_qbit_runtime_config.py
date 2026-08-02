@@ -19,12 +19,19 @@ from magnet_harvester.context.app_context import (
     AppContext,
     AppServices,
     CoreServices,
-    QBitReplacementTarget,
     QBitRuntime,
     RuntimeState,
 )
 from magnet_harvester.qbit_client._transport import QBitTransport
 from magnet_harvester.services.observability import ObservabilitySnapshot
+
+
+def test_qbit_runtime_owns_one_replacement_transaction():
+    fields = QBitRuntime.__dataclass_fields__
+
+    assert "transaction_lock" in fields
+    assert "config_lock" not in fields
+    assert "replacement_target" not in fields
 
 
 class FakeQbit:
@@ -107,13 +114,11 @@ def _make_runtime(
         app_services=app_services or AppServices(),
         runtime=RuntimeState(qbit_sync=qbit_sync or FakeSync()),
     )
-    runtime = QBitRuntime(
-        replacement_target=QBitReplacementTarget.from_context(ctx),
+    return QBitRuntime(
+        ctx=ctx,
         settings=settings or FakeSettings(),
         client_factory=factory or FakeQbit,
     )
-    runtime.test_ctx = ctx
-    return runtime
 
 
 async def test_replace_qbit_config_rejects_invalid_input():
@@ -175,9 +180,9 @@ async def test_replace_qbit_config_raises_oserror_and_closes_client_on_persist_f
             password="pass",
         )
 
-    assert runtime.test_ctx.qbit is None
-    assert runtime.test_ctx.pipeline.replaced_qbit is None
-    assert runtime.test_ctx.qbit_sync.qbit is None
+    assert runtime.ctx.core.qbit is None
+    assert runtime.ctx.core.pipeline.replaced_qbit is None
+    assert runtime.ctx.runtime.qbit_sync.qbit is None
     assert runtime.settings.committed == []
 
 
@@ -216,13 +221,13 @@ async def test_replace_qbit_config_replaces_and_commits_on_success():
     )
 
     assert result == {"status": "ok", "connected": True}
-    assert runtime.test_ctx.qbit is not old_qbit
-    assert runtime.test_ctx.qbit.config.host == "http://new:8080"
-    assert runtime.test_ctx.pipeline.replaced_qbit is runtime.test_ctx.qbit
-    assert runtime.test_ctx.qbit_sync.qbit is runtime.test_ctx.qbit
+    assert runtime.ctx.core.qbit is not old_qbit
+    assert runtime.ctx.core.qbit.config.host == "http://new:8080"
+    assert runtime.ctx.core.pipeline.replaced_qbit is runtime.ctx.core.qbit
+    assert runtime.ctx.runtime.qbit_sync.qbit is runtime.ctx.core.qbit
     assert old_qbit.closed is True
-    assert runtime.settings.persisted == [runtime.test_ctx.qbit.config]
-    assert runtime.settings.committed == [runtime.test_ctx.qbit.config]
+    assert runtime.settings.persisted == [runtime.ctx.core.qbit.config]
+    assert runtime.settings.committed == [runtime.ctx.core.qbit.config]
 
 
 async def test_replace_qbit_config_refreshes_observability_qbit():
@@ -265,44 +270,8 @@ async def test_replace_qbit_config_does_not_replace_on_persist_failure():
             password="pass",
         )
 
-    assert runtime.test_ctx.qbit is old_qbit
+    assert runtime.ctx.core.qbit is old_qbit
     assert old_qbit.closed is False
-
-
-async def test_replace_qbit_config_fails_when_runtime_swap_does_not_commit():
-    created = []
-    old_config = QBitConfig(host="http://old:8080")
-    old_qbit = FakeQbit(old_config)
-
-    class TrackedQbit(FakeQbit):
-        def __init__(self, config: QBitConfig):
-            super().__init__(config)
-            created.append(self)
-
-    class NoopReplacementTarget:
-        def get_qbit(self):
-            return old_qbit
-
-        async def replace(self, new_qbit):
-            return None
-
-    runtime = _make_runtime(old_qbit=old_qbit, factory=TrackedQbit)
-    runtime.replacement_target = NoopReplacementTarget()
-
-    with pytest.raises(RuntimeError):
-        await runtime.replace_qbit_config(
-            host="http://new:8080",
-            username="user",
-            password="pass",
-        )
-
-    assert runtime.test_ctx.qbit is old_qbit
-    assert created[0].closed is True
-    assert [config.host for config in runtime.settings.persisted] == [
-        "http://new:8080",
-        "http://old:8080",
-    ]
-    assert runtime.settings.committed == [old_config]
 
 
 async def test_replace_qbit_config_rolls_back_dependents_when_runtime_swap_fails():
@@ -332,8 +301,60 @@ async def test_replace_qbit_config_rolls_back_dependents_when_runtime_swap_fails
             password="pass",
         )
 
-    assert runtime.test_ctx.qbit is old_qbit
-    assert runtime.test_ctx.pipeline.replaced_qbit is old_qbit
+    assert runtime.ctx.core.qbit is old_qbit
+    assert runtime.ctx.core.pipeline.replaced_qbit is old_qbit
+    assert created[0].closed is True
+    assert [config.host for config in runtime.settings.persisted] == [
+        "http://new:8080",
+        "http://old:8080",
+    ]
+    assert runtime.settings.committed == [old_config]
+
+
+async def test_replace_qbit_config_rolls_back_when_runtime_swap_is_cancelled():
+    created = []
+    old_config = QBitConfig(host="http://old:8080")
+    old_qbit = FakeQbit(old_config)
+    swap_started = asyncio.Event()
+
+    class TrackedQbit(FakeQbit):
+        def __init__(self, config: QBitConfig):
+            super().__init__(config)
+            created.append(self)
+
+    class BlockingSync:
+        def __init__(self):
+            self.qbit = old_qbit
+
+        async def replace_qbit_client(self, new_qbit):
+            if new_qbit is not old_qbit:
+                swap_started.set()
+                await asyncio.Event().wait()
+            self.qbit = new_qbit
+
+    sync = BlockingSync()
+    runtime = _make_runtime(
+        old_qbit=old_qbit,
+        factory=TrackedQbit,
+        qbit_sync=sync,
+    )
+    task = asyncio.create_task(
+        runtime.replace_qbit_config(
+            host="http://new:8080",
+            username="user",
+            password="pass",
+        )
+    )
+    await swap_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert runtime.ctx.core.qbit is old_qbit
+    assert runtime.ctx.core.pipeline.replaced_qbit is old_qbit
+    assert sync.qbit is old_qbit
+    assert old_qbit.closed is False
     assert created[0].closed is True
     assert [config.host for config in runtime.settings.persisted] == [
         "http://new:8080",
@@ -385,52 +406,20 @@ async def test_replace_qbit_config_serializes_concurrent_replacements():
     ]
 
 
-async def test_replacement_target_works_without_app_context():
+async def test_qbit_runtime_replaces_all_runtime_dependents():
     old_qbit = FakeQbit(QBitConfig(host="http://old:8080"))
     new_qbit = FakeQbit(QBitConfig(host="http://new:8080"))
-    holder = {"qbit": old_qbit}
     sync = FakeSync()
     pipeline = FakePipeline()
+    runtime = _make_runtime(old_qbit=old_qbit, qbit_sync=sync)
+    runtime.ctx.core.pipeline = pipeline
 
-    target = QBitReplacementTarget(
-        get_qbit=lambda: holder["qbit"],
-        set_qbit=lambda value: holder.update(qbit=value),
-        qbit_sync=sync,
-        pipeline=pipeline,
-    )
+    await runtime.replace_qbit(new_qbit)
 
-    await target.replace(new_qbit)
-
-    assert holder["qbit"] is new_qbit
+    assert runtime.ctx.core.qbit is new_qbit
     assert sync.qbit is new_qbit
     assert pipeline.replaced_qbit is new_qbit
     assert old_qbit.closed is True
-
-
-async def test_qbit_runtime_uses_replacement_target_without_app_context():
-    old_qbit = FakeQbit(QBitConfig(host="http://old:8080"))
-    holder = {"qbit": old_qbit}
-    target = QBitReplacementTarget(
-        get_qbit=lambda: holder["qbit"],
-        set_qbit=lambda value: holder.update(qbit=value),
-        qbit_sync=FakeSync(),
-        pipeline=FakePipeline(),
-    )
-    runtime = QBitRuntime(
-        replacement_target=target,
-        settings=FakeSettings(),
-        client_factory=FakeQbit,
-    )
-
-    result = await runtime.replace_qbit_config(
-        host="http://new:8080",
-        username="user",
-        password="pass",
-    )
-
-    assert result == {"status": "ok", "connected": True}
-    assert holder["qbit"].config.host == "http://new:8080"
-    assert not hasattr(runtime, "ctx")
 
 
 async def test_replace_tolerates_close_failure():
@@ -442,20 +431,14 @@ async def test_replace_tolerates_close_failure():
 
     old_qbit = BrokenQbit(QBitConfig(host="http://old:8080"))
     new_qbit = FakeQbit(QBitConfig(host="http://new:8080"))
-    holder = {"qbit": old_qbit}
     sync = FakeSync()
     pipeline = FakePipeline()
+    runtime = _make_runtime(old_qbit=old_qbit, qbit_sync=sync)
+    runtime.ctx.core.pipeline = pipeline
 
-    target = QBitReplacementTarget(
-        get_qbit=lambda: holder["qbit"],
-        set_qbit=lambda value: holder.update(qbit=value),
-        qbit_sync=sync,
-        pipeline=pipeline,
-    )
+    await runtime.replace_qbit(new_qbit)
 
-    await target.replace(new_qbit)
-
-    assert holder["qbit"] is new_qbit
+    assert runtime.ctx.core.qbit is new_qbit
     assert sync.qbit is new_qbit
     assert pipeline.replaced_qbit is new_qbit
 
@@ -463,20 +446,14 @@ async def test_replace_tolerates_close_failure():
 async def test_replace_with_same_instance_does_not_close():
     """自替换守卫：传入同一个客户端实例时不会调用 close()。"""
     qbit = FakeQbit(QBitConfig(host="http://same:8080"))
-    holder = {"qbit": qbit}
     sync = FakeSync()
     pipeline = FakePipeline()
+    runtime = _make_runtime(old_qbit=qbit, qbit_sync=sync)
+    runtime.ctx.core.pipeline = pipeline
 
-    target = QBitReplacementTarget(
-        get_qbit=lambda: holder["qbit"],
-        set_qbit=lambda value: holder.update(qbit=value),
-        qbit_sync=sync,
-        pipeline=pipeline,
-    )
+    await runtime.replace_qbit(qbit)
 
-    await target.replace(qbit)
-
-    assert holder["qbit"] is qbit
+    assert runtime.ctx.core.qbit is qbit
     assert sync.qbit is qbit
     assert pipeline.replaced_qbit is qbit
     assert qbit.closed is False  # 不应被关闭
@@ -528,7 +505,7 @@ if __name__ == "__main__":
         test_replace_qbit_config_closes_new_client_on_persist_failure,
         test_replace_qbit_config_replaces_and_commits_on_success,
         test_replace_qbit_config_does_not_replace_on_persist_failure,
-        test_replacement_target_works_without_app_context,
+        test_qbit_runtime_replaces_all_runtime_dependents,
     ]
     for t in tests:
         asyncio.run(t())

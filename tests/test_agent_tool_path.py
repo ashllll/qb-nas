@@ -3,9 +3,9 @@ P2-24: Agent 工具路径测试 (UserActionExecutor)
 """
 
 import pytest
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 
@@ -26,12 +26,15 @@ async def test_reclassify_item_updates_category_and_save_path():
     """验证 manually_reclassify 正确更新 category 和 save_path"""
     store = InMemoryItemStore()
     bus = MessageBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    async_store = AsyncItemStore(store)
+    discovery = DiscoveryTransitions(store=async_store, bus=bus)
+    classification = ClassificationTransitions(store=async_store, bus=bus)
     executor = UserActionExecutor(
-        store=store,
+        store=async_store,
         pipeline=None,
         task_manager=None,
-        transitions=transitions,
+        discovery=discovery,
+        classification=classification,
     )
 
     store.add(make_item("abc123def"))
@@ -63,11 +66,11 @@ async def test_manual_reclassify_does_not_overwrite_concurrent_save_path():
 
     store = ConcurrentPathStore()
     bus = MessageBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = ClassificationTransitions(store=AsyncItemStore(store), bus=bus)
     store.add(make_item("concurrent-path"))
 
     assert await transitions.manually_classified("concurrent-path", "电影") is True
-    current = store.get("concurrent-path")
+    current = await AsyncItemStore(store).get("concurrent-path")
     assert current is not None
     assert current.category == "电影"
     assert current.save_path == "/concurrent"
@@ -87,7 +90,7 @@ async def test_manual_reclassify_does_not_overwrite_concurrent_save_path():
 async def test_manual_reclassify_rejects_non_editable_states(status):
     store = InMemoryItemStore()
     bus = MessageBus()
-    transitions = MagnetItemTransitions(store=store, bus=bus)
+    transitions = ClassificationTransitions(store=AsyncItemStore(store), bus=bus)
     item = make_item(f"blocked-{status.value}").model_copy(update={"status": status})
     store.add(item)
 

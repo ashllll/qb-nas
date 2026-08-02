@@ -104,7 +104,9 @@ class TestSQLiteItemStore:
     def test_list_all(self, store):
         """Listing without filters should return all items."""
         items = [
-            MagnetItem(hash=f"HASH{i:03d}", name=f"Item {i}", magnet=f"magnet:?xt=urn:btih:HASH{i:03d}")
+            MagnetItem(
+                hash=f"HASH{i:03d}", name=f"Item {i}", magnet=f"magnet:?xt=urn:btih:HASH{i:03d}"
+            )
             for i in range(5)
         ]
         for item in items:
@@ -115,9 +117,21 @@ class TestSQLiteItemStore:
 
     def test_list_with_category_filter(self, store):
         """Listing with category filter should return only matching items."""
-        store.add(MagnetItem(hash="A001", name="Movie A", magnet="magnet:?xt=urn:btih:A001", category="电影"))
-        store.add(MagnetItem(hash="B001", name="Show B", magnet="magnet:?xt=urn:btih:B001", category="电视剧"))
-        store.add(MagnetItem(hash="C001", name="Anime C", magnet="magnet:?xt=urn:btih:C001", category="动漫"))
+        store.add(
+            MagnetItem(
+                hash="A001", name="Movie A", magnet="magnet:?xt=urn:btih:A001", category="电影"
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="B001", name="Show B", magnet="magnet:?xt=urn:btih:B001", category="电视剧"
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="C001", name="Anime C", magnet="magnet:?xt=urn:btih:C001", category="动漫"
+            )
+        )
 
         movies = store.list(category="电影", limit=100)
         assert len(movies) == 1
@@ -130,9 +144,11 @@ class TestSQLiteItemStore:
     def test_list_limit(self, store):
         """List should respect the limit parameter."""
         for i in range(10):
-            store.add(MagnetItem(
-                hash=f"HASH{i:03d}", name=f"Item {i}", magnet=f"magnet:?xt=urn:btih:HASH{i:03d}"
-            ))
+            store.add(
+                MagnetItem(
+                    hash=f"HASH{i:03d}", name=f"Item {i}", magnet=f"magnet:?xt=urn:btih:HASH{i:03d}"
+                )
+            )
         assert len(store.list(limit=3)) == 3
 
     def test_list_zero_limit(self, store):
@@ -141,8 +157,12 @@ class TestSQLiteItemStore:
 
     def test_search(self, store):
         """Search should find items by name substring."""
-        store.add(MagnetItem(hash="S001", name="The Matrix 1999", magnet="magnet:?xt=urn:btih:S001"))
-        store.add(MagnetItem(hash="S002", name="Matrix Reloaded", magnet="magnet:?xt=urn:btih:S002"))
+        store.add(
+            MagnetItem(hash="S001", name="The Matrix 1999", magnet="magnet:?xt=urn:btih:S001")
+        )
+        store.add(
+            MagnetItem(hash="S002", name="Matrix Reloaded", magnet="magnet:?xt=urn:btih:S002")
+        )
         store.add(MagnetItem(hash="S003", name="Inception", magnet="magnet:?xt=urn:btih:S003"))
 
         results = store.search("matrix")
@@ -164,10 +184,42 @@ class TestSQLiteItemStore:
 
     def test_stats(self, store):
         """Stats should correctly aggregate by category and status."""
-        store.add(MagnetItem(hash="ST1", name="Stat 1", magnet="magnet:?xt=urn:btih:ST1", category="电影", status=TaskStatus.pending))
-        store.add(MagnetItem(hash="ST2", name="Stat 2", magnet="magnet:?xt=urn:btih:ST2", category="电影", status=TaskStatus.downloading))
-        store.add(MagnetItem(hash="ST3", name="Stat 3", magnet="magnet:?xt=urn:btih:ST3", category="电视剧", status=TaskStatus.success))
-        store.add(MagnetItem(hash="ST4", name="Stat 4", magnet="magnet:?xt=urn:btih:ST4", category=None, status=TaskStatus.pending))
+        store.add(
+            MagnetItem(
+                hash="ST1",
+                name="Stat 1",
+                magnet="magnet:?xt=urn:btih:ST1",
+                category="电影",
+                status=TaskStatus.pending,
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="ST2",
+                name="Stat 2",
+                magnet="magnet:?xt=urn:btih:ST2",
+                category="电影",
+                status=TaskStatus.downloading,
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="ST3",
+                name="Stat 3",
+                magnet="magnet:?xt=urn:btih:ST3",
+                category="电视剧",
+                status=TaskStatus.success,
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="ST4",
+                name="Stat 4",
+                magnet="magnet:?xt=urn:btih:ST4",
+                category=None,
+                status=TaskStatus.pending,
+            )
+        )
 
         s = store.stats()
         assert s.total == 4
@@ -177,10 +229,41 @@ class TestSQLiteItemStore:
 
     def test_get_pending(self, store):
         """get_pending should return items with pending status and a category."""
-        store.add(MagnetItem(hash="P001", name="Pending 1", magnet="magnet:?xt=urn:btih:P001", category="电影", status=TaskStatus.pending))
-        store.add(MagnetItem(hash="P002", name="Pending 2", magnet="magnet:?xt=urn:btih:P002", category="电视剧", status=TaskStatus.pending))
-        store.add(MagnetItem(hash="P003", name="Success 1", magnet="magnet:?xt=urn:btih:P003", category="电影", status=TaskStatus.success))
-        store.add(MagnetItem(hash="P004", name="No Cat", magnet="magnet:?xt=urn:btih:P004", status=TaskStatus.pending))
+        store.add(
+            MagnetItem(
+                hash="P001",
+                name="Pending 1",
+                magnet="magnet:?xt=urn:btih:P001",
+                category="电影",
+                status=TaskStatus.pending,
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="P002",
+                name="Pending 2",
+                magnet="magnet:?xt=urn:btih:P002",
+                category="电视剧",
+                status=TaskStatus.pending,
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="P003",
+                name="Success 1",
+                magnet="magnet:?xt=urn:btih:P003",
+                category="电影",
+                status=TaskStatus.success,
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="P004",
+                name="No Cat",
+                magnet="magnet:?xt=urn:btih:P004",
+                status=TaskStatus.pending,
+            )
+        )
 
         pending = store.get_pending()
         hashes = {p.hash for p in pending}
@@ -191,9 +274,15 @@ class TestSQLiteItemStore:
 
     def test_get_hashes_by_prefix(self, store):
         """Hash prefix lookup should return matching full hashes."""
-        store.add(MagnetItem(hash="ABCDEF123456", name="Alpha", magnet="magnet:?xt=urn:btih:ABCDEF123456"))
-        store.add(MagnetItem(hash="ABCDEF789012", name="Beta", magnet="magnet:?xt=urn:btih:ABCDEF789012"))
-        store.add(MagnetItem(hash="ZZZZZZZZZZZZ", name="Gamma", magnet="magnet:?xt=urn:btih:ZZZZZZZZZZZZ"))
+        store.add(
+            MagnetItem(hash="ABCDEF123456", name="Alpha", magnet="magnet:?xt=urn:btih:ABCDEF123456")
+        )
+        store.add(
+            MagnetItem(hash="ABCDEF789012", name="Beta", magnet="magnet:?xt=urn:btih:ABCDEF789012")
+        )
+        store.add(
+            MagnetItem(hash="ZZZZZZZZZZZZ", name="Gamma", magnet="magnet:?xt=urn:btih:ZZZZZZZZZZZZ")
+        )
 
         matches = store.get_hashes_by_prefix("ABCDEF")
         assert len(matches) == 2
@@ -217,7 +306,9 @@ class TestSQLiteItemStore:
     def test_clear(self, store):
         """Clear should remove all items from the database."""
         store.add(MagnetItem(hash="CLR001", name="Clear Me", magnet="magnet:?xt=urn:btih:CLR001"))
-        store.add(MagnetItem(hash="CLR002", name="Clear Me Too", magnet="magnet:?xt=urn:btih:CLR002"))
+        store.add(
+            MagnetItem(hash="CLR002", name="Clear Me Too", magnet="magnet:?xt=urn:btih:CLR002")
+        )
         assert store.count == 2
 
         store.clear()
@@ -227,7 +318,14 @@ class TestSQLiteItemStore:
     def test_persistence_across_instances(self, db_path):
         """Data written by one SQLiteItemStore instance should be readable by another."""
         store1 = SQLiteItemStore(db_path)
-        store1.add(MagnetItem(hash="PERSIST001", name="Persistent Item", magnet="magnet:?xt=urn:btih:PERSIST001", category="电影"))
+        store1.add(
+            MagnetItem(
+                hash="PERSIST001",
+                name="Persistent Item",
+                magnet="magnet:?xt=urn:btih:PERSIST001",
+                category="电影",
+            )
+        )
         assert store1.count == 1
         del store1
 
@@ -268,14 +366,22 @@ class TestSQLiteItemStore:
 
     def test_stats_category_none_mapped_to_uncategorized(self, store):
         """category=None 的条目应统计到 '未分类' 键下，不应出现空字符串键。"""
-        store.add(MagnetItem(
-            hash="NOCAT001", name="No Category Item",
-            magnet="magnet:?xt=urn:btih:NOCAT001", category=None,
-        ))
-        store.add(MagnetItem(
-            hash="WITHCAT001", name="With Category",
-            magnet="magnet:?xt=urn:btih:WITHCAT001", category="电影",
-        ))
+        store.add(
+            MagnetItem(
+                hash="NOCAT001",
+                name="No Category Item",
+                magnet="magnet:?xt=urn:btih:NOCAT001",
+                category=None,
+            )
+        )
+        store.add(
+            MagnetItem(
+                hash="WITHCAT001",
+                name="With Category",
+                magnet="magnet:?xt=urn:btih:WITHCAT001",
+                category="电影",
+            )
+        )
 
         s = store.stats()
         assert s.total == 2

@@ -9,7 +9,7 @@ from magnet_harvester.errors import ErrorCategory, ErrorSeverity
 def test_error_endpoint_returns_errors():
     """GET /api/errors should return recorded errors from the handler."""
     app, ctx, _ = make_test_app()
-    handler = ctx.error_handler
+    handler = ctx.runtime.error_handler
 
     handler.record(
         category=ErrorCategory.CRAWLER,
@@ -29,7 +29,7 @@ def test_error_endpoint_returns_errors():
 def test_multiple_error_occurrences_accumulate_count():
     """Repeated errors should count up in the aggregate stats."""
     app, ctx, _ = make_test_app()
-    handler = ctx.error_handler
+    handler = ctx.runtime.error_handler
 
     for _ in range(3):
         handler.record(
@@ -46,7 +46,7 @@ def test_multiple_error_occurrences_accumulate_count():
 def test_error_clear_all():
     """Clearing all errors should remove them from handler state."""
     app, ctx, _ = make_test_app()
-    handler = ctx.error_handler
+    handler = ctx.runtime.error_handler
 
     handler.record(
         category=ErrorCategory.CONFIG,

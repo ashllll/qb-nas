@@ -13,10 +13,10 @@ from fastapi import FastAPI, Depends
 
 from tests._client import asgi_client
 
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.models import MagnetItem
-from magnet_harvester.context.app_context import AppContext, CoreServices, QBitReplacementTarget, RuntimeContext, get_context
+from magnet_harvester.context.app_context import AppContext, CoreServices, QBitRuntime, get_context
 
 
 def _make_test_context() -> AppContext:
@@ -27,7 +27,7 @@ def _make_test_context() -> AppContext:
     from magnet_harvester.config import CrawlerConfig, QBitConfig
     from magnet_harvester.pipeline import HarvestPipeline
 
-    store = FakeStore()
+    store = AsyncItemStore(FakeStore())
     bus = NullBus()
     cfg = CrawlerConfig(headless=True, timeout=5)
     crawler = MagnetCrawler(config=cfg)
@@ -38,16 +38,21 @@ def _make_test_context() -> AppContext:
     )
     return AppContext(
         core=CoreServices(
-            store=store, bus=bus, pipeline=pipeline, crawler=crawler, classifier=classifier, qbit=qbit
+            store=store,
+            bus=bus,
+            pipeline=pipeline,
+            crawler=crawler,
+            classifier=classifier,
+            qbit=qbit,
         ),
     )
 
 
 def test_appcontext_holds_deps():
     ctx = _make_test_context()
-    assert ctx.store is not None
-    assert ctx.bus is not None
-    assert ctx.pipeline is not None
+    assert ctx.core.store is not None
+    assert ctx.core.bus is not None
+    assert ctx.core.pipeline is not None
 
 
 def test_appcontext_in_endpoint():
@@ -56,7 +61,7 @@ def test_appcontext_in_endpoint():
 
     @app.get("/test/count")
     async def test_count(ctx: AppContext = Depends(get_context)):
-        return {"count": ctx.store.count}
+        return {"count": await ctx.core.store.count()}
 
     app.state.ctx = ctx
 
@@ -65,7 +70,11 @@ def test_appcontext_in_endpoint():
         assert resp.status_code == 200
         assert resp.json()["count"] == 0
 
-        ctx.store.add(MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST"))
+        asyncio.run(
+            ctx.core.store.add(
+                MagnetItem(hash="TEST", name="test", magnet="magnet:?xt=urn:btih:TEST")
+            )
+        )
         resp = client.get("/test/count")
         assert resp.json()["count"] == 1
 
@@ -82,7 +91,7 @@ def test_appcontext_in_lifespan():
 
     @app.get("/ping")
     async def ping(ctx: AppContext = Depends(get_context)):
-        return {"ok": ctx.store.count == 0}
+        return {"ok": await ctx.core.store.count() == 0}
 
     with asgi_client(app) as client:
         resp = client.get("/ping")
@@ -108,15 +117,15 @@ def test_runtime_context_replaces_qbit_everywhere():
             self.replaced_with = new_qbit
 
     ctx = _make_test_context()
-    old_qbit = ctx.qbit
+    old_qbit = ctx.core.qbit
     new_qbit = FakeQbit()
-    ctx.pipeline = FakePipeline()
-    runtime = RuntimeContext(replacement_target=QBitReplacementTarget.from_context(ctx))
+    ctx.core.pipeline = FakePipeline()
+    runtime = QBitRuntime(ctx=ctx)
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 
-    assert ctx.qbit is new_qbit
-    assert ctx.pipeline.replaced_with is new_qbit
+    assert ctx.core.qbit is new_qbit
+    assert ctx.core.pipeline.replaced_with is new_qbit
     assert old_qbit._client is None
 
 
@@ -126,7 +135,7 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
     import magnet_harvester.assembly as assembly_module
 
     class FakeCrawler:
-        def __init__(self, config, site_auth=None, task_manager=None):
+        def __init__(self, config, site_auth=None):
             self.started = False
             self.stopped = False
             self.max_depth = 3
@@ -158,13 +167,13 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             store,
             bus,
             task_manager=None,
-            transitions=None,
+            downloads=None,
             poll_interval=2.0,
         ):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
-            self.transitions = transitions
+            self.downloads = downloads
             self.poll_interval = poll_interval
 
         async def start(self):
@@ -189,11 +198,11 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
 
     async with main_module.lifespan(test_app):
         ctx = test_app.state.ctx
-        assert ctx.action_executor is not None
-        assert ctx.broadcaster is not None
-        assert ctx.bg_manager is not None
-        assert ctx.stats is not None
-        assert ctx.qbit_lock is not None
+        assert ctx.app_services.action_executor is not None
+        assert ctx.app_services.broadcaster is not None
+        assert ctx.runtime.bg_manager is not None
+        assert ctx.runtime.stats is not None
+        assert ctx.runtime.qbit_runtime.transaction_lock is not None
 
 
 @pytest.mark.asyncio
@@ -204,7 +213,7 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
     created = {}
 
     class FakeCrawler:
-        def __init__(self, config, site_auth=None, task_manager=None):
+        def __init__(self, config, site_auth=None):
             self.started = False
             self.stopped = False
             self.max_depth = 3
@@ -267,13 +276,13 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
             store,
             bus,
             task_manager=None,
-            transitions=None,
+            downloads=None,
             poll_interval=2.0,
         ):
             self.started = False
             self.stopped = False
             self.task_manager = task_manager
-            self.transitions = transitions
+            self.downloads = downloads
             self.poll_interval = poll_interval
             created["sync_loop"] = self
 
@@ -292,10 +301,10 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
 
     async with main_module.lifespan(test_app):
         ctx = test_app.state.ctx
-        await ctx.pipeline.execute("https://example.com", depth=1, auto_download=True)
+        await ctx.core.pipeline.execute("https://example.com", depth=1, auto_download=True)
 
-        assert ctx.store.count == 1
-        item = ctx.store.get("ABCDEF1234567890")
+        assert await ctx.core.store.count() == 1
+        item = await ctx.core.store.get("ABCDEF1234567890")
         assert item is not None
         assert item.category == "电影"
         assert item.status.value == "queued"
@@ -336,7 +345,7 @@ def test_appcontext_runtime_service_slots_are_not_typed_as_any():
 
     # 运行时状态字段在 RuntimeState 上
     runtime_hints = RuntimeState.__annotations__
-    for field_name in ("stats", "bg_manager", "qbit_lock"):
+    for field_name in ("stats", "bg_manager"):
         assert "Any" not in str(runtime_hints[field_name]), f"RuntimeState.{field_name}"
 
     # 用户面向服务字段在 AppServices 上
@@ -354,7 +363,11 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
         ClassifyPhase,
         DownloadPhase,
         HarvestPipeline,
-        MagnetItemTransitions,
+    )
+    from magnet_harvester.transitions import (
+        ClassificationTransitions,
+        DiscoveryTransitions,
+        DownloadTransitions,
     )
     from magnet_harvester.qbit_client import QBittorrentClient
     from magnet_harvester.services.user_actions import UserActionExecutor
@@ -364,12 +377,14 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     error_record_hints = ErrorRecord.__annotations__
     metric_snapshot_hints = MetricSnapshot.__annotations__
     qbit_client_hints = QBittorrentClient.get_maindata.__annotations__
-    qbit_props_hints = QBittorrentClient.get_torrent_properties.__annotations__
-    qbit_transfer_hints = QBittorrentClient.get_transfer_info.__annotations__
     websocket_hints = WSBroadcaster.__init__.__annotations__
     classify_usage_hints = ClassifyPhase.usage.fget.__annotations__
     download_phase_hints = DownloadPhase.__annotations__
-    transitions_hints = MagnetItemTransitions.__init__.__annotations__
+    transition_hints = [
+        DiscoveryTransitions.__init__.__annotations__,
+        ClassificationTransitions.__init__.__annotations__,
+        DownloadTransitions.__init__.__annotations__,
+    ]
     pipeline_hints = HarvestPipeline.__init__.__annotations__
     action_executor_hints = UserActionExecutor.__init__.__annotations__
     qbit_sync_hints = QBitSyncLoop.__init__.__annotations__
@@ -379,12 +394,10 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     assert "Any" not in str(error_record_hints["details"]), "ErrorRecord.details"
     assert "Any" not in str(metric_snapshot_hints["values"]), "MetricSnapshot.values"
     assert "Any" not in str(qbit_client_hints["return"]), "QBittorrentClient.get_maindata"
-    assert "Any" not in str(qbit_props_hints["return"]), "QBittorrentClient.get_torrent_properties"
-    assert "Any" not in str(qbit_transfer_hints["return"]), "QBittorrentClient.get_transfer_info"
     assert "Any" not in str(websocket_hints["store"]), "WSBroadcaster.store"
     assert "Any" not in str(classify_usage_hints["return"]), "ClassifyPhase.usage"
     assert "last_error" in download_phase_hints, "DownloadPhase.last_error"
-    assert "Any" not in str(transitions_hints["store"]), "MagnetItemTransitions.store"
+    assert all("Any" not in str(hints["store"]) for hints in transition_hints)
     assert "Any" not in str(pipeline_hints["store"]), "HarvestPipeline.store"
 
     for field_name in ("store", "pipeline", "task_manager"):

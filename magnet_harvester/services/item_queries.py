@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from magnet_harvester.store import ItemStore, call_store
+from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.serializers import item_payload, item_summary
 
 
@@ -13,7 +13,7 @@ class ItemQueryExecutor:
         self._store = store
 
     async def get_stats(self) -> dict:
-        stats = await call_store(self._store, "stats")
+        stats = await self._store.stats()
         return {
             "total": stats.total,
             "by_category": stats.by_category,
@@ -27,7 +27,7 @@ class ItemQueryExecutor:
         status: str = "all",
         limit: int = 20,
     ) -> dict:
-        items = await call_store(self._store, "list", category=category, status=status, limit=limit)
+        items = await self._store.list(category=category, status=status, limit=limit)
         return {"count": len(items), "items": [item_summary(item) for item in items]}
 
     async def page_items(
@@ -40,9 +40,7 @@ class ItemQueryExecutor:
     ) -> dict:
         limit = max(0, min(limit, 500))
         offset = max(0, min(offset, 10000))  # 硬上限，防止大 offset 导致内存 DoS
-        total, items = await call_store(
-            self._store,
-            "count_and_page",
+        total, items = await self._store.count_and_page(
             category=category,
             status=status,
             limit=limit,
@@ -56,5 +54,5 @@ class ItemQueryExecutor:
         }
 
     async def search_items(self, *, query: str, limit: int = 20) -> dict:
-        hits = await call_store(self._store, "search", query, limit=limit)
+        hits = await self._store.search(query, limit=limit)
         return {"count": len(hits), "results": [item_summary(item) for item in hits]}

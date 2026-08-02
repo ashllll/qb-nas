@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from magnet_harvester.utils.url_validator import (
@@ -53,6 +54,18 @@ class TestValidateCrawlUrl:
         with pytest.raises(URLValidationError, match="private"):
             validate_crawl_url("http://169.254.1.1")
 
+    def test_rejects_ipv4_mapped_private_ipv6(self):
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://[::ffff:192.168.1.10]/admin")
+
+    def test_rejects_non_global_benchmark_network(self):
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://198.18.0.1/admin")
+
+    def test_rejects_deprecated_ipv6_site_local_network(self):
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://[fec0::1]/admin")
+
     def test_rejects_empty_url(self):
         with pytest.raises(URLValidationError, match="empty"):
             validate_crawl_url("")
@@ -69,6 +82,9 @@ class TestValidateCrawlUrl:
         with pytest.raises(URLValidationError, match="invalid characters"):
             validate_crawl_url("http://user:pass@example.com")
 
+    def test_accepts_at_sign_in_query_value(self):
+        assert validate_crawl_url("https://example.com/search?q=user@example.com") is True
+
     def test_rejects_url_with_backslash(self):
         with pytest.raises(URLValidationError, match="invalid characters"):
             validate_crawl_url("http://example.com\\@evil.com")
@@ -78,6 +94,26 @@ class TestValidateCrawlUrl:
 
     def test_accepts_public_ip_https(self):
         assert validate_crawl_url("https://1.1.1.1") is True
+
+    def test_rejects_port_out_of_range_as_validation_error(self):
+        with pytest.raises(URLValidationError, match="port"):
+            validate_crawl_url("https://example.com:99999")
+
+    def test_rejects_zero_port(self):
+        with pytest.raises(URLValidationError, match="port"):
+            validate_crawl_url("https://example.com:0")
+
+    def test_rejects_malformed_ipv6_as_validation_error(self):
+        with pytest.raises(URLValidationError, match="invalid"):
+            validate_crawl_url("http://[::1")
+
+    def test_rejects_embedded_control_characters(self):
+        with pytest.raises(URLValidationError, match="control"):
+            validate_crawl_url("https://exa\nmple.com")
+
+    def test_rejects_excessively_long_url(self):
+        with pytest.raises(URLValidationError, match="too long"):
+            validate_crawl_url("https://example.com/" + "a" * 9000)
 
 
 def test_redirect_probe_timeout_is_short_for_crawl_speed():
@@ -93,6 +129,17 @@ async def test_admission_rejects_hostname_resolving_to_private_address():
 
     with pytest.raises(URLValidationError, match="private"):
         await admission.admit("https://public-looking.example")
+
+
+@pytest.mark.asyncio
+async def test_admission_wraps_dns_timeout_as_validation_error():
+    async def timeout_resolver(_hostname, _port):
+        raise TimeoutError("dns timed out")
+
+    admission = CrawlTargetAdmission(resolver=timeout_resolver)
+
+    with pytest.raises(URLValidationError, match="cannot be resolved"):
+        await admission.admit("https://slow-dns.example")
 
 
 @pytest.mark.asyncio
@@ -112,3 +159,39 @@ async def test_admission_rejects_redirect_to_private_address():
 
     with pytest.raises(URLValidationError, match="private"):
         await admission.admit_redirect_chain("https://public.example")
+
+
+@pytest.mark.asyncio
+async def test_redirect_probe_failure_is_fail_closed():
+    async def resolver(_hostname, _port):
+        return ["93.184.216.34"]
+
+    async def failing_probe(_url):
+        raise httpx.TimeoutException("probe timed out")
+
+    admission = CrawlTargetAdmission(resolver=resolver, redirect_probe=failing_probe)
+
+    with pytest.raises(URLValidationError, match="redirect"):
+        await admission.admit_redirect_chain("https://public.example")
+
+
+@pytest.mark.asyncio
+async def test_redirect_chain_allows_exact_configured_redirect_limit():
+    async def resolver(_hostname, _port):
+        return ["93.184.216.34"]
+
+    async def redirect_probe(url):
+        if url == "https://public.example":
+            return "https://public.example/final"
+        return None
+
+    admission = CrawlTargetAdmission(
+        resolver=resolver,
+        redirect_probe=redirect_probe,
+        max_redirects=1,
+    )
+
+    assert (
+        await admission.admit_redirect_chain("https://public.example")
+        == "https://public.example/final"
+    )

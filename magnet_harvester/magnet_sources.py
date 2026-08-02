@@ -23,11 +23,13 @@ class MagnetSourceExtractor:
 
     def from_page_result(self, result, *, source_url: str) -> list[dict]:
         items: list[dict] = []
-        for text in self._content_sources((
-            getattr(result, 'markdown', '') or '',
-            getattr(result, 'cleaned_html', '') or '',
-            getattr(result, 'html', '') or '',
-        )):
+        for text in self._content_sources(
+            (
+                getattr(result, "markdown", "") or "",
+                getattr(result, "cleaned_html", "") or "",
+                getattr(result, "html", "") or "",
+            )
+        ):
             items.extend(extract_from_text(text))
 
         items = filter_resolution_items(items, allowed=self._allowed_resolutions)

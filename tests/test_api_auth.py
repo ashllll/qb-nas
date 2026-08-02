@@ -17,7 +17,7 @@ import magnet_harvester.assembly as assembly_module
 class _FakeCrawler:
     """Minimal crawler double — avoids real Scrapling/SQLite init."""
 
-    def __init__(self, config, site_auth=None, task_manager=None):
+    def __init__(self, config, site_auth=None):
         self.max_depth = 3
 
     async def start(self):
@@ -43,7 +43,7 @@ class _FakeQbit:
 
 class _FakeSyncLoop:
     def __init__(
-        self, qbit_client, store, bus, task_manager=None, transitions=None, poll_interval=2.0
+        self, qbit_client, store, bus, task_manager=None, downloads=None, poll_interval=2.0
     ):
         pass
 
@@ -68,8 +68,8 @@ def client(monkeypatch):
     monkeypatch.setattr(assembly_module, "WSBroadcaster", _FakeBroadcaster)
     with asgi_client(app) as c:
         ctx = c.app.state.ctx
-        ctx.pipeline.admit_crawl_target = AsyncMock(return_value="https://example.com")
-        ctx.api_key = "test-secret-key-123"
+        ctx.core.pipeline.admit_crawl_target = AsyncMock(return_value="https://example.com")
+        ctx.runtime.api_key = "test-secret-key-123"
         yield c
 
 
@@ -135,7 +135,7 @@ class TestAPIKeyAuth:
         async def capture(event):
             events.append(event)
 
-        client.app.state.ctx.bus.subscribe(EventType.ITEMS_CLEARED, capture)
+        client.app.state.ctx.core.bus.subscribe(EventType.ITEMS_CLEARED, capture)
         r = client.delete(
             "/api/items",
             headers={"X-API-Key": "test-secret-key-123"},
@@ -152,6 +152,6 @@ class TestAPIKeyAuth:
 
     def test_no_key_config_allows_all(self, client):
         """When API_KEY is empty, auth is disabled (backward compat)."""
-        client.app.state.ctx.api_key = ""
+        client.app.state.ctx.runtime.api_key = ""
         r = client.post("/api/crawl", json={"url": "https://example.com", "depth": 1})
         assert r.status_code == 200

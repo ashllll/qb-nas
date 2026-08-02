@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import Dict
 
 import httpx
 
@@ -21,48 +21,6 @@ from magnet_harvester.qbit_client.sync_state import QBitSyncState
 log = logging.getLogger(__name__)
 
 QBitApiObject = dict[str, object]
-
-
-class _ClientSubmissionGateway:
-    """Adapter from QBittorrentClient internals to MagnetSubmitter's gateway."""
-
-    def __init__(self, client: "QBittorrentClient"):
-        self._client = client
-
-    async def request(self, method: str, path: str, **kw) -> httpx.Response:
-        return await self._client._req(method, path, **kw)
-
-    async def ensure_category(self, name: str, save_path: str) -> bool:
-        return await self._client.ensure_category(name, save_path)
-
-    async def get_base_save_path(self) -> str:
-        return await self._client.get_base_save_path()
-
-    async def find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
-        return await self._client._find_torrent_by_prefix(hash_prefix)
-
-
-class _ClientSubmissionRecorder:
-    """Adapter from submission outcomes to QBittorrentClient stats fields."""
-
-    def __init__(self, client: "QBittorrentClient"):
-        self._client = client
-
-    def attempted(self) -> None:
-        self._client.stats.total_added += 1
-
-    def succeeded(self) -> None:
-        self._client.stats.total_success += 1
-        self._client.stats.consecutive_failures = 0
-        self._client.stats.last_success_time = time.monotonic()
-
-    def failed(self) -> None:
-        self._client.stats.total_failed += 1
-        self._client.stats.consecutive_failures += 1
-        self._client.stats.last_failure_time = time.monotonic()
-
-    def error(self, message: str | None) -> None:
-        self._client.last_error = message
 
 
 class QBittorrentClient:
@@ -88,12 +46,24 @@ class QBittorrentClient:
         # LRU 有界字典，防止异常/恶意分类名导致无限增长（上限 200）
         self._category_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._category_locks_guard = asyncio.Lock()
-        self.last_error: str | None = None
         self._sync_state = QBitSyncState()
         self._path_resolver = QBitPathResolver(
             get_categories=self.get_categories,
             get_torrents=self._get_torrents_list,
         )
+        self._submitter = MagnetSubmitter(
+            gateway=self,
+            fs_base_path=self._config.fs_base_path,
+            recorder=self.stats,
+        )
+
+    @property
+    def last_error(self) -> str | None:
+        return self.stats.last_error
+
+    @last_error.setter
+    def last_error(self, message: str | None) -> None:
+        self.stats.last_error = message
 
     @property
     def _client(self):
@@ -109,6 +79,10 @@ class QBittorrentClient:
     async def _req(self, method: str, path: str, **kw) -> httpx.Response:
         return await self._transport.request(method, path, **kw)
 
+    async def request(self, method: str, path: str, **kw) -> httpx.Response:
+        """Submission-facing request operation."""
+        return await self._req(method, path, **kw)
+
     async def ping(self) -> bool:
         now = time.monotonic()
         if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
@@ -116,7 +90,10 @@ class QBittorrentClient:
         async with self._ping_lock:
             # 双重检查：获取锁期间缓存可能已被另一个协程填充
             now = time.monotonic()
-            if self._last_ping_result is not None and now - self._last_ping_at < self._ping_cache_ttl:
+            if (
+                self._last_ping_result is not None
+                and now - self._last_ping_at < self._ping_cache_ttl
+            ):
                 return self._last_ping_result
             try:
                 r = await self._req("GET", "/app/version")
@@ -158,58 +135,30 @@ class QBittorrentClient:
     def map_torrent_status(torrent: dict) -> dict:
         return TorrentStatusMapper.map(torrent)
 
-    async def get_torrent_properties(self, hash: str) -> QBitApiObject:
-        try:
-            r = await self._req("GET", f"/torrents/properties?hash={hash}")
-            if r.status_code == 200:
-                return r.json()
-            return {}
-        except Exception as e:
-            log.warning("get_torrent_properties 异常 hash=%s: %s", hash, e)
-            return {}
+    async def get_categories(self) -> dict:
+        r = await self._req("GET", "/torrents/categories")
+        if r.status_code != 200:
+            raise RuntimeError(f"qB categories 查询失败: HTTP {r.status_code}")
+        return r.json()
 
-    async def get_categories(self) -> dict | None:
-        try:
-            r = await self._req("GET", "/torrents/categories")
-            if r.status_code != 200:
-                log.warning(f"get_categories 返回 {r.status_code}")
-                return {}
-            return r.json()
-        except httpx.TransportError as e:
-            log.error(f"get_categories 网络异常: {e}")
-            return None
-        except Exception as e:
-            log.error(f"get_categories 未知异常: {e}", exc_info=True)
-            return None
-
-    async def _find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
+    async def find_torrent_by_prefix(self, hash_prefix: str) -> dict | None:
         """在 qB 种子列表中查找 hash 前缀匹配的种子（去重检测）。"""
-        try:
-            r = await self._req("GET", "/torrents/info")
-            if r.status_code != 200:
-                return None
-            torrents = r.json()
-            prefix_lower = hash_prefix.lower()
-            for t in torrents:
-                if t.get("hash", "").lower().startswith(prefix_lower):
-                    return t
-        except Exception as e:
-            log.debug("按前缀查找 torrent 异常: %s", e)
+        r = await self._req("GET", "/torrents/info")
+        if r.status_code != 200:
+            raise RuntimeError(f"qB torrent 查询失败: HTTP {r.status_code}")
+        torrents = r.json()
+        prefix_lower = hash_prefix.lower()
+        for torrent in torrents:
+            if torrent.get("hash", "").lower().startswith(prefix_lower):
+                return torrent
         return None
 
-    async def _get_torrents_list(self) -> list | None:
-        """辅助方法：获取种子列表（供 QBitPathResolver 使用）。
-
-        异常时返回 None 与"无种子"的 [] 区分，调用方可据此判断是否网络故障。
-        """
-        try:
-            r = await self._req("GET", "/torrents/info")
-            if r.status_code == 200:
-                return r.json()
-            log.warning(f"_get_torrents_list 返回 {r.status_code}")
-        except Exception as e:
-            log.debug("获取种子列表异常: %s", e)
-        return None
+    async def _get_torrents_list(self) -> list:
+        """获取种子列表；失败时传播异常，成功空结果返回 []。"""
+        r = await self._req("GET", "/torrents/info")
+        if r.status_code != 200:
+            raise RuntimeError(f"qB torrents 列表查询失败: HTTP {r.status_code}")
+        return r.json()
 
     async def get_default_save_path(self) -> str | None:
         """获取 qBittorrent 默认保存路径（缓存）。
@@ -270,7 +219,8 @@ class QBittorrentClient:
                     if not evicted:
                         log.error(
                             "分类锁 LRU 已达上限 (%d) 且全部被持有，拒绝创建 [%s]",
-                            self.MAX_CATEGORY_LOCKS, name,
+                            self.MAX_CATEGORY_LOCKS,
+                            name,
                         )
                         return False
                 self._category_locks[name] = asyncio.Lock()
@@ -280,12 +230,6 @@ class QBittorrentClient:
             for attempt in range(max_retries):
                 try:
                     cats = await self.get_categories()
-                    if cats is None:
-                        log.warning("get_categories 返回 None（网络异常），跳过本轮")
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(1)
-                        continue
-
                     if name not in cats:
                         await self._req(
                             "POST",
@@ -300,7 +244,11 @@ class QBittorrentClient:
 
                     cat_entry = cats.get(name, {})
                     if not isinstance(cat_entry, dict):
-                        log.warning("分类 [%s] 返回非 dict 类型: %s，跳过路径比对", name, type(cat_entry).__name__)
+                        log.warning(
+                            "分类 [%s] 返回非 dict 类型: %s，跳过路径比对",
+                            name,
+                            type(cat_entry).__name__,
+                        )
                         return False
                     if name in cats and cat_entry.get("savePath", "") != save_path:
                         await self._req(
@@ -331,8 +279,6 @@ class QBittorrentClient:
         for _ in range(checks):
             await asyncio.sleep(interval)
             cats = await self.get_categories()
-            if cats is None:
-                continue
             if name in cats:
                 return cats
         return cats
@@ -345,67 +291,7 @@ class QBittorrentClient:
         - add 时不传 savepath，让 qB 根据分类的 savePath 自动路由
         - autoTMM=true 让 qB 自动管理分类目录
         """
-        submitter = MagnetSubmitter(
-            gateway=_ClientSubmissionGateway(self),
-            fs_base_path=self._config.fs_base_path,
-            recorder=_ClientSubmissionRecorder(self),
-        )
-        return await submitter.add_magnet(magnet, category, save_path)
-
-    async def get_torrents(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-        hashes: Optional[List[str]] = None,
-    ) -> List[dict]:
-        try:
-            params = {}
-            if category:
-                params["category"] = category
-            if status:
-                params["status"] = status
-            if hashes:
-                params["hashes"] = "|".join(hashes)
-
-            r = await self._req("GET", "/torrents/info", params=params)
-
-            if r.status_code == 200:
-                return r.json()
-            return []
-        except Exception as e:
-            log.warning("获取 tracker 列表异常: %s", e)
-            return []
-
-    async def delete_torrent(self, hashes: List[str], delete_files: bool = False) -> bool:
-        try:
-            data = {
-                "hashes": "|".join(hashes),
-                "deleteFiles": "true" if delete_files else "false",
-            }
-            r = await self._req("POST", "/torrents/delete", data=data)
-            return r.text.strip() == "Ok."
-        except Exception as e:
-            log.error(f"delete_torrent 失败: {e}")
-            return False
-
-    async def recheck_torrent(self, hashes: List[str]) -> bool:
-        try:
-            data = {"hashes": "|".join(hashes)}
-            r = await self._req("POST", "/torrents/recheck", data=data)
-            return r.text.strip() == "Ok."
-        except Exception as e:
-            log.warning("recheck torrent 异常: %s", e)
-            return False
-
-    async def get_transfer_info(self) -> QBitApiObject:
-        try:
-            r = await self._req("GET", "/transfer/info")
-            if r.status_code == 200:
-                return r.json()
-            return {}
-        except Exception as e:
-            log.warning("获取传输信息异常: %s", e)
-            return {}
+        return await self._submitter.add_magnet(magnet, category, save_path)
 
     def get_stats(self) -> dict:
         return self.stats.as_dict()

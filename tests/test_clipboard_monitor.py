@@ -6,26 +6,10 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.bus import NullBus
+from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.magnet_parser import extract_from_text
 from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
-from magnet_harvester.store import FakeStore
-
-
-class RecordingIngestion:
-    def __init__(self):
-        self.calls = []
-
-    async def ingest(self, items, *, auto_download=False):
-        self.calls.append((items, auto_download))
-        return [item.hash for item in items]
-
-
-class StoreIngestion:
-    def __init__(self, store):
-        self._store = store
-
-    async def ingest(self, items, *, auto_download=False):
-        return [item.hash for item in items if self._store.add(item)]
+from magnet_harvester.store import AsyncItemStore, FakeStore
 
 
 def test_clipboard_no_longer_uses_local_magnet_regex():
@@ -35,30 +19,13 @@ def test_clipboard_no_longer_uses_local_magnet_regex():
     assert not hasattr(clipboard_monitor, "_MAGNET_RE"), "clipboard_monitor 不应再暴露 _MAGNET_RE"
 
 
-def test_clipboard_delegates_processing_to_shared_ingestion_interface():
-    ingestion = RecordingIngestion()
-    monitor = ClipboardMonitor(bus=NullBus(), ingestion=ingestion)
-    raw = {
-        "hash": "SHARED",
-        "name": "Shared ingestion",
-        "magnet": "magnet:?xt=urn:btih:SHARED",
-    }
-
-    asyncio.run(monitor._handle_item(raw))
-
-    items, auto_download = ingestion.calls[0]
-    assert auto_download is True
-    assert len(items) == 1
-    assert items[0].hash == "SHARED"
-    assert items[0].source_url == "clipboard://"
-    assert items[0].category is None
-
-
 def test_clipboard_accepts_non_2160p_magnet():
     store = FakeStore()
     monitor = ClipboardMonitor(
         bus=NullBus(),
-        ingestion=StoreIngestion(store),
+        store=AsyncItemStore(store),
+        classifier=LocalClassifier(),
+        pipeline=None,
     )
     magnet = (
         "magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&dn=Example.Movie.1080p.WEB-DL"
@@ -79,7 +46,9 @@ def test_clipboard_accepts_base64_encoded_magnet():
     store = FakeStore()
     monitor = ClipboardMonitor(
         bus=NullBus(),
-        ingestion=StoreIngestion(store),
+        store=AsyncItemStore(store),
+        classifier=LocalClassifier(),
+        pipeline=None,
     )
     magnet = (
         "magnet:?xt=urn:btih:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
@@ -103,7 +72,9 @@ def test_clipboard_accepts_html_escaped_and_quoted_magnet():
     store = FakeStore()
     monitor = ClipboardMonitor(
         bus=NullBus(),
-        ingestion=StoreIngestion(store),
+        store=AsyncItemStore(store),
+        classifier=LocalClassifier(),
+        pipeline=None,
     )
     content = (
         '<a href="magnet:?xt=urn:btih:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
@@ -128,7 +99,9 @@ def test_processed_content_fifo_eviction_not_full_clear():
     bus = NullBus()
     monitor = ClipboardMonitor(
         bus=bus,
-        ingestion=StoreIngestion(store),
+        store=AsyncItemStore(store),
+        classifier=LocalClassifier(),
+        pipeline=None,
         poll_interval=0.01,
     )
 

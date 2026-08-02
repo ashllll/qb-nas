@@ -15,7 +15,24 @@ class QBittorrentStats:
     consecutive_failures: int = 0
     last_success_time: Optional[float] = None
     last_failure_time: Optional[float] = None
+    last_error: str | None = None
     start_time: float = field(default_factory=time.monotonic)
+
+    def attempted(self) -> None:
+        self.total_added += 1
+
+    def succeeded(self) -> None:
+        self.total_success += 1
+        self.consecutive_failures = 0
+        self.last_success_time = time.monotonic()
+
+    def failed(self) -> None:
+        self.total_failed += 1
+        self.consecutive_failures += 1
+        self.last_failure_time = time.monotonic()
+
+    def error(self, message: str | None) -> None:
+        self.last_error = message
 
     @property
     def success_rate(self) -> float:

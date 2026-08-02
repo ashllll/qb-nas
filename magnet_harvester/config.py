@@ -29,7 +29,6 @@ class CrawlerConfig:
     allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
     wait_until: str = "load"
     delay_before_return_html: float = 1.0
-    word_count_threshold: int = 10
     scan_full_page: bool = True
     scroll_delay: float = 0.2
     max_scroll_steps: int = 8
@@ -40,9 +39,18 @@ class CrawlerConfig:
     # — v0.9.0 新增 —
     max_retries: int = 1
     check_robots_txt: bool = False
-    simulate_user: bool = False
-    magics: bool = False
-    url_score_depth_bias: bool = True  # BFS 时优先短路径详情页
+
+    def __post_init__(self) -> None:
+        self.timeout = max(1, int(self.timeout))
+        self.max_depth = max(1, int(self.max_depth))
+        self.concurrency = max(1, int(self.concurrency))
+        self.max_detail_links = max(0, int(self.max_detail_links))
+        self.delay_before_return_html = max(0.0, float(self.delay_before_return_html))
+        self.scroll_delay = max(0.0, float(self.scroll_delay))
+        self.max_scroll_steps = max(0, int(self.max_scroll_steps))
+        self.max_retries = max(0, int(self.max_retries))
+        if self.wait_until not in {"load", "networkidle"}:
+            self.wait_until = "load"
 
 
 @dataclass
@@ -82,7 +90,6 @@ class Settings(BaseSettings):
     CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
     CRAWLER_WAIT_UNTIL: str = "load"
     CRAWLER_DELAY_BEFORE_HTML: float = 1.0
-    CRAWLER_WORD_COUNT_THRESHOLD: int = 10
     CRAWLER_SCAN_FULL_PAGE: bool = True
     CRAWLER_SCROLL_DELAY: float = 0.2
     CRAWLER_MAX_SCROLL_STEPS: int = 8
@@ -92,9 +99,6 @@ class Settings(BaseSettings):
     CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
     CRAWLER_MAX_RETRIES: int = 1
     CRAWLER_CHECK_ROBOTS_TXT: bool = False
-    CRAWLER_SIMULATE_USER: bool = False
-    CRAWLER_MAGICS: bool = False
-    CRAWLER_URL_SCORE_DEPTH_BIAS: bool = True
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
 
@@ -152,7 +156,6 @@ class Settings(BaseSettings):
                 allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
                 wait_until=self.CRAWLER_WAIT_UNTIL,
                 delay_before_return_html=self.CRAWLER_DELAY_BEFORE_HTML,
-                word_count_threshold=self.CRAWLER_WORD_COUNT_THRESHOLD,
                 scan_full_page=self.CRAWLER_SCAN_FULL_PAGE,
                 scroll_delay=self.CRAWLER_SCROLL_DELAY,
                 max_scroll_steps=self.CRAWLER_MAX_SCROLL_STEPS,
@@ -162,9 +165,6 @@ class Settings(BaseSettings):
                 remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
                 max_retries=self.CRAWLER_MAX_RETRIES,
                 check_robots_txt=self.CRAWLER_CHECK_ROBOTS_TXT,
-                simulate_user=self.CRAWLER_SIMULATE_USER,
-                magics=self.CRAWLER_MAGICS,
-                url_score_depth_bias=self.CRAWLER_URL_SCORE_DEPTH_BIAS,
             )
         return self._crawler_config
 
@@ -176,45 +176,6 @@ class Settings(BaseSettings):
                 port=self.SERVICE_PORT,
             )
         return self._service_config
-
-    def update_qbit(
-        self, host: str | None = None, username: str | None = None, password: str | None = None
-    ) -> Optional[str]:
-        """动态更新 qB 配置（由前端配置面板调用）
-
-        返回:
-            None — 更新成功
-            str  — 错误信息（验证失败）
-        """
-        try:
-            candidate = self.build_qbit_config(host=host, username=username, password=password)
-        except ValueError as exc:
-            return str(exc)
-        old_host, old_user, old_pass = self.QBIT_HOST, self.QBIT_USERNAME, self.QBIT_PASSWORD
-        self.commit_qbit_config(candidate)
-        try:
-            self.persist_qbit_config(candidate)
-        except Exception as exc:
-            # 持久化失败：尝试回滚内存配置
-            try:
-                rollback = self.build_qbit_config(
-                    host=old_host, username=old_user, password=old_pass
-                )
-                self.commit_qbit_config(rollback)
-                return f"配置已回滚，持久化失败: {exc}"
-            except ValueError:
-                log.critical(
-                    "持久化失败且回滚也失败，尝试从 .env 恢复内存配置: %s", exc
-                )
-                try:
-                    self._reload_qbit_from_env()
-                except Exception as reload_exc:
-                    log.critical(
-                        "从 .env 恢复配置也失败，内存配置仍为 candidate 状态: %s",
-                        reload_exc,
-                    )
-                return f"持久化失败且回滚也失败，配置状态不一致: {exc}"
-        return None
 
     def build_qbit_config(
         self,
@@ -250,28 +211,6 @@ class Settings(BaseSettings):
         self.QBIT_USERNAME = config.username
         self.QBIT_PASSWORD = config.password
         self._qbit_config = None
-
-    def _reload_qbit_from_env(self) -> None:
-        """从 .env 文件重新读取 qBittorrent 配置到内存，用于回滚失败后的状态恢复。"""
-        env_path = Path(self.model_config.get("env_file", ".env"))
-        if not env_path.exists():
-            return
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            key = self._env_line_key(line)
-            if key not in ("QBIT_HOST", "QBIT_USERNAME", "QBIT_PASSWORD"):
-                continue
-            _, _, raw = line.partition("=")
-            value = raw.strip()
-            if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-                value = value[1:-1]
-            value = (
-                value.replace('\\"', '"')
-                .replace("\\\\", "\\")
-                .replace("\\$", "$")
-                .replace("\\n", "\n")
-            )
-            setattr(self, key, value)
-        self._qbit_config = None  # 使缓存失效，下次访问时重新构建
 
     def persist_qbit_config(self, config: QBitConfig, env_path: str | Path | None = None) -> None:
         """Persist qBittorrent connection settings to the .env file."""
@@ -354,9 +293,7 @@ class Settings(BaseSettings):
                 rendered.append(f"{key}={cls._format_env_value(value)}\n")
 
         if not rendered:
-            rendered = [
-                f"{k}={cls._format_env_value(v)}\n" for k, v in updates.items()
-            ]
+            rendered = [f"{k}={cls._format_env_value(v)}\n" for k, v in updates.items()]
 
         tmp = path.with_suffix(path.suffix + ".tmp")
         try:

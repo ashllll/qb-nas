@@ -21,7 +21,7 @@ Architecture analysis showed `main.py` as a supernode with 170+ connected nodes 
 
 1. **No real seams** — Services like `_qbit_sync_loop` and `_ws_broadcast` accessed global variables directly, making them untestable without monkeypatching.
 2. **Tight coupling across community boundaries** — Community 5 (FastAPI Server) absorbed nodes from Community 0 (Event Bus) and Community 1 (qBittorrent Integration) because `main.py` imported from both.
-3. **Private field mutation** — `RuntimeContext.replace_qbit()` reached into `HarvestPipeline._qbit` to swap the qBittorrent client at runtime, with no public seam.
+3. **Private field mutation** — `QBitRuntime.replace_qbit()` reached into `HarvestPipeline._qbit` to swap the qBittorrent client at runtime, with no public seam.
 
 The `deletion test` for `main.py` showed that deleting it would eliminate routing, WebSocket broadcasting, qB sync, stats tracking, tool execution, and config management simultaneously — confirming it was a shallow "everything file" rather than a deep module.
 
@@ -34,14 +34,23 @@ Specifically:
 1. **No module-level global variables** in `main.py` or any split-out module.
 2. **`lifespan()` is the sole assembler** — it creates all components, instantiates service classes with explicit constructor dependencies, and starts/stops them.
 3. **All split-out services receive dependencies via constructor injection**:
-   - `QBitSyncLoop(qbit_client, store, bus)`
+   - `QBitSyncLoop(qbit_client, store, bus, downloads)`
    - `WSBroadcaster(bus)`
-   - `UserActionExecutor(store, pipeline, task_manager, transitions, stats)`
+   - `UserActionExecutor(store, pipeline, task_manager, discovery, classification, stats)`
    - `ItemQueryExecutor(store)` for read-only item query formatting
    - `ObservabilitySnapshot(store, qbit, stats, broadcaster, error_handler)`
    - `BGTaskManager()`
-4. **`AppContext` remains the single dependency container** — routed through `app.state.ctx`, retrieved via `Depends(get_context)`.
-5. **`HarvestPipeline` gains a public `replace_download_phase()` method** — eliminating the private-field mutation from `RuntimeContext`.
+4. **`AppContext` remains the root dependency container** — routed through
+   `app.state.ctx` and retrieved via `Depends(get_context)`. Its interface exposes
+   exactly three semantic containers (`core`, `app_services`, `runtime`); callers
+   access those directly rather than through flat compatibility properties.
+5. **`HarvestPipeline` gains a public `replace_download_phase()` method** — eliminating the private-field mutation from `QBitRuntime`.
+6. **Magnet item state changes are injected by lifecycle**: discovery, classification,
+   and download modules own their behavior directly. No compatibility facade sits in
+   front of them; each caller receives only the lifecycle module it uses.
+7. **`QBitRuntime` owns the complete qBittorrent replacement transaction** behind one
+   interface and one lock: candidate validation, persistence, dependent alignment,
+   commit, rollback, and old-client cleanup are not split across a second target module.
 
 The resulting structure:
 
@@ -49,7 +58,7 @@ The resulting structure:
 magnet_harvester/
 ├── main.py              # FastAPI app + lifespan (sole assembler)
 ├── context/
-│   └── app_context.py   # AppContext, RuntimeContext, get_context
+│   └── app_context.py   # AppContext, QBitRuntime, get_context
 ├── api/
 │   ├── routes.py        # REST endpoints
 │   └── websocket.py     # WebSocket handler + WSBroadcaster

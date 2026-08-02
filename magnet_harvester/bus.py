@@ -62,6 +62,7 @@ class _EventDelivery:
         label: str = "event",
     ) -> None:
         """并发调用所有回调，阻塞发送方的时间不超过策略超时。"""
+
         async def _throttled(cb: Subscriber) -> None:
             async with self._semaphore:
                 await self._safe_call(cb, event)
@@ -90,12 +91,12 @@ class _EventDelivery:
                 )
             except asyncio.TimeoutError:
                 orphan_tasks = [t for t in tasks if not t.done()]
-                log.error("MessageBus: 取消后仍有 %d 个任务未响应",
-                          len(orphan_tasks))
+                log.error("MessageBus: 取消后仍有 %d 个任务未响应", len(orphan_tasks))
                 for t in orphan_tasks:
                     log.warning(
                         "MessageBus: 孤儿任务泄漏 — name=%r, cancelled=%s",
-                        t.get_name(), t.cancelled(),
+                        t.get_name(),
+                        t.cancelled(),
                     )
                     # 再次尝试取消，给一次极短等待
                     t.cancel()

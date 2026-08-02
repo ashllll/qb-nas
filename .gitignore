@@ -59,6 +59,8 @@ test-results/
 *.bak
 *.tmp
 .cache/
+.coverage
+.coverage.*
 
 # 代码分析缓存
 .codegraph/

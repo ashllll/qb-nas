@@ -62,15 +62,16 @@ Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
 - 顶部：WebSocket、qBittorrent、剪贴板监控状态
 - 移动端：底部分段导航，在“采集 / 资源库 / 设置”之间切换
 
-前端不依赖外部字体、CDN 或打包工具；所有界面逻辑都在 `static/index.html`。
+前端不依赖外部字体、CDN 或打包工具；页面结构、样式、API 传输、资源状态和界面控制分别位于 `static/` 下的 HTML、CSS 与 JavaScript 模块中。
 
 ## 快速开始
 
 ### 前置条件
 
 - Python 3.11+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)（依赖锁定与环境同步）
 - 可访问的 qBittorrent Web UI (v4.1+)
-- Scrapling 抓取器及浏览器依赖（`scrapling install`）
+- Playwright Chromium (`playwright install chromium`)
 
 ### 安装
 
@@ -78,8 +79,8 @@ Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
 git clone https://github.com/ashllll/qb-nas.git
 cd qb-nas
 
-python -m pip install -r requirements.txt
-scrapling install
+uv sync --extra dev --locked
+uv run playwright install chromium
 
 cp .env.example .env
 # 编辑 .env 填入 qBittorrent 连接信息
@@ -89,29 +90,31 @@ cp .env.example .env
 
 `.env` 常用配置项：
 
-| 变量                          | 说明                       | 默认值                      |
-| ----------------------------- | -------------------------- | --------------------------- |
-| `QBIT_HOST`                   | qBittorrent Web UI 地址    | `http://192.168.1.100:8080` |
-| `QBIT_USERNAME`               | qB 用户名                  | `admin`                     |
-| `QBIT_PASSWORD`               | qB 密码                    | —                           |
-| `SERVICE_HOST`                | 服务监听地址               | `127.0.0.1`                 |
-| `SERVICE_PORT`                | 服务端口                   | `8899`                      |
-| `API_KEY`                     | 写操作 `X-API-Key`         | 空（仅 loopback）           |
-| `ALLOW_INSECURE_WRITE_API`    | 允许非 loopback 无认证     | `false`                     |
-| `SITE_COOKIES`                | 站点 Cookie 注入           | `{}`                        |
-| `CRAWLER_TIMEOUT`             | 抓取超时秒                 | `30`                        |
-| `CRAWLER_MAX_DEPTH`           | 最大深度                   | `2`                         |
-| `CRAWLER_CONCURRENCY`         | 并发数                     | `6`                         |
-| `CRAWLER_MAX_DETAIL_LINKS`    | 单次深爬最多详情页数       | `200`                       |
-| `CRAWLER_ALLOWED_RESOLUTIONS` | 爬虫必须保留的清晰度关键词 | `2160p,4k`                  |
-| `CRAWLER_WAIT_UNTIL`          | 页面等待阶段               | `load`                      |
-| `CRAWLER_DELAY_BEFORE_HTML`   | 取 HTML 前额外等待秒       | `1.0`                       |
-| `CRAWLER_SCAN_FULL_PAGE`      | 抓取前滚动完整页面         | `true`                      |
-| `CRAWLER_MAX_SCROLL_STEPS`    | 最大滚动步数               | `8`                         |
-| `CRAWLER_PROCESS_IFRAMES`     | 合并 iframe 内容           | `true`                      |
-| `CRAWLER_FLATTEN_SHADOW_DOM`  | 展开 Shadow DOM            | `true`                      |
-| `FS_BASE_PATH`                | 本地可写目录（可选）       | 空                          |
-| `MIN_DISK_SPACE_GB`           | 磁盘告警阈值               | `10.0`                      |
+| 变量                          | 说明                        | 默认值                      |
+| ----------------------------- | --------------------------- | --------------------------- |
+| `QBIT_HOST`                   | qBittorrent Web UI 地址     | `http://192.168.1.100:8080` |
+| `QBIT_USERNAME`               | qB 用户名                   | `admin`                     |
+| `QBIT_PASSWORD`               | qB 密码                     | —                           |
+| `SERVICE_HOST`                | 服务监听地址                | `127.0.0.1`                 |
+| `SERVICE_PORT`                | 服务端口                    | `8899`                      |
+| `API_KEY`                     | 写操作 `X-API-Key`          | 空（仅 loopback）           |
+| `ALLOW_INSECURE_WRITE_API`    | 允许非 loopback 无认证      | `false`                     |
+| `SITE_COOKIES`                | 站点 Cookie 注入            | `{}`                        |
+| `CRAWLER_TIMEOUT`             | 抓取超时秒                  | `30`                        |
+| `CRAWLER_MAX_DEPTH`           | 最大深度                    | `2`                         |
+| `CRAWLER_CONCURRENCY`         | 并发数                      | `6`                         |
+| `CRAWLER_MAX_DETAIL_LINKS`    | 单次深爬最多详情页数        | `200`                       |
+| `CRAWLER_ALLOWED_RESOLUTIONS` | 爬虫必须保留的清晰度关键词  | `2160p,4k`                  |
+| `CRAWLER_WAIT_UNTIL`          | 页面等待阶段                | `load`                      |
+| `CRAWLER_DELAY_BEFORE_HTML`   | 取 HTML 前额外等待秒        | `1.0`                       |
+| `CRAWLER_SCAN_FULL_PAGE`      | 抓取前滚动完整页面          | `true`                      |
+| `CRAWLER_MAX_SCROLL_STEPS`    | 最大滚动步数                | `8`                         |
+| `CRAWLER_PROCESS_IFRAMES`     | 合并 iframe 内容            | `true`                      |
+| `CRAWLER_FLATTEN_SHADOW_DOM`  | 展开 Shadow DOM             | `true`                      |
+| `CRAWLER_MAX_RETRIES`         | Scrapling 阻断/网络重试次数 | `1`                         |
+| `CRAWLER_CHECK_ROBOTS_TXT`    | 遵守 robots.txt             | `false`                     |
+| `FS_BASE_PATH`                | 本地可写目录（可选）        | 空                          |
+| `MIN_DISK_SPACE_GB`           | 磁盘告警阈值                | `10.0`                      |
 
 #### 爬取需要登录的网站
 
@@ -156,10 +159,8 @@ python run.py
 git clone https://github.com/ashllll/qb-nas.git
 cd qb-nas
 
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-scrapling install
+uv sync --extra dev --locked
+uv run playwright install chromium
 ```
 
 macOS / Linux 使用 `source .venv/bin/activate`，Windows PowerShell 使用：
@@ -259,9 +260,8 @@ journalctl -u magnet-harvester -f
 ```bash
 cd /opt/qb-nas
 git pull --ff-only
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-scrapling install
+uv sync --extra dev --locked
+uv run playwright install chromium
 sudo systemctl restart magnet-harvester
 ```
 
@@ -302,10 +302,11 @@ qb-nas/
 │   ├── config.py                   # Pydantic 配置 (Settings)
 │   ├── models.py                   # Pydantic 模型
 │   ├── errors.py                   # 错误处理 (ErrorHandler)
-│   ├── crawler.py                  # Scrapling 爬虫 + Cookie 注入
+│   ├── crawler.py                  # Scrapling 事件适配器
+│   ├── scrapling_spider.py         # Scrapling Spider 调度与浏览器安全策略
 │   ├── magnet_parser.py            # magnet 正则提取
 │   ├── pipeline.py                 # 爬取→分类→下载管道
-│   ├── store.py                    # ItemStore adapter（内存 + SQLite）
+│   ├── store.py                    # ItemStore (内存存储)
 │   ├── bus.py                      # MessageBus (事件总线)
 │   ├── assembly.py                 # 运行时装配 (build_runtime)
 │   ├── api/
@@ -334,7 +335,11 @@ qb-nas/
 │       ├── serializers.py          # 响应序列化
 │       └── bg_tasks.py             # 后台任务管理
 ├── static/
-│   └── index.html                  # Web UI 单页应用
+│   ├── index.html                  # Web UI 页面结构
+│   ├── styles.css                  # 页面样式
+│   ├── api_client.js               # API 传输与鉴权
+│   ├── item_state.js               # 资源筛选与选择状态
+│   └── app.js                      # WebSocket 与界面控制
 ├── config/
 │   └── category_keywords.json      # 关键词规则配置
 ├── tests/                          # 单元测试
@@ -345,14 +350,15 @@ qb-nas/
 ## 核心实现
 
 - **分类引擎**：关键词精确匹配 + 通用正则，覆盖电影、电视剧、动漫、音乐、游戏、软件、综艺、纪录片和其他资源类型
-- **前端界面**：`static/index.html` 单文件工作台，无构建步骤；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
-- **爬虫调度**：Scrapling `AsyncDynamicSession` 抓取页面，项目内受限 BFS 负责详情页发现、去重和深度遍历，结果流式回传到 WebSocket
+- **前端界面**：`static/` 下的无构建步骤多模块工作台；FastAPI 通过 `/static` 提供资源，根路径 `/` 返回页面
+- **爬虫调度**：Scrapling `Spider.stream()` 负责请求队列、并发、深度跟进、指纹去重、重试与 robots.txt，结果流式回传到 WebSocket
 - **动态页面抓取**：通过 Scrapling 浏览器会话加载动态页面，再解析页面内容中的磁力链接
+- **浏览器网络防护**：Scrapling `page_setup` 在导航前拦截 HTTP/WebSocket 请求，阻止私网、非全局地址和 Service Worker 绕过
 - **Cookie 注入**：`SITE_COOKIES` JSON 配置 → Scrapling 浏览器会话 cookies，支持多域名
 - **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制。`ensure_category` 带锁防并发竞态，`use_auto_torrent_management` 自动路由
 - **状态同步**：QBitSyncLoop 每 2 秒轮询 `/sync/maindata`，仅终态变化时触发前端通知，避免日志刷屏
 - **URL 安全**：RFC 1918 精确检查（10/172.16/192.168 + fc00::/7），DNS 解析后验证，防 SSRF
-- **剪贴板监控**：`pyperclip` 轮询系统剪贴板 (1s)，提取磁力条目后经 `UserActionExecutor.ingest()` 复用 pipeline 的去重与分类，并通过受管后台任务自动下载
+- **剪贴板监控**：`pyperclip` 轮询系统剪贴板 (1s)，提取 `btih` + `dn=` 名称，经过本地规则分类后发布 `MAGNET_FOUND` 事件，实时显示在 Web UI 表格中
 
 ## License
 

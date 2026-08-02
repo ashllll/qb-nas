@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from magnet_harvester.models import MagnetItem, TaskStatus
@@ -13,14 +15,18 @@ def app_with_key():
     """Create a test app with API Key auth enabled."""
     store = None
     app, ctx, qbit = make_test_app(store=store)
-    ctx.api_key = "secret"
+    ctx.runtime.api_key = "secret"
     # Seed a pending item
-    ctx.store.add(MagnetItem(
-        hash="ALPHA1234567890",
-        name="Test.Item.2160p",
-        magnet="magnet:?xt=urn:btih:ALPHA1234567890",
-        status=TaskStatus.pending,
-    ))
+    asyncio.run(
+        ctx.core.store.add(
+            MagnetItem(
+                hash="ALPHA1234567890",
+                name="Test.Item.2160p",
+                magnet="magnet:?xt=urn:btih:ALPHA1234567890",
+                status=TaskStatus.pending,
+            )
+        )
+    )
     return app, ctx, qbit
 
 
@@ -37,7 +43,8 @@ class TestAPIKeyAuth:
         app, _, _ = app_with_key
         with asgi_client(app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "https://example.com/test", "depth": 1},
+                "/api/crawl",
+                json={"url": "https://example.com/test", "depth": 1},
                 headers={"X-API-Key": "secret"},
             )
         assert resp.status_code == 200
@@ -47,7 +54,8 @@ class TestAPIKeyAuth:
         app, _, _ = app_with_key
         with asgi_client(app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "https://example.com/test", "depth": 1},
+                "/api/crawl",
+                json={"url": "https://example.com/test", "depth": 1},
                 headers={"X-API-Key": "wrong-key"},
             )
         assert resp.status_code == 401
@@ -69,7 +77,8 @@ class TestURLValidation:
         """POST /api/crawl with invalid URL should return 422."""
         with asgi_client(self.app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "not-a-valid-url", "depth": 1},
+                "/api/crawl",
+                json={"url": "not-a-valid-url", "depth": 1},
                 headers={"X-API-Key": "secret"},
             )
         assert resp.status_code == 422
@@ -78,7 +87,8 @@ class TestURLValidation:
         """POST /api/crawl with empty URL should return 422."""
         with asgi_client(self.app) as client:
             resp = client.post(
-                "/api/crawl", json={"url": "", "depth": 1},
+                "/api/crawl",
+                json={"url": "", "depth": 1},
                 headers={"X-API-Key": "secret"},
             )
         assert resp.status_code == 422

@@ -95,14 +95,12 @@ class FallbackRule:
     def __init__(self, reason: str = "local_rule"):
         self._reason = reason
         self._compiled_rules: list[tuple[re.Pattern, str]] = [
-            (re.compile(pattern, re.IGNORECASE), category)
-            for pattern, category in LOCAL_RULES
+            (re.compile(pattern, re.IGNORECASE), category) for pattern, category in LOCAL_RULES
         ]
 
     def reload(self) -> bool:
         self._compiled_rules = [
-            (re.compile(pattern, re.IGNORECASE), category)
-            for pattern, category in LOCAL_RULES
+            (re.compile(pattern, re.IGNORECASE), category) for pattern, category in LOCAL_RULES
         ]
         return True
 

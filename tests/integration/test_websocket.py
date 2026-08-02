@@ -32,10 +32,10 @@ def app_ctx():
     app, ctx, _ = make_test_app()
     yield app, ctx
     # Cleanup pending bg tasks to avoid "Task was destroyed" warnings
-    if ctx.bg_manager:
+    if ctx.runtime.bg_manager:
         try:
             loop = asyncio.new_event_loop()
-            loop.run_until_complete(ctx.bg_manager.shutdown())
+            loop.run_until_complete(ctx.runtime.bg_manager.shutdown())
             loop.close()
         except Exception:
             pass
@@ -49,13 +49,15 @@ def test_websocket_connect_receives_init_message(app_ctx):
     app, ctx = app_ctx
 
     # Add a seed item so init message has content
-    ctx.store.add(
-        MagnetItem(
-            hash="INIT001",
-            name="Init Test Item",
-            magnet="magnet:?xt=urn:btih:INIT001",
-            category="电影",
-            status=TaskStatus.pending,
+    asyncio.run(
+        ctx.core.store.add(
+            MagnetItem(
+                hash="INIT001",
+                name="Init Test Item",
+                magnet="magnet:?xt=urn:btih:INIT001",
+                category="电影",
+                status=TaskStatus.pending,
+            )
         )
     )
 
@@ -89,9 +91,9 @@ def test_websocket_ping_pong(app_ctx):
 
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
-        # Consume init message
-        init_raw = ws.receive_text()
-        assert json.loads(init_raw)["type"] == "init"
+        # Consume the complete initial snapshot protocol.
+        assert json.loads(ws.receive_text())["type"] == "init"
+        assert json.loads(ws.receive_text())["type"] == "init_done"
 
         # Send ping
         ws.send_text("ping")
@@ -106,8 +108,9 @@ def test_websocket_json_ping_pong(app_ctx):
 
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
-        # Consume init
-        ws.receive_text()
+        # Consume the complete initial snapshot protocol.
+        assert json.loads(ws.receive_text())["type"] == "init"
+        assert json.loads(ws.receive_text())["type"] == "init_done"
 
         # Send JSON ping
         ws.send_text(json.dumps({"type": "ping"}))
@@ -122,13 +125,13 @@ def test_websocket_json_ping_pong(app_ctx):
 def test_websocket_broadcaster_sends_events_directly():
     """WSBroadcaster sends bus events to connected clients (in-process)."""
     from magnet_harvester.bus import MessageBus
-    from magnet_harvester.store import InMemoryItemStore
+    from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
     from magnet_harvester.api.websocket import WSBroadcaster
     from starlette.websockets import WebSocketState
 
     bus = MessageBus()
     store = InMemoryItemStore()
-    broadcaster = WSBroadcaster(bus=bus, store=store)
+    broadcaster = WSBroadcaster(bus=bus, store=AsyncItemStore(store))
 
     class CollectingWS:
         def __init__(self):

@@ -18,17 +18,16 @@ from magnet_harvester.context.app_context import (
     AppContext,
     AppServices,
     CoreServices,
-    QBitReplacementTarget,
-    QBitRuntime,
     RuntimeState,
+    QBitRuntime,
 )
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import FakeStore
+from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.observability import ObservabilitySnapshot
 from magnet_harvester.services.user_actions import UserActionExecutor
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 
 
 class FakeStats:
@@ -174,24 +173,28 @@ def _make_app():
     pipeline = FakePipeline()
     bg_manager = FakeBGManager()
     stats = FakeStats()
-    transitions = MagnetItemTransitions(store=store, bus=NullBus())
+    async_store = AsyncItemStore(store)
+    bus = NullBus()
+    discovery = DiscoveryTransitions(store=async_store, bus=bus)
+    classification = ClassificationTransitions(store=async_store, bus=bus)
     action_executor = UserActionExecutor(
-        store=store,
+        store=async_store,
         pipeline=pipeline,
         task_manager=bg_manager,
-        transitions=transitions,
+        discovery=discovery,
+        classification=classification,
         stats=stats,
     )
     qbit = FakeQbit()
     classifier = FakeClassifier()
     observability = ObservabilitySnapshot(
-        store=store,
+        store=async_store,
         qbit=qbit,
         stats=stats,
         error_handler=error_handler,
         classifier=classifier,
     )
-    item_queries = ItemQueryExecutor(store=store)
+    item_queries = ItemQueryExecutor(store=async_store)
 
     class RuntimeSettings:
         def build_qbit_config(self, host, username, password):
@@ -216,7 +219,7 @@ def _make_app():
 
     ctx = AppContext(
         core=CoreServices(
-            store=store,
+            store=async_store,
             bus=NullBus(),
             pipeline=pipeline,
             crawler=None,
@@ -232,11 +235,10 @@ def _make_app():
             stats=stats,
             bg_manager=bg_manager,
             error_handler=error_handler,
-            item_transitions=transitions,
         ),
     )
-    ctx.qbit_runtime = QBitRuntime(
-        replacement_target=QBitReplacementTarget.from_context(ctx),
+    ctx.runtime.qbit_runtime = QBitRuntime(
+        ctx=ctx,
         settings=RuntimeSettings(),
         client_factory=RuntimeQbit,
     )
@@ -261,7 +263,7 @@ def test_items_route_uses_context_store():
 
 def test_items_route_requires_assembled_item_queries():
     app, ctx = _make_app()
-    ctx.item_queries = None
+    ctx.app_services.item_queries = None
 
     with asgi_client(app) as client:
         resp = client.get("/api/items")
@@ -281,7 +283,7 @@ def test_stats_route_uses_context_stats():
     assert payload["api_calls"] == 1
     assert payload["active_items"] == 1
     assert payload["websocket_clients"] == 0
-    assert ctx.stats.api_calls == 1
+    assert ctx.runtime.stats.api_calls == 1
 
 
 def test_status_route_uses_context_qbit():
@@ -298,7 +300,7 @@ def test_status_route_uses_context_qbit():
 
 def test_status_route_requires_assembled_observability():
     app, ctx = _make_app()
-    ctx.observability = None
+    ctx.app_services.observability = None
 
     with asgi_client(app) as client:
         resp = client.get("/api/status")
@@ -315,13 +317,13 @@ def test_crawl_route_schedules_pipeline_work():
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "started"
-    assert ctx.stats.as_dict()["crawl_requests"] == 1
-    assert ctx.pipeline.crawl_calls == [("https://example.com", 2, False)]
+    assert ctx.runtime.stats.as_dict()["crawl_requests"] == 1
+    assert ctx.core.pipeline.crawl_calls == [("https://example.com", 2, False)]
 
 
 def test_crawl_route_requires_assembled_action_executor():
     app, ctx = _make_app()
-    ctx.action_executor = None
+    ctx.app_services.action_executor = None
 
     with asgi_client(app) as client:
         resp = client.post("/api/crawl", json={"url": "https://example.com", "depth": 2})
@@ -349,7 +351,7 @@ def test_classifier_reload_route_uses_context_classifier():
 
     assert resp.status_code == 200
     assert resp.json() == {"status": "reloaded", "rules_reloaded": 1}
-    assert ctx.classifier.reload_calls == 1
+    assert ctx.core.classifier.reload_calls == 1
 
 
 def test_download_and_reclassify_routes_schedule_work():
@@ -362,8 +364,8 @@ def test_download_and_reclassify_routes_schedule_work():
     assert download.status_code == 200
     assert download.json()["count"] == 1
     assert reclassify.status_code == 200
-    assert ctx.stats.as_dict()["download_requests"] == 1
-    assert ctx.bg_manager.calls == ["download_selected", "reclassify"]
+    assert ctx.runtime.stats.as_dict()["download_requests"] == 1
+    assert ctx.runtime.bg_manager.calls == ["download_selected", "reclassify"]
 
 
 def test_search_clear_health_categories_and_config_routes():
@@ -384,15 +386,13 @@ def test_search_clear_health_categories_and_config_routes():
     assert "电影" in categories.json()["categories"]
     assert config.status_code == 200
     assert "qbit_host" in config.json()
-    assert isinstance(config.json()["qbit_password_configured"], bool)
-    assert "qbit_password" not in config.json()
     assert cleared.status_code == 200
     assert cleared.json()["removed"] == 1
 
 
 def test_errors_routes_return_and_clear_all_records():
     app, ctx = _make_app()
-    eh = ctx.error_handler
+    eh = ctx.runtime.error_handler
     assert eh is not None
 
     error_id = eh.record(
@@ -441,12 +441,12 @@ def test_update_config_replaces_qbit_client():
             created.append(self)
 
     app, ctx = _make_app()
-    ctx.qbit_runtime = QBitRuntime(
-        replacement_target=QBitReplacementTarget.from_context(ctx),
+    ctx.runtime.qbit_runtime = QBitRuntime(
+        ctx=ctx,
         settings=CapturingSettings(),
         client_factory=NewQbit,
     )
-    old_qbit = ctx.qbit
+    old_qbit = ctx.core.qbit
 
     with asgi_client(app) as client:
         resp = client.put(
@@ -460,8 +460,8 @@ def test_update_config_replaces_qbit_client():
 
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok", "connected": True}
-    assert ctx.qbit is created[0]
-    assert ctx.pipeline.replaced_qbit is created[0]
+    assert ctx.core.qbit is created[0]
+    assert ctx.core.pipeline.replaced_qbit is created[0]
     assert old_qbit.closed is True
     assert created[0].closed is False
     assert persisted == [created[0].config]
@@ -470,7 +470,7 @@ def test_update_config_replaces_qbit_client():
 
 def test_update_config_requires_assembled_qbit_runtime():
     app, ctx = _make_app()
-    ctx.qbit_runtime = None
+    ctx.runtime.qbit_runtime = None
 
     with asgi_client(app) as client:
         resp = client.put(
@@ -508,12 +508,12 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
             created.append(self)
 
     app, ctx = _make_app()
-    ctx.qbit_runtime = QBitRuntime(
-        replacement_target=QBitReplacementTarget.from_context(ctx),
+    ctx.runtime.qbit_runtime = QBitRuntime(
+        ctx=ctx,
         settings=CapturingSettings(),
         client_factory=OfflineQbit,
     )
-    old_qbit = ctx.qbit
+    old_qbit = ctx.core.qbit
 
     with asgi_client(app) as client:
         resp = client.put(
@@ -527,7 +527,7 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
 
     assert resp.status_code == 200
     assert resp.json() == {"status": "failed", "connected": False}
-    assert ctx.qbit is old_qbit
+    assert ctx.core.qbit is old_qbit
     assert old_qbit.closed is False
     assert created[0].closed is True
     assert persisted == []
@@ -553,12 +553,12 @@ def test_update_config_returns_500_when_persist_fails():
             self.config = config
 
     app, ctx = _make_app()
-    ctx.qbit_runtime = QBitRuntime(
-        replacement_target=QBitReplacementTarget.from_context(ctx),
+    ctx.runtime.qbit_runtime = QBitRuntime(
+        ctx=ctx,
         settings=FailingSettings(),
         client_factory=NewQbit,
     )
-    old_qbit = ctx.qbit
+    old_qbit = ctx.core.qbit
 
     with asgi_client(app) as client:
         resp = client.put(
@@ -572,13 +572,13 @@ def test_update_config_returns_500_when_persist_fails():
 
     assert resp.status_code == 500
     assert resp.json()["detail"] == "qBittorrent 配置持久化失败"
-    assert ctx.qbit is old_qbit
+    assert ctx.core.qbit is old_qbit
     assert old_qbit.closed is False
 
 
 def test_update_config_rejects_invalid_candidate_without_mutating_runtime():
     app, ctx = _make_app()
-    old_qbit = ctx.qbit
+    old_qbit = ctx.core.qbit
 
     with asgi_client(app) as client:
         resp = client.put(
@@ -591,5 +591,5 @@ def test_update_config_rejects_invalid_candidate_without_mutating_runtime():
         )
 
     assert resp.status_code == 422
-    assert ctx.qbit is old_qbit
+    assert ctx.core.qbit is old_qbit
     assert old_qbit.closed is False

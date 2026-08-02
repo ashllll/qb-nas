@@ -8,7 +8,7 @@ P1-6: 同步循环优化测试
 import asyncio
 import pytest
 from magnet_harvester.pipeline import HarvestPipeline
-from magnet_harvester.store import InMemoryItemStore
+from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 
@@ -78,7 +78,7 @@ async def test_classify_start_is_concurrent():
             self._store = store
             self._bus = bus
 
-        async def classification_started(self, hash_key: str):
+        async def started(self, hash_key: str):
             nonlocal active, max_active
             async with lock:
                 active += 1
@@ -95,11 +95,11 @@ async def test_classify_start_is_concurrent():
         crawler=FakeCrawler(),
         classifier=FakeClassifier(),
         qbit=FakeQBit(),
-        store=store,
+        store=AsyncItemStore(store),
         bus=bus,
     )
     # 替换 transitions
-    pipeline._transitions = TrackedTransitions(store, bus)
+    pipeline._classification = TrackedTransitions(store, bus)
 
     items = [make_item(f"hash{i}") for i in range(5)]
     await pipeline._stream_classify(items)

@@ -6,36 +6,33 @@
 
 A discovered magnet link plus the metadata needed to classify it, show it in the UI, and submit it to qBittorrent. Its lifecycle is represented by `TaskStatus`.
 
+### Magnet item store
+
+The source of truth for discovered Magnet items, including their lifecycle state, classification metadata, and download progress.
+
 ### Crawl pipeline
 
-The orchestration that accepts Magnet items from crawler and clipboard sources, stores new items,
-classifies them, and optionally submits them to qBittorrent through one ingestion interface.
+The orchestration that crawls a URL, stores new Magnet items, classifies them, and optionally submits them to qBittorrent.
 
-### Magnet ingestion
+### DynamicPagePolicy
 
-The `HarvestPipeline.ingest()` interface owns deduplication and classification for non-crawler
-sources. `UserActionExecutor.ingest()` adds managed optional download scheduling, so source adapters
-do not reproduce lifecycle or background-task logic.
+The browser preparation module that removes blocking overlays, scans the full page, and exposes same-origin iframe and shadow DOM content before Magnet extraction.
 
-### MagnetItemTransitions
+### Discovery lifecycle
 
-The module responsible for admitting Magnet item lifecycle changes, applying them through
-`ItemStore` atomic conditional updates, and publishing matching `MessageBus` events only after a
-successful state change.
+The lifecycle that admits newly discovered Magnet items into the collection and removes the collection when the user clears it.
 
-### ItemStore
+### Classification lifecycle
 
-The seam for storing and querying Magnet items. The in-memory and SQLite adapters both guarantee
-that status comparison and field updates are atomic when a lifecycle transition is admitted.
+The lifecycle that records classification start, success, failure, and manual category changes for a Magnet item.
 
-### RuntimeContext
+### Download lifecycle
 
-The module responsible for keeping runtime dependencies aligned when adapters are replaced during application lifetime.
+The lifecycle that records qBittorrent submission and reconciles later download state changes for a Magnet item.
 
 ### QBitRuntime
 
-The module responsible for atomically replacing the active qBittorrent adapter through a narrow
-`QBitReplacementTarget`, without retaining the full `AppContext`.
+The module responsible for validating, persisting, and atomically replacing the active qBittorrent configuration across the application context, download state sync, observability, and the Crawl pipeline.
 
 ### Local classification
 
@@ -75,5 +72,4 @@ The query module that builds user-facing runtime snapshots for status, health, a
 
 ### BGTaskManager
 
-The owner of application background coroutines, including crawl sessions, pipeline jobs, qB sync,
-and clipboard monitoring, from creation through application shutdown.
+The utility module that wraps `asyncio.create_task` with exception logging via `add_done_callback`, providing a uniform way to spawn and monitor background coroutines.

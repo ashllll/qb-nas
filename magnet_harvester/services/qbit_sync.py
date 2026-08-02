@@ -12,8 +12,8 @@ from typing import Protocol
 from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
 from magnet_harvester.models import TaskStatus
-from magnet_harvester.store import ItemStore, call_store
-from magnet_harvester.transitions import MagnetItemTransitions
+from magnet_harvester.store import ItemStore
+from magnet_harvester.transitions import DownloadTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ class QBitSyncLoop:
         poll_interval: float = 2.0,
         max_failure_backoff: float = 30.0,
         task_manager: BackgroundTaskSpawner | None = None,
-        transitions: MagnetItemTransitions | None = None,
+        downloads: DownloadTransitions | None = None,
     ):
         self._qbit = qbit_client
         self._store = store
@@ -84,7 +84,7 @@ class QBitSyncLoop:
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
-        self._transitions = transitions or MagnetItemTransitions(store=store, bus=bus)
+        self._downloads = downloads or DownloadTransitions(store=store, bus=bus)
 
     async def start(self):
         async with self._lock:
@@ -146,9 +146,7 @@ class QBitSyncLoop:
                 continue
             self._backoff.record_success()
 
-            tracked_items = await call_store(
-                store,
-                "list",
+            tracked_items = await store.list(
                 status=_SYNC_ACTIVE_STATUSES,
                 limit=_MAX_STORE_ITEMS,
             )
@@ -203,7 +201,7 @@ class QBitSyncLoop:
             is_removed = hash_key.lower() in removed_hashes
 
             try:
-                await self._transitions.reconcile_download_snapshot(
+                await self._downloads.reconcile_snapshot(
                     hash_key,
                     item,
                     torrent,
