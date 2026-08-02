@@ -1,11 +1,11 @@
 {
-    "schema_version": 1,
-    "commit": "7c0aead871e6cf9b14badf1c4002ad7893736ca9",
-    "indexed_at": "2026-07-10T15:51:21Z",
-    "project": "Users-llll-code-github-qb-nas",
-    "nodes": 684,
-    "edges": 2955,
-    "original_size": 4456448,
-    "compressed_size": 741046,
-    "compression_level": 3
+  "schema_version": 2,
+  "commit": "0c9fe35586e7a93834385ceb409347dcd9da5993",
+  "indexed_at": "2026-08-02T06:08:42Z",
+  "project": "Users-llll-code-github-qb-nas",
+  "nodes": 2268,
+  "edges": 12633,
+  "original_size": 11337728,
+  "compressed_size": 1996993,
+  "compression_level": 3
 }
