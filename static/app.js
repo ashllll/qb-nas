@@ -507,7 +507,18 @@ function shortUrl(value) {
   }
 }
 
+const LOG_DEDUPE_WINDOW_MS = 8000;
+const logDedupe = new Map();
+
 function addLog(message, type = "") {
+  const now = Date.now();
+  const dedupeKey =
+    type === "warning" && message.startsWith("qB 状态暂时异常，正在重试")
+      ? "qbit-transient-retry"
+      : `${type}:${message}`;
+  const previous = logDedupe.get(dedupeKey) || 0;
+  if (now - previous < LOG_DEDUPE_WINDOW_MS) return;
+  logDedupe.set(dedupeKey, now);
   const box = document.getElementById("logBox");
   const line = document.createElement("div");
   line.className = "log-line";
@@ -536,10 +547,8 @@ function logDownloadState(item, msg) {
     addLog(`下载中 ${Math.round(msg.progress || 0)}% · ${name}`, "found");
   else if (msg.status === "success") addLog(`下载完成 · ${name}`, "found");
   else if (msg.status === "error")
-    addLog(
-      `下载失败 · ${name}${msg.error_msg ? ` · ${msg.error_msg}` : ""}`,
-      "error"
-    );
+    if (msg.error_msg) addLog(`下载失败 · ${name} · ${msg.error_msg}`, "error");
+    else addLog(`qB 状态暂时异常，正在重试 · ${name}`, "warning");
 }
 
 function setButtonBusy(button, busy, label = "") {
