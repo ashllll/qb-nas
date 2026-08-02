@@ -1662,6 +1662,9 @@
       let crawlTaskTimer = null;
       let itemsApiLoading = false;
       let itemsApiLoaded = false;
+      const toastLastShown = new Map();
+      const TOAST_DEDUPE_MS = 4000;
+      const MAX_VISIBLE_TOASTS = 4;
 
       const PREFS_KEY = "magnet-harvester-prefs";
 
@@ -1781,10 +1784,18 @@
       }
 
       async function apiFetch(url, options = {}) {
-        const response = await fetch(url, {
-          ...options,
-          headers: apiHeaders(options.headers || {}),
-        });
+        let response;
+        try {
+          response = await fetch(url, {
+            ...options,
+            headers: apiHeaders(options.headers || {}),
+          });
+        } catch (error) {
+          throw new Error(
+            "无法连接 Magnet Harvester 服务，请检查服务地址和网络连接",
+            { cause: error }
+          );
+        }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           const detail =
@@ -2376,7 +2387,8 @@
             `dot ${online ? "online" : "offline"}`;
         } catch {
           dot.className = "dot offline";
-          document.getElementById("qbitStatus").textContent = "qB 离线";
+          document.getElementById("qbitStatus").textContent = "服务不可达";
+          document.getElementById("configDot").className = "dot checking";
         }
       }
 
@@ -2434,6 +2446,14 @@
 
       function toast(message, type = "") {
         const stack = document.getElementById("toastStack");
+        const key = `${type}:${message}`;
+        const now = Date.now();
+        const previous = toastLastShown.get(key) || 0;
+        if (now - previous < TOAST_DEDUPE_MS) return;
+        toastLastShown.set(key, now);
+        while (stack.children.length >= MAX_VISIBLE_TOASTS) {
+          stack.firstElementChild?.remove();
+        }
         const node = document.createElement("div");
         node.className = `toast ${type}`;
         const icon = document.createElement("i");
@@ -2448,7 +2468,10 @@
         node.append(icon, text);
         stack.appendChild(node);
         initIcons();
-        setTimeout(() => node.remove(), 4200);
+        setTimeout(() => {
+          node.remove();
+          if (toastLastShown.get(key) === now) toastLastShown.delete(key);
+        }, 4200);
       }
 
       document
