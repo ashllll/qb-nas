@@ -195,3 +195,103 @@ async def test_redirect_chain_allows_exact_configured_redirect_limit():
         await admission.admit_redirect_chain("https://public.example")
         == "https://public.example/final"
     )
+
+
+# ── allow_fake_ip 参数测试 (mihomo/Clash fake-IP 198.18.0.0/15 SSRF 豁免) ──
+
+
+class TestValidateCrawlUrlWithFakeIp:
+    """allow_fake_ip 标志的控制测试。"""
+
+    def test_rejects_fake_ip_by_default(self):
+        """默认 (allow_fake_ip=False) 仍阻止 198.18.0.0/15。"""
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://198.18.0.1/admin")
+
+    def test_accepts_fake_ip_when_flag_enabled(self):
+        """allow_fake_ip=True 放行 198.18.0.0/15。"""
+        assert validate_crawl_url("http://198.18.2.102/torrents", allow_fake_ip=True) is True
+
+    def test_accepts_198_19_x_when_flag_enabled(self):
+        """198.19.x 属于 /15 范围，也应放行。"""
+        assert validate_crawl_url("http://198.19.255.255/test", allow_fake_ip=True) is True
+
+    def test_still_rejects_192_168_with_fake_ip_flag(self):
+        """allow_fake_ip=True 不应绕过 RFC 1918 私有地址。"""
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://192.168.1.100:8080", allow_fake_ip=True)
+
+    def test_still_rejects_10_x_with_fake_ip_flag(self):
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://10.0.0.1", allow_fake_ip=True)
+
+    def test_still_rejects_localhost_with_fake_ip_flag(self):
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://localhost:8080", allow_fake_ip=True)
+
+    def test_still_rejects_127_0_0_1_with_fake_ip_flag(self):
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://127.0.0.1:8080", allow_fake_ip=True)
+
+    def test_still_rejects_169_254_with_fake_ip_flag(self):
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://169.254.1.1", allow_fake_ip=True)
+
+    def test_still_rejects_ipv4_mapped_private_with_fake_ip_flag(self):
+        """IPv4-mapped IPv6 私有地址标志不受影响。"""
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://[::ffff:192.168.1.10]/admin", allow_fake_ip=True)
+
+    def test_still_rejects_ipv4_mapped_fake_ip_without_flag(self):
+        """默认阻止 IPv4-mapped fake-IP。"""
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://[::ffff:198.18.2.102]/admin")
+
+    def test_accepts_ipv4_mapped_fake_ip_with_flag(self):
+        """allow_fake_ip=True 放行 IPv4-mapped fake-IP。"""
+        assert validate_crawl_url("http://[::ffff:198.18.2.102]/admin", allow_fake_ip=True) is True
+
+
+@pytest.mark.asyncio
+class TestCrawlTargetAdmissionWithFakeIp:
+    """CrawlTargetAdmission 的 allow_fake_ip 集成测试。"""
+
+    async def test_default_admission_rejects_fake_ip_resolver(self):
+        """默认 (allow_fake_ip=False) 拒绝 DNS 解析到 198.18.x.x。"""
+
+        async def fake_resolver(_hostname, _port):
+            return ["198.18.2.102"]
+
+        admission = CrawlTargetAdmission(resolver=fake_resolver)
+        with pytest.raises(URLValidationError, match="private"):
+            await admission.admit("https://xxxclub.to/torrents/search")
+
+    async def test_admission_with_flag_allows_fake_ip_resolver(self):
+        """allow_fake_ip=True 放行 DNS 解析到 198.18.x.x。"""
+
+        async def fake_resolver(_hostname, _port):
+            return ["198.18.2.102"]
+
+        admission = CrawlTargetAdmission(resolver=fake_resolver, allow_fake_ip=True)
+        result = await admission.admit("https://xxxclub.to/torrents/search")
+        assert result == "https://xxxclub.to/torrents/search"
+
+    async def test_admission_with_flag_allows_mixed_resolver(self):
+        """Cloudflare 真实 IP + fake-IP 混合仍应放行。"""
+
+        async def fake_resolver(_hostname, _port):
+            return ["104.21.11.183", "198.18.2.102"]
+
+        admission = CrawlTargetAdmission(resolver=fake_resolver, allow_fake_ip=True)
+        result = await admission.admit("https://xxxclub.to/torrents/search")
+        assert result == "https://xxxclub.to/torrents/search"
+
+    async def test_admission_with_flag_still_rejects_private_resolver(self):
+        """allow_fake_ip=True 不放行 RFC 1918 私有地址。"""
+
+        async def fake_resolver(_hostname, _port):
+            return ["192.168.1.1"]
+
+        admission = CrawlTargetAdmission(resolver=fake_resolver, allow_fake_ip=True)
+        with pytest.raises(URLValidationError, match="private"):
+            await admission.admit("https://internal.example")

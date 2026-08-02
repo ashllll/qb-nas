@@ -39,6 +39,8 @@ class CrawlerConfig:
     # — v0.9.0 新增 —
     max_retries: int = 1
     check_robots_txt: bool = False
+    # mihomo/Clash fake-IP (198.18.0.0/15) 放行开关，开启后 SSRF 检查豁免该网段
+    allow_fake_ip: bool = False
 
     def __post_init__(self) -> None:
         self.timeout = max(1, int(self.timeout))
@@ -99,6 +101,7 @@ class Settings(BaseSettings):
     CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
     CRAWLER_MAX_RETRIES: int = 1
     CRAWLER_CHECK_ROBOTS_TXT: bool = False
+    CRAWLER_ALLOW_FAKE_IP: bool = False  # mihomo/Clash fake-IP(198.18.0.0/15) SSRF 豁免
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
 
@@ -165,6 +168,7 @@ class Settings(BaseSettings):
                 remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
                 max_retries=self.CRAWLER_MAX_RETRIES,
                 check_robots_txt=self.CRAWLER_CHECK_ROBOTS_TXT,
+                allow_fake_ip=self.CRAWLER_ALLOW_FAKE_IP,
             )
         return self._crawler_config
 

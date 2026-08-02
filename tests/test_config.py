@@ -129,6 +129,23 @@ def test_check_disk_space_reports_configured_path(monkeypatch, tmp_path):
     assert calls == [str(tmp_path)]
 
 
+def test_allow_fake_ip_config_wires_to_crawler():
+    """CRAWLER_ALLOW_FAKE_IP=True 应传播到 CrawlerConfig 和 MagnetCrawler。"""
+    from magnet_harvester.crawler import MagnetCrawler
+
+    cfg = Settings(CRAWLER_ALLOW_FAKE_IP=True)
+    assert cfg.CRAWLER_ALLOW_FAKE_IP is True
+    assert cfg.crawler.allow_fake_ip is True
+
+    crawler = MagnetCrawler(config=cfg.crawler)
+    assert crawler._target_admission._allow_fake_ip is True
+
+    # 默认关闭（显式传参，避免被 .env / 环境变量干扰）
+    default_cfg = Settings(CRAWLER_ALLOW_FAKE_IP=False)
+    assert default_cfg.CRAWLER_ALLOW_FAKE_IP is False
+    assert default_cfg.crawler.allow_fake_ip is False
+
+
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
     test_crawler_allowed_resolutions_falls_back_when_empty()

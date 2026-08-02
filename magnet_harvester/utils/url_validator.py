@@ -22,12 +22,18 @@ RedirectProbe = Callable[[str], Awaitable[str | None]]
 REDIRECT_PROBE_TIMEOUT_SEC = 2.0
 MAX_CRAWL_URL_LENGTH = 8192
 
+# mihomo (Clash Meta) / Clash fake-IP 模式使用 198.18.0.0/15（RFC 2544 基准测试范围）
+# 代理端本地 DNS 将域名解析为该网段地址，主机真实 IP（如 Cloudflare）为公网地址
+FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
 
-def _is_unsafe_address(value: str) -> bool:
+
+def _is_unsafe_address(value: str, allow_fake_ip: bool = False) -> bool:
     ip = ipaddress.ip_address(value)
     mapped_ipv4 = getattr(ip, "ipv4_mapped", None)
     if mapped_ipv4 is not None:
-        return _is_unsafe_address(str(mapped_ipv4))
+        return _is_unsafe_address(str(mapped_ipv4), allow_fake_ip=allow_fake_ip)
+    if allow_fake_ip and ip in FAKE_IP_NETWORK:
+        return False
     return (
         not ip.is_global
         or ip.is_multicast
@@ -36,13 +42,13 @@ def _is_unsafe_address(value: str) -> bool:
     )
 
 
-def _validate_hostname(hostname: str | None) -> None:
+def _validate_hostname(hostname: str | None, allow_fake_ip: bool = False) -> None:
     if not hostname:
         raise URLValidationError("URL has no hostname")
     if hostname.lower() == "localhost":
         raise URLValidationError("URL resolves to a private address")
     try:
-        if _is_unsafe_address(hostname):
+        if _is_unsafe_address(hostname, allow_fake_ip=allow_fake_ip):
             raise URLValidationError("URL resolves to a private address")
     except URLValidationError:
         raise
@@ -57,7 +63,7 @@ def _validate_protocol(parsed) -> None:
         raise URLValidationError(f"Unsupported protocol: {parsed.scheme}")
 
 
-def validate_crawl_url(url: str) -> bool:
+def validate_crawl_url(url: str, allow_fake_ip: bool = False) -> bool:
     """Validate the literal URL shape before network resolution."""
     if not url or not url.strip():
         raise URLValidationError("URL is empty")
@@ -79,7 +85,7 @@ def validate_crawl_url(url: str) -> bool:
         raise URLValidationError("URL port is invalid")
     if parsed.username is not None or parsed.password is not None or "\\" in parsed.netloc:
         raise URLValidationError("URL contains invalid characters (@ or \\)")
-    _validate_hostname(parsed.hostname)
+    _validate_hostname(parsed.hostname, allow_fake_ip=allow_fake_ip)
     return True
 
 
@@ -117,9 +123,11 @@ class CrawlTargetAdmission:
         resolver: Resolver | None = None,
         redirect_probe: RedirectProbe | None = None,
         max_redirects: int = 5,
+        allow_fake_ip: bool = False,
     ):
         self._resolver = resolver or _resolve_host
         self._max_redirects = max_redirects
+        self._allow_fake_ip = allow_fake_ip
         self._client = httpx.AsyncClient(
             follow_redirects=False,
             timeout=REDIRECT_PROBE_TIMEOUT_SEC,
@@ -138,7 +146,7 @@ class CrawlTargetAdmission:
 
     async def admit(self, url: str) -> str:
         candidate = url.strip()
-        validate_crawl_url(candidate)
+        validate_crawl_url(candidate, allow_fake_ip=self._allow_fake_ip)
         parsed = urlparse(candidate)
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         try:
@@ -147,7 +155,9 @@ class CrawlTargetAdmission:
             raise URLValidationError(f"URL hostname cannot be resolved: {parsed.hostname}") from exc
         if not addresses:
             raise URLValidationError(f"URL hostname cannot be resolved: {parsed.hostname}")
-        if any(_is_unsafe_address(address) for address in addresses):
+        if any(
+            _is_unsafe_address(address, allow_fake_ip=self._allow_fake_ip) for address in addresses
+        ):
             raise URLValidationError("URL resolves to a private address")
         return candidate
 

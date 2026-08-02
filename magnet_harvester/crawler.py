@@ -112,7 +112,9 @@ class MagnetCrawler:
             "crawl_session_metrics",
             default=None,
         )
-        self._target_admission = target_admission or CrawlTargetAdmission()
+        self._target_admission = target_admission or CrawlTargetAdmission(
+            allow_fake_ip=self._config.allow_fake_ip
+        )
         self._site_auth = site_auth or SiteAuth.from_raw(settings.SITE_COOKIES)
         self._magnet_sources = MagnetSourceExtractor(
             allowed_resolutions=self._config.allowed_resolutions
