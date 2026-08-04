@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 from datetime import date, datetime
 from typing import Any
 
@@ -320,6 +321,29 @@ async def websocket_endpoint(ws: WebSocket):
         except Exception:
             log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
+
+    # ── API Key 认证（与写接口一致的策略） ──────────────────
+    # API_KEY 为空时保持向后兼容（本地回环部署默认不校验）；
+    # 非空时必须携带匹配的 api_key 查询参数 —— 浏览器 WebSocket
+    # API 无法自定义请求头，因此走 query param（见 static/app.js）。
+    expected_key = getattr(getattr(ctx, "runtime", None), "api_key", "") or ""
+    # 与 REST（utils/auth.py）一致：strip 后为空视为未配置认证（兼容模式）
+    if expected_key.strip():
+        # 与 REST（utils/auth.py）一致：两侧 strip 后比较
+        supplied = ws.query_params.get("api_key", "").strip()
+        expected = expected_key.strip()
+        # compare_digest 对非 ASCII 字符串会抛 TypeError，统一按认证失败处理
+        try:
+            authorized = supplied and secrets.compare_digest(supplied, expected)
+        except TypeError:
+            authorized = False
+        if not authorized:
+            log.warning("WebSocket 连接因缺少或错误的 API Key 被拒绝")
+            try:
+                await ws.close(code=4401, reason="unauthorized")
+            except Exception:
+                log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
+            return
     app_services = getattr(ctx, "app_services", None)
     broadcaster = getattr(app_services, "broadcaster", None)
     if broadcaster:

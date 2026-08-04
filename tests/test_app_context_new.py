@@ -90,7 +90,7 @@ def test_runtime_context_replace_qbit_updates_pipeline():
             qbit=old_qbit,
         ),
     )
-    runtime = QBitRuntime(ctx=app_ctx)
+    runtime = QBitRuntime.from_context(app_ctx)
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 

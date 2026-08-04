@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from fastapi import Request
 
@@ -59,6 +59,13 @@ class UserActionExecutorLike(Protocol):
 
 class QBitSyncLike(Protocol):
     async def replace_qbit_client(self, new_qbit) -> None: ...
+
+
+class QBitClientLike(Protocol):
+    """QBitRuntime 热替换所需的最小 qBittorrent 客户端接口。"""
+
+    async def ping(self) -> bool: ...
+    async def close(self) -> None: ...
 
 
 class QBitRuntimeLike(Protocol):
@@ -161,13 +168,56 @@ class AppContext:
     app_services: AppServices = field(default_factory=AppServices)
     runtime: RuntimeState = field(default_factory=RuntimeState)
 
+    def replacement_target(self) -> QBitReplacementTarget:
+        """提取 qBittorrent 热替换所需的最窄依赖集合。
+
+        QBitRuntime 只应依赖该 target，不再持有完整 AppContext。
+        on_qbit_replaced 回调负责把新客户端写回 core.qbit，
+        使“替换已生效”对主容器可见。
+        """
+        return QBitReplacementTarget(
+            qbit=self.core.qbit,
+            pipeline=self.core.pipeline,
+            qbit_sync=self.runtime.qbit_sync,
+            observability=self.app_services.observability,
+            on_qbit_replaced=lambda new_qbit: setattr(self.core, "qbit", new_qbit),
+        )
+
+
+@dataclass
+class QBitReplacementTarget:
+    """热替换 qBittorrent 客户端所需的最窄依赖集合。
+
+    字段说明：
+    - qbit: 当前生效的 qBittorrent 客户端（替换操作从它回滚）。
+    - pipeline / qbit_sync / observability: 需要对齐新客户端的运行时依赖。
+    - on_qbit_replaced: 可选回调，替换成功后写回主容器（如 core.qbit）。
+    """
+
+    qbit: QBitClientLike | None = None
+    pipeline: HarvestPipeline | None = None
+    qbit_sync: QBitSyncLike | None = None
+    observability: ObservabilityLike | None = None
+    on_qbit_replaced: Callable[[QBittorrentClient], None] | None = None
+
 
 @dataclass
 class QBitRuntime:
-    ctx: AppContext
+    """qBittorrent 配置热替换适配器 — 只依赖 QBitReplacementTarget。
+
+    不再持有完整 AppContext（见 AppContext.replacement_target）。
+    用 QBitRuntime.from_context(ctx) 从容器构建。
+    """
+
+    target: QBitReplacementTarget
     settings: Settings = field(default_factory=lambda: default_settings)
     client_factory: type[QBittorrentClient] = field(default_factory=lambda: QBittorrentClient)
     transaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    @classmethod
+    def from_context(cls, ctx: AppContext, **kwargs) -> QBitRuntime:
+        """从 AppContext 构建，只提取热替换所需的最窄依赖。"""
+        return cls(target=ctx.replacement_target(), **kwargs)
 
     async def replace_qbit(self, new_qbit: QBittorrentClient) -> None:
         async with self.transaction_lock:
@@ -190,7 +240,7 @@ class QBitRuntime:
             OSError: if persisting the config fails (maps to HTTP 500).
         """
         async with self.transaction_lock:
-            old_qbit = self.ctx.core.qbit
+            old_qbit = self.target.qbit
             old_config = getattr(old_qbit, "config", None)
             candidate = self.settings.build_qbit_config(
                 host=host,
@@ -215,7 +265,7 @@ class QBitRuntime:
 
             try:
                 await self._replace_runtime(new_qbit)
-                if self.ctx.core.qbit is not new_qbit:
+                if self.target.qbit is not new_qbit:
                     raise RuntimeError("热替换 qBittorrent 客户端失败")
             except (Exception, asyncio.CancelledError) as exc:
                 await new_qbit.close()
@@ -234,7 +284,7 @@ class QBitRuntime:
 
     async def _replace_runtime(self, new_qbit: QBittorrentClient) -> None:
         """Align every runtime dependent and commit the primary adapter."""
-        old_qbit = self.ctx.core.qbit
+        old_qbit = self.target.qbit
         try:
             await asyncio.wait_for(self._commit_runtime(new_qbit), timeout=30.0)
         except asyncio.TimeoutError:
@@ -256,24 +306,26 @@ class QBitRuntime:
                 log.exception("关闭旧 qBittorrent 客户端失败")
 
     async def _commit_runtime(self, new_qbit: QBittorrentClient) -> None:
-        pipeline = self.ctx.core.pipeline
-        qbit_sync = self.ctx.runtime.qbit_sync
-        observability = self.ctx.app_services.observability
+        pipeline = self.target.pipeline
+        qbit_sync = self.target.qbit_sync
+        observability = self.target.observability
         if pipeline is not None:
             pipeline.replace_download_phase(new_qbit)
         if qbit_sync is not None:
             await qbit_sync.replace_qbit_client(new_qbit)
         if observability is not None:
             observability.replace_qbit_client(new_qbit)
-        self.ctx.core.qbit = new_qbit
+        self.target.qbit = new_qbit
+        if self.target.on_qbit_replaced is not None:
+            self.target.on_qbit_replaced(new_qbit)
 
     async def _rollback_runtime(self, old_qbit: QBittorrentClient | None) -> None:
         """Best-effort restoration after a dependent rejects the candidate."""
         if old_qbit is None:
             return
-        pipeline = self.ctx.core.pipeline
-        qbit_sync = self.ctx.runtime.qbit_sync
-        observability = self.ctx.app_services.observability
+        pipeline = self.target.pipeline
+        qbit_sync = self.target.qbit_sync
+        observability = self.target.observability
         if pipeline is not None:
             try:
                 pipeline.replace_download_phase(old_qbit)
@@ -289,7 +341,9 @@ class QBitRuntime:
                 observability.replace_qbit_client(old_qbit)
             except Exception:
                 log.exception("回滚可观测 qBittorrent 客户端失败")
-        self.ctx.core.qbit = old_qbit
+        self.target.qbit = old_qbit
+        if self.target.on_qbit_replaced is not None:
+            self.target.on_qbit_replaced(old_qbit)
 
 
 def get_context(request: Request) -> AppContext:

@@ -72,7 +72,7 @@ async def test_replace_qbit_closes_old_client():
         ),
         runtime=RuntimeState(stats=None),
     )
-    runtime = QBitRuntime(ctx)
+    runtime = QBitRuntime.from_context(ctx)
 
     # 替换
     await runtime.replace_qbit(new_qbit)
@@ -118,7 +118,7 @@ async def test_replace_qbit_updates_download_state_sync():
         runtime=RuntimeState(qbit_sync=sync),
     )
 
-    await QBitRuntime(ctx).replace_qbit(new_qbit)
+    await QBitRuntime.from_context(ctx).replace_qbit(new_qbit)
 
     assert sync.qbit is new_qbit
     assert ctx.core.qbit is new_qbit

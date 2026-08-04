@@ -237,8 +237,8 @@ def _make_app():
             error_handler=error_handler,
         ),
     )
-    ctx.runtime.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+    ctx.runtime.qbit_runtime = QBitRuntime.from_context(
+        ctx,
         settings=RuntimeSettings(),
         client_factory=RuntimeQbit,
     )
@@ -441,8 +441,8 @@ def test_update_config_replaces_qbit_client():
             created.append(self)
 
     app, ctx = _make_app()
-    ctx.runtime.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+    ctx.runtime.qbit_runtime = QBitRuntime.from_context(
+        ctx,
         settings=CapturingSettings(),
         client_factory=NewQbit,
     )
@@ -508,8 +508,8 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
             created.append(self)
 
     app, ctx = _make_app()
-    ctx.runtime.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+    ctx.runtime.qbit_runtime = QBitRuntime.from_context(
+        ctx,
         settings=CapturingSettings(),
         client_factory=OfflineQbit,
     )
@@ -553,8 +553,8 @@ def test_update_config_returns_500_when_persist_fails():
             self.config = config
 
     app, ctx = _make_app()
-    ctx.runtime.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+    ctx.runtime.qbit_runtime = QBitRuntime.from_context(
+        ctx,
         settings=FailingSettings(),
         client_factory=NewQbit,
     )

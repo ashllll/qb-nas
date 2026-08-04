@@ -11,12 +11,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from magnet_harvester.classifier.local_classifier import LocalClassificationEngine, LocalClassifier
 
 
-def test_local_classification_engine_has_narrow_interface():
-    """本地规则引擎只负责名称分类，协议兼容面留给 LocalClassifier。"""
+def test_local_classification_engine_owns_cache_interface():
+    """缓存属于引擎职责：engine 提供真实统计/清理；usage 等协议兼容面留在 LocalClassifier。"""
     engine = LocalClassificationEngine()
     result = engine.classify_name("Avatar.The.Way.of.Water.2022.2160p.BluRay")
     assert result["category"] == "电影"
-    assert not hasattr(engine, "get_cache_stats")
+    assert engine.get_cache_stats()["cache"]["size"] == 1
+    engine.clear_cache()
+    assert engine.get_cache_stats()["cache"]["size"] == 0
     assert not hasattr(engine, "usage")
 
 

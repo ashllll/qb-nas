@@ -120,7 +120,7 @@ def test_runtime_context_replaces_qbit_everywhere():
     old_qbit = ctx.core.qbit
     new_qbit = FakeQbit()
     ctx.core.pipeline = FakePipeline()
-    runtime = QBitRuntime(ctx=ctx)
+    runtime = QBitRuntime.from_context(ctx)
 
     asyncio.run(runtime.replace_qbit(new_qbit))
 

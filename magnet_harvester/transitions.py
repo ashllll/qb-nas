@@ -70,6 +70,7 @@ class _TransitionBase:
                         "error_msg": item.error_msg,
                         "progress": item.progress,
                         "torrent_state": item.torrent_state,
+                        "updated_at": item.updated_at.isoformat(),
                     },
                 )
             )
@@ -134,6 +135,11 @@ class ClassificationTransitions(_TransitionBase):
         ):
             log.warning("classified update 失败 %s (条目可能已被并发删除)", hash_key)
             return
+        # 重新读取以拿到 update 后的 updated_at（作为事件版本号）
+        item = await self._store.get(hash_key)
+        if item is None:
+            log.warning("classified emit 前条目已被并发删除 %s", hash_key)
+            return
         await self._bus.emit(
             Event(
                 EventType.CLASSIFY_DONE,
@@ -142,6 +148,7 @@ class ClassificationTransitions(_TransitionBase):
                     "category": category,
                     "confidence": result.get("confidence", ""),
                     "reason": result.get("reason", ""),
+                    "updated_at": item.updated_at.isoformat(),
                 },
             )
         )
@@ -164,6 +171,10 @@ class ClassificationTransitions(_TransitionBase):
         # 只更新分类字段，避免先读取再写回 save_path 时覆盖并发中的路径变更。
         if not await self._store.update(hash_key, category=category):
             return False
+        item = await self._store.get(hash_key)
+        if item is None:
+            log.warning("manually_classified emit 前条目已被并发删除 %s", hash_key)
+            return
         await self._bus.emit(
             Event(
                 EventType.CLASSIFY_DONE,
@@ -172,6 +183,7 @@ class ClassificationTransitions(_TransitionBase):
                     "category": category,
                     "confidence": "manual",
                     "reason": "手动修改",
+                    "updated_at": item.updated_at.isoformat(),
                 },
             )
         )
@@ -371,7 +383,9 @@ class MagnetItemTransitions:
     async def download_status_changed(
         self, hash_key: str, *, fields: dict, previous_status: TaskStatus | None
     ):
-        await self._download.status_changed(hash_key, fields=fields, previous_status=previous_status)
+        await self._download.status_changed(
+            hash_key, fields=fields, previous_status=previous_status
+        )
 
     async def download_state_changed(
         self, hash_key: str, previous_status: TaskStatus | None = None

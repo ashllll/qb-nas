@@ -106,6 +106,8 @@ Categories: `电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录�
 5. `QBitSyncLoop` polls qB every 2s → syncs torrent state → emits events on terminal state changes
 6. `WSBroadcaster` subscribes to `MessageBus` → pushes all events to WebSocket clients
 
+**事件版本不变量**: 所有事件 payload 携带 `updated_at`（naive-local `datetime.now()` ISO 字符串，字典序 == 时间序），前端 `item_state.js` 的 `seenAt` 版本表据此丢弃延迟到达的旧事件。不要引入 aware-UTC 时间戳或混合时区，否则前端比较会失序。
+
 ## Project structure
 
 ```
@@ -210,6 +212,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 - **Framework**: pytest + pytest-asyncio (`asyncio_mode = auto` in `pyproject.toml`)
 - **Test doubles**: `InMemoryItemStore` for store, `NullBus` for bus, manual `AppContext` for DI
 - **80+ test files** covering: URL validation/SSRF, qB client modules (transport, path, submitter, sync, mapper), crawler entry/concurrency, classifier rule chain, state transitions/events, API auth/routes, WebSocket broadcast, clipboard monitor
+- **生产链路验证**: 自动化测试（pytest 全绿）≠ 生产验收。真实站点/qB/NAS 链路验证用 `scripts/smoke_production.py`（可选，见 `docs/verification.md`），两者不可互相替代
 - **Pre-commit**: `npm run check` runs `ruff check` + `pytest -q`
 
 ## Key design decisions

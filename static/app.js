@@ -112,7 +112,11 @@ function connectWS() {
   clearTimeout(reconnectTimer);
   setWsState("checking", "连接中");
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  // 浏览器 WebSocket API 无法自定义请求头，API Key 走查询参数；
+  // 未配置 key 时不带参数（服务端兼容模式）。
+  const wsKey = apiClient.getKey();
+  const wsQuery = wsKey ? `?api_key=${encodeURIComponent(wsKey)}` : "";
+  ws = new WebSocket(`${protocol}//${location.host}/ws${wsQuery}`);
   ws.onopen = () => setWsState("online", "已连接");
   ws.onmessage = (event) => {
     try {
@@ -163,30 +167,33 @@ function handleMsg(msg) {
       break;
     case "magnet_found":
       fieldPulse(0.8);
-      if (msg.item) {
-        itemState.upsert(msg.item);
+      if (msg.item && itemState.upsert(msg.item)) {
         renderTable();
         addLog(`发现 ${msg.item.name}`, "found");
       }
       setProgress(Math.min(90, 10 + items.size));
       break;
     case "store_changed":
-      if (msg.item) {
-        itemState.upsert(msg.item);
+      if (msg.item && itemState.upsert(msg.item)) {
         renderTable();
       }
       break;
     case "classify_start":
       addLog(`正在分类 ${msg.count || 0} 个资源`, "info");
       break;
-    case "classify_done":
-      if (items.has(msg.hash)) {
-        const item = items.get(msg.hash);
-        item.category = msg.category;
-        item.status = "pending";
+    case "classify_done": {
+      const existing = items.get(msg.hash);
+      // 旧事件延迟到达时不得覆盖较新的状态（以 seenAt 版本表为准）
+      const latest = itemState.seenAt.get(msg.hash);
+      const stale = latest && msg.updated_at && msg.updated_at < latest;
+      if (existing && !stale) {
+        existing.category = msg.category;
+        existing.status = "pending";
+        if (msg.updated_at) itemState.seenAt.set(msg.hash, msg.updated_at);
         renderTable();
       }
       break;
+    }
     case "classify_all_done":
       addLog("分类完成", "found");
       break;
@@ -204,18 +211,23 @@ function handleMsg(msg) {
         "info"
       );
       break;
-    case "download_result":
-      if (items.has(msg.hash)) {
-        const item = items.get(msg.hash);
+    case "download_result": {
+      const item = items.get(msg.hash);
+      // 旧事件延迟到达时不得覆盖较新的状态（以 seenAt 版本表为准）
+      const latest = itemState.seenAt.get(msg.hash);
+      const stale = latest && msg.updated_at && msg.updated_at < latest;
+      if (item && !stale) {
         item.status = msg.status;
         if (msg.error_msg !== undefined) item.error_msg = msg.error_msg;
         if (msg.progress !== undefined) item.progress = msg.progress;
         if (msg.torrent_state !== undefined)
           item.torrent_state = msg.torrent_state;
+        if (msg.updated_at) itemState.seenAt.set(msg.hash, msg.updated_at);
         renderTable();
         logDownloadState(item, msg);
       }
       break;
+    }
     case "items_cleared":
       itemState.clear();
       renderTable();
@@ -667,6 +679,12 @@ document.getElementById("searchInput").addEventListener("input", (event) => {
 document.getElementById("apiKeyInput").addEventListener("input", (event) => {
   const value = event.target.value.trim();
   apiClient.setKey(value);
+  // API Key 变更后立即用新凭据重连，避免等待下一次定时重连
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close(); // onclose 回调会安排重连
+  } else {
+    connectWS();
+  }
 });
 document.addEventListener("keydown", (event) => {
   if (

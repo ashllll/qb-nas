@@ -241,12 +241,11 @@ def build_runtime() -> AppRuntime:
             qbit_sync=sync_loop,
         ),
     )
-    # QBitRuntime 持有 ctx 回引用，与 AppContext 形成循环引用。
-    # 这是已知的刻意设计：QBitRuntime 需要访问 AppContext 的运行时组件
-    # （如 bg_manager），且两者生命周期一致（应用启动→关闭），
-    # 由 Python GC 正常回收，无需 weakref 介入。
-    ctx.runtime.qbit_runtime = QBitRuntime(
-        ctx=ctx,
+    # QBitRuntime 只依赖从 AppContext 提取的 QBitReplacementTarget
+    # （热替换所需的最窄依赖：qbit/pipeline/qbit_sync/observability），
+    # 不再持有完整容器回引用。
+    ctx.runtime.qbit_runtime = QBitRuntime.from_context(
+        ctx,
         settings=settings,
         client_factory=QBittorrentClient,
     )

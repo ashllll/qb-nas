@@ -8,6 +8,8 @@ LocalClassifier — 纯本地规则分类器，零外部依赖
 from __future__ import annotations
 
 import logging
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, List
 
@@ -22,12 +24,19 @@ log = logging.getLogger(__name__)
 
 
 class LocalClassificationEngine:
-    """Classifies names through the configured local rule chain."""
+    """Classifies names through the configured local rule chain.
+
+    内置按名称的 LRU 结果缓存（默认启用，上限 ``CACHE_MAX_SIZE`` 条），
+    并提供 get_cache_stats()/clear_cache() 真实统计与清理。
+    """
+
+    CACHE_MAX_SIZE = 1024
 
     def __init__(
         self,
         rule_chain: List[ClassificationRule] | None = None,
         keyword_rules_file: Path | None = None,
+        cache_enabled: bool = True,
     ):
         if rule_chain is not None:
             self._rule_chain = rule_chain
@@ -38,9 +47,36 @@ class LocalClassificationEngine:
                 StudioRule(),
                 FallbackRule(),
             ]
+        self._cache_enabled = cache_enabled
+        self._cache: OrderedDict[str, dict] = OrderedDict()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._cache_lock = threading.Lock()
 
     def classify_name(self, name: str) -> dict:
         """分类单个名称：按规则链优先级匹配，返回统一结果格式。"""
+        if self._cache_enabled:
+            with self._cache_lock:
+                cached = self._cache.get(name)
+                if cached is not None:
+                    self._cache.move_to_end(name)
+                    self._cache_hits += 1
+                else:
+                    self._cache_misses += 1
+            if cached is not None:
+                return dict(cached)
+
+        result = self._classify_uncached(name)
+        if self._cache_enabled:
+            with self._cache_lock:
+                self._cache[name] = dict(result)
+                self._cache.move_to_end(name)
+                while len(self._cache) > self.CACHE_MAX_SIZE:
+                    self._cache.popitem(last=False)
+        return result
+
+    def _classify_uncached(self, name: str) -> dict:
+        """走完整规则链分类（不经过缓存）。"""
         for rule in self._rule_chain:
             try:
                 result = rule.apply(name)
@@ -62,13 +98,42 @@ class LocalClassificationEngine:
             "save_path": "其他",
         }
 
+    def get_cache_stats(self) -> dict:
+        """返回缓存统计：size / hits / misses / hit_rate_percent。"""
+        with self._cache_lock:
+            size = len(self._cache)
+            hits = self._cache_hits
+            misses = self._cache_misses
+        total = hits + misses
+        hit_rate = round(100.0 * hits / total, 1) if total else 0.0
+        return {
+            "cache": {
+                "size": size,
+                "hits": hits,
+                "misses": misses,
+                "hit_rate_percent": hit_rate,
+            }
+        }
+
+    def clear_cache(self) -> None:
+        """清空缓存并重置统计计数。"""
+        with self._cache_lock:
+            self._cache.clear()
+            self._cache_hits = 0
+            self._cache_misses = 0
+
     def reload_rules(self) -> int:
-        """Reload file-backed rules in the chain, returning the count reloaded."""
+        """Reload file-backed rules in the chain, returning the count reloaded.
+
+        规则变更后旧分类结果可能失效，因此先清空缓存。
+        """
         reloaded = 0
         for rule in self._rule_chain:
             reload_rule = getattr(rule, "reload", None)
             if reload_rule is not None and reload_rule():
                 reloaded += 1
+        if reloaded:
+            self.clear_cache()
         return reloaded
 
 
@@ -127,13 +192,15 @@ class LocalClassifier:
             "rules_reloaded": self._engine.reload_rules(),
         }
 
-    # ── 兼容方法 ────
+    # ── 缓存统计/清理（委托真实 engine 缓存） ────
 
     def get_cache_stats(self) -> dict:
-        return {"cache": {"size": 0, "hits": 0, "misses": 0, "hit_rate_percent": 0.0}}
+        """缓存统计：真实反映 engine 的命中/未命中与当前条目数。"""
+        return self._engine.get_cache_stats()
 
-    def clear_cache(self):
-        pass
+    def clear_cache(self) -> None:
+        """清空分类结果缓存并重置统计。"""
+        self._engine.clear_cache()
 
     async def ping(self) -> bool:
         return True
