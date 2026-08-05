@@ -61,11 +61,25 @@ class AppRuntime:
         except Exception as e:
             log.error("sync_loop 关闭失败: %s", e)
 
+        # 剪贴板监控先于任务管理器关闭：残留 _running 状态会被正确清理
+        if self.ctx.app_services.clipboard_monitor is not None:
+            try:
+                await self.ctx.app_services.clipboard_monitor.shutdown()
+            except Exception as e:
+                log.error("clipboard_monitor 关闭失败: %s", e)
+
         if self.ctx.runtime.bg_manager is not None:
             try:
                 await self.ctx.runtime.bg_manager.shutdown()
             except Exception as e:
                 log.error("bg_manager 关闭失败: %s", e)
+
+        # 广播器退订 MessageBus，断开强引用允许 GC 回收
+        if self.ctx.app_services.broadcaster is not None:
+            try:
+                self.ctx.app_services.broadcaster.shutdown()
+            except Exception as e:
+                log.error("broadcaster 关闭失败: %s", e)
 
         try:
             await self.ctx.core.crawler.stop()

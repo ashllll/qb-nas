@@ -41,3 +41,10 @@ def test_frontend_handles_crawl_error_and_sends_ws_heartbeat():
     assert 'sock.send("ping")' in app_js
     assert "30000" in app_js
     assert "clearInterval(heartbeatTimer)" in app_js
+
+
+def test_frontend_handles_crawl_progress_event():
+    """前端 progress 分支必须处理 crawl_progress（as_dict 剥离 data type 键后的事件类型）。"""
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    assert 'case "crawl_progress"' in app_js
+    assert 'case "progress"' not in app_js  # 旧依赖 data 覆盖行为的分支已移除

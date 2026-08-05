@@ -88,9 +88,12 @@ app.include_router(ws_router)
 if __name__ == "__main__":
     import uvicorn
 
+    from magnet_harvester.logger import uvicorn_log_config
+
     uvicorn.run(
         "magnet_harvester.main:app",
         host=settings.SERVICE_HOST,
         port=settings.SERVICE_PORT,
         reload=False,
+        log_config=uvicorn_log_config(),
     )

@@ -101,7 +101,7 @@ class DiscoveryTransitions(_TransitionBase):
     async def cleared(self) -> int:
         """Clear all Magnet items and publish the collection change."""
         count = await self._store.clear()
-        await self._bus.emit(Event(EventType.ITEMS_CLEARED, {"type": "items_cleared"}))
+        await self._bus.emit(Event(EventType.ITEMS_CLEARED, {}))
         remaining = await self._store.count()
         if remaining > 0:
             log.warning("cleared() 后 store 仍有 %d 个条目（并发写入）", remaining)

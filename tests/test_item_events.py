@@ -221,3 +221,19 @@ if __name__ == "__main__":
     asyncio.run(test_new_phase_emits_download_result())
     asyncio.run(test_routine_oscillation_suppressed())
     print("=== Magnet item lifecycle event tests passed! ===")
+
+
+async def test_items_cleared_event_has_no_type_key_in_data():
+    """ITEMS_CLEARED 事件 data 不含冗余 type 键（transitions 发射处已删）。"""
+    from magnet_harvester.bus import EventType
+
+    store = FakeStore()
+    bus = RecordingBus()
+    discovery = DiscoveryTransitions(store=AsyncItemStore(store), bus=bus)
+
+    await discovery.cleared()
+
+    assert len(bus.events) == 1
+    ev = bus.events[0]
+    assert ev.type == EventType.ITEMS_CLEARED
+    assert ev.data == {}  # 发射处不再携带冗余 type 键

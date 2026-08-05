@@ -509,3 +509,40 @@ def test_crawl_error_event_type_not_overridden_by_data():
     assert d["type"] == "crawl_error"  # 发射层已剥离 data 中的 type 键
     assert d["msg"] == "爬取超时 (30s)"
     assert "type" not in d or d["type"] == "crawl_error"
+
+
+class ProgressCrawlPhase(FakeCrawlPhase):
+    """产出 progress 消息的 Fake Phase（模拟爬虫进度）。"""
+
+    async def crawl(self, url: str, depth: int = 1):
+        self.called_with.append((url, depth))
+        yield {"type": "progress", "msg": "发现 2 个新磁力", "url": url}
+        yield {"type": "done", "total": 0, "url": url}
+
+
+def test_crawl_progress_event_type_not_overridden_by_data():
+    """pipeline 发射 CRAWL_PROGRESS 时，data 中的 type='progress' 不得覆盖事件类型。"""
+    bus = MessageBus()
+    received = []
+
+    async def capture(event: Event):
+        received.append(event)
+
+    bus.subscribe(EventType.CRAWL_PROGRESS, capture)
+    store = FakeStore()
+    pipeline = HarvestPipeline(
+        crawler=ProgressCrawlPhase(),
+        classifier=FakeClassifyPhase(),
+        qbit=FakeDownloadPhase(success=True),
+        store=AsyncItemStore(store),
+        bus=bus,
+    )
+
+    asyncio.run(pipeline.execute("https://example.com", depth=1))
+
+    assert len(received) == 1
+    ev = received[0]
+    assert ev.type == EventType.CRAWL_PROGRESS
+    d = ev.as_dict()
+    assert d["type"] == "crawl_progress"  # 剥离后恒为事件类型值
+    assert d["msg"] == "发现 2 个新磁力"

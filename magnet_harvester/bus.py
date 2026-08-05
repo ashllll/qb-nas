@@ -42,7 +42,11 @@ class Event:
     data: dict[str, object] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
-        return {"type": self.type.value, **self.data}
+        # data 中的 "type" 键会覆盖事件类型（data 后展开），全局剥离以固定契约
+        return {
+            "type": self.type.value,
+            **{k: v for k, v in self.data.items() if k != "type"},
+        }
 
 
 Subscriber = Callable[[Event], Coroutine[object, object, None]]
@@ -142,7 +146,7 @@ class MessageBus:
             ]
 
     async def emit(self, event: Event):
-        """发射事件到所有匹配的订阅者（并发执行，带 1 秒超时）。
+        """发射事件到所有匹配的订阅者（并发执行，带 5 秒超时）。
 
         慢订阅者不会阻塞发送方。超时的订阅者会被取消。
         """

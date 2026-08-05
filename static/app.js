@@ -173,7 +173,7 @@ function handleMsg(msg) {
       setCrawling(true);
       addLog(`开始爬取 ${shortUrl(msg.url)}`, "info");
       break;
-    case "progress":
+    case "crawl_progress":
       addLog(
         `${msg.msg || "处理中"}${msg.url ? ` · ${shortUrl(msg.url)}` : ""}`
       );

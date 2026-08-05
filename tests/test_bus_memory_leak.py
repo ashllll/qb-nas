@@ -68,7 +68,7 @@ async def test_emit_many_events_no_leak():
 
     # 等待所有任务完成或取消
     await asyncio.sleep(0.5)
-    # 所有事件都应该被处理（因为 0.05s < 1s 超时）
+    # 所有事件都应该被处理（因为 0.05s < 5s 超时）
     assert call_count == 50, f"期望 50 次调用，实际 {call_count}"
 
 

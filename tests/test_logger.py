@@ -95,3 +95,26 @@ def test_level_set_correctly():
         root.removeHandler(h)
     configure_logging(level="WARNING")
     assert root.level == logging.WARNING
+
+
+def test_redacting_access_formatter_masks_api_key():
+    """access log 中 api_key 查询参数值必须被脱敏。"""
+    import logging
+
+    from magnet_harvester.logger import RedactingAccessFormatter
+
+    fmt = RedactingAccessFormatter(
+        '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+    )
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=("127.0.0.1", "GET", "/ws?api_key=SECRET123&x=1", "1.1", 101),
+        exc_info=None,
+    )
+    out = fmt.format(record)
+    assert "SECRET123" not in out
+    assert "api_key=***" in out

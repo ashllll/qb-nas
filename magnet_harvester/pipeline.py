@@ -155,7 +155,13 @@ class HarvestPipeline:
                             )
                         )
                 elif t == "progress":
-                    await self._bus.emit(Event(EventType.CRAWL_PROGRESS, msg))
+                    # 与 error 分支一致：剥离 data 中的 type 键，事件类型恒为 crawl_progress
+                    await self._bus.emit(
+                        Event(
+                            EventType.CRAWL_PROGRESS,
+                            {k: v for k, v in msg.items() if k != "type"},
+                        )
+                    )
                 elif t == "error":
                     # 爬虫消息携带 type="error"，会覆盖事件类型（Event.as_dict 中 data 后展开）；
                     # 剥离该键，保证前端能识别 crawl_error 并复位爬取状态。

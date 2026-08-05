@@ -8,10 +8,39 @@ full detail and rotation.
 
 from __future__ import annotations
 
+import copy
 import logging
 import logging.handlers
+import re
 import sys
 from pathlib import Path
+
+from uvicorn.logging import AccessFormatter
+
+
+# ── uvicorn access log 脱敏 ─────────────────────────
+
+_API_KEY_RE = re.compile(r"(api_key=)[^&\s]*")
+
+
+class RedactingAccessFormatter(AccessFormatter):
+    """uvicorn access formatter：将 request line 中的 api_key 值脱敏。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _API_KEY_RE.sub(r"\1***", super().format(record))
+
+
+def uvicorn_log_config() -> dict:
+    """基于 uvicorn 默认 LOGGING_CONFIG，替换 access formatter 为脱敏版。"""
+    from uvicorn.config import LOGGING_CONFIG
+
+    config = copy.deepcopy(LOGGING_CONFIG)
+    access = config["formatters"].get("access")
+    if access:
+        access = dict(access)
+        access["()"] = "magnet_harvester.logger.RedactingAccessFormatter"
+        config["formatters"]["access"] = access
+    return config
 
 
 # ── Console formatter ──────────────────────────

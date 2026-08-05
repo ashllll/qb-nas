@@ -7,6 +7,7 @@ Usage:
 """
 import uvicorn
 from magnet_harvester.config import settings
+from magnet_harvester.logger import uvicorn_log_config
 
 if __name__ == "__main__":
     uvicorn.run(
@@ -14,4 +15,5 @@ if __name__ == "__main__":
         host=settings.SERVICE_HOST,
         port=settings.SERVICE_PORT,
         reload=False,
+        log_config=uvicorn_log_config(),
     )

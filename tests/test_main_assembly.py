@@ -5,7 +5,7 @@ def test_runtime_shutdown_waits_for_tasks_before_closing_resources():
     import asyncio
 
     from magnet_harvester.assembly import AppRuntime
-    from magnet_harvester.context.app_context import AppContext, CoreServices, RuntimeState
+    from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState
 
     order = []
 
@@ -16,6 +16,14 @@ def test_runtime_shutdown_waits_for_tasks_before_closing_resources():
     class Tasks:
         async def shutdown(self):
             order.append("tasks")
+
+    class Clipboard:
+        async def shutdown(self):
+            order.append("clipboard")
+
+    class Broadcaster:
+        def shutdown(self):
+            order.append("broadcaster")
 
     class Crawler:
         async def stop(self):
@@ -35,8 +43,12 @@ def test_runtime_shutdown_waits_for_tasks_before_closing_resources():
             qbit=Qbit(),
         ),
         runtime=RuntimeState(bg_manager=Tasks()),
+        app_services=AppServices(
+            clipboard_monitor=Clipboard(),
+            broadcaster=Broadcaster(),
+        ),
     )
 
     asyncio.run(AppRuntime(ctx=ctx, sync_loop=SyncLoop()).stop())
 
-    assert order == ["sync", "tasks", "crawler", "qbit"]
+    assert order == ["sync", "clipboard", "tasks", "broadcaster", "crawler", "qbit"]
