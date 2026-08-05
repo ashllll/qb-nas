@@ -70,3 +70,6 @@ test-results/
 reasonix.toml
 .planning/
 architecture-review-*.html
+
+# 会话延续产物（已弃用，不再使用）
+.omo/
