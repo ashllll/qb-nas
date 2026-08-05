@@ -1,5 +1,7 @@
 # Scrapling 全量爬虫迁移规格
 
+> **状态：已实现（2026-06）**。当前 `magnet_harvester/crawler.py` + `scrapling_spider.py` 已按本规格落地；本文件保留为规格记录。
+
 ## 目标
 
 由 Scrapling Spider 完整负责页面请求队列、并发、按域限流、重试、深度跟进、去重、

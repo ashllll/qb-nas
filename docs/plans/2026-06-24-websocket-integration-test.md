@@ -1,5 +1,7 @@
 # WebSocket 集成测试 Implementation Plan
 
+> **状态：已完成（2026-06-24）**。对应实现为 `tests/integration/test_websocket.py`（真实 ASGI WebSocket 生命周期测试）与 `tests/integration/test_websocket_auth.py`（API Key 握手认证）。本文件保留为计划记录。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Replace the misnamed `test_websocket.py` (which tests HTTP crawl, not WebSocket) with a proper WebSocket integration test that exercises the full ASGI WebSocket lifecycle.
@@ -15,6 +17,7 @@
 ### Task 1: Write failing WebSocket connection test
 
 **Files:**
+
 - Replace: `tests/integration/test_websocket.py` (full rewrite)
 - Reuse: `tests/fixtures.py` `make_test_app()`
 
@@ -75,6 +78,7 @@ git commit -m "test: add WebSocket init message integration test"
 ### Task 2: Ping/pong WebSocket test
 
 **Files:**
+
 - Modify: `tests/integration/test_websocket.py`
 
 **Step 1: Add ping/pong test**
@@ -115,6 +119,7 @@ git commit -m "test: add WebSocket ping/pong integration test"
 ### Task 3: Event broadcast via WebSocket test
 
 **Files:**
+
 - Modify: `tests/integration/test_websocket.py`
 
 **Step 1: Add crawl event broadcast test**
@@ -179,6 +184,7 @@ git commit -m "test: add WebSocket event broadcast integration test"
 The current file also has a leftover crawl-via-HTTP test that was the original `test_websocket_receives_magnet_found_event`. The new test in Task 3 covers this better (verifies WS messages). The old one should be removed.
 
 **Files:**
+
 - Modify: `tests/integration/test_websocket.py`
 
 **Step 1: Verify no test in test_websocket.py remains that doesn't use WebSocket**
@@ -209,6 +215,7 @@ git commit -m "test: clean up test_websocket.py, remove non-WS tests"
 If the TestClient leaves pending asyncio tasks, add a fixture cleanup that waits for bg tasks to complete.
 
 **Files:**
+
 - Modify: `tests/integration/test_websocket.py`
 
 **Step 1: Add fixture or context manager to cleanup after WebSocket tests**

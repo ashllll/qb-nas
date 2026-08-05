@@ -32,7 +32,15 @@ The lifecycle that records qBittorrent submission and reconciles later download 
 
 ### QBitRuntime
 
-The module responsible for validating, persisting, and atomically replacing the active qBittorrent configuration across the application context, download state sync, observability, and the Crawl pipeline.
+The hot-swap adapter responsible for validating, persisting, and atomically replacing the active qBittorrent configuration. It depends only on the narrow `QBitReplacementTarget` (never the full `AppContext`), built via `AppContext.replacement_target()` / `QBitRuntime.from_context(ctx)`.
+
+### QBitReplacementTarget
+
+The narrow dependency set a qBittorrent hot-swap needs: current client, crawl pipeline, download state sync, observability, plus an `on_qbit_replaced` callback that writes the new client back into the primary container. Keeps `QBitRuntime` decoupled from `AppContext`.
+
+### Event versioning
+
+Every bus/WebSocket event payload carries `updated_at` (naive-local `datetime.now()` ISO string; lexicographic order == chronological order). The frontend `seenAt` version table drops late-arriving stale events so they cannot overwrite newer state.
 
 ### Local classification
 
