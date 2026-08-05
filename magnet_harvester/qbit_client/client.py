@@ -54,6 +54,7 @@ class QBittorrentClient:
         self._submitter = MagnetSubmitter(
             gateway=self,
             fs_base_path=self._config.fs_base_path,
+            auto_create_dirs=self._config.auto_create_dirs,
             recorder=self.stats,
         )
 
@@ -68,10 +69,6 @@ class QBittorrentClient:
     @property
     def _client(self):
         return self._transport._client
-
-    async def replace_client(self) -> None:
-        """关闭旧的 httpx client，下次请求时传输层会惰性重建。"""
-        await self._transport.close()
 
     async def close(self):
         await self._transport.close()

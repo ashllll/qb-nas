@@ -155,3 +155,17 @@ class TestAPIKeyAuth:
         client.app.state.ctx.runtime.api_key = ""
         r = client.post("/api/crawl", json={"url": "https://example.com", "depth": 1})
         assert r.status_code == 200
+
+    def test_crawl_with_non_ascii_key_returns_401_not_500(self, client):
+        """非 ASCII API Key 按认证失败处理（对齐 WS 路径），不得返回 500。
+
+        HTTP 头经 latin-1 字节传输：Starlette 解码后得到含非 ASCII 字符的 str，
+        secrets.compare_digest 对其抛 TypeError。用 bytes header 模拟真实网络字节流。
+        """
+        client.app.state.ctx.runtime.api_key = "café-key"
+        r = client.post(
+            "/api/crawl",
+            json={"url": "https://example.com", "depth": 1},
+            headers={"X-API-Key": "café-key".encode("latin-1")},
+        )
+        assert r.status_code == 401  # 当前实现: 500（TypeError 未捕获）

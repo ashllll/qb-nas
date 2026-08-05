@@ -22,9 +22,17 @@ async def require_api_key(request: Request, x_api_key: str | None = Header(None)
     if not key:
         return
 
-    if not x_api_key or not secrets.compare_digest(x_api_key.strip(), key):
+    if not x_api_key or not _safe_compare(x_api_key.strip(), key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key",
             headers={"WWW-Authenticate": "X-API-Key"},
         )
+
+
+def _safe_compare(supplied: str, expected: str) -> bool:
+    """常量时间比较；非 ASCII 字符串按认证失败处理（对齐 WS 路径）。"""
+    try:
+        return secrets.compare_digest(supplied, expected)
+    except TypeError:
+        return False

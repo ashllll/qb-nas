@@ -75,10 +75,12 @@ class MagnetSubmitter:
         *,
         gateway: MagnetSubmissionGateway,
         fs_base_path: str = "",
+        auto_create_dirs: bool = True,
         recorder: SubmissionRecorder | None = None,
     ) -> None:
         self._gateway = gateway
         self._fs_base_path = fs_base_path.strip()
+        self._auto_create_dirs = auto_create_dirs
         self._recorder = recorder or NullSubmissionRecorder()
 
     async def add_magnet(self, magnet: str, category: str, save_path: str = "") -> bool:
@@ -119,7 +121,7 @@ class MagnetSubmitter:
         if not category_save_path:
             log.warning("无法解析分类保存路径，使用 qB 默认路径")
 
-        if self._fs_base_path:
+        if self._fs_base_path and self._auto_create_dirs:
             dir_path = str(Path(self._fs_base_path) / _safe_fs_segment(category))
             await asyncio.to_thread(os.makedirs, dir_path, exist_ok=True)
 

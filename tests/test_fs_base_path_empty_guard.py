@@ -57,3 +57,37 @@ async def test_configured_fs_base_path_creates_category_directory(tmp_path, monk
         "/downloads/电影",
     )
     assert (tmp_path / "电影").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_auto_create_dirs_false_skips_directory_creation(tmp_path, monkeypatch):
+    """AUTO_CREATE_DIRS=false 且 FS_BASE_PATH 非空 → 不创建目录。"""
+    monkeypatch.chdir(tmp_path)
+    client = QBittorrentClient(
+        QBitConfig(host="http://qbit.test", fs_base_path=str(tmp_path), auto_create_dirs=False)
+    )
+    client.ensure_category = AsyncMock(return_value=True)
+    client._req = AsyncMock(return_value=_ok_response())
+
+    assert await client.add_magnet(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+        "电影",
+        "/downloads/电影",
+    )
+    assert not (tmp_path / "电影").exists()  # 当前实现: 目录被创建
+
+
+@pytest.mark.asyncio
+async def test_auto_create_dirs_default_true_creates_directory(tmp_path, monkeypatch):
+    """默认 auto_create_dirs=True 行为与现状一致（创建）。"""
+    monkeypatch.chdir(tmp_path)
+    client = QBittorrentClient(QBitConfig(host="http://qbit.test", fs_base_path=str(tmp_path)))
+    client.ensure_category = AsyncMock(return_value=True)
+    client._req = AsyncMock(return_value=_ok_response())
+
+    assert await client.add_magnet(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+        "电影",
+        "/downloads/电影",
+    )
+    assert (tmp_path / "电影").is_dir()

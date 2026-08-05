@@ -61,6 +61,7 @@ class QBitConfig:
     username: str = "admin"
     password: str = "adminadmin"
     fs_base_path: str = ""
+    auto_create_dirs: bool = True
 
 
 @dataclass
@@ -141,6 +142,7 @@ class Settings(BaseSettings):
                 username=self.QBIT_USERNAME,
                 password=self.QBIT_PASSWORD,
                 fs_base_path=self.FS_BASE_PATH,
+                auto_create_dirs=self.AUTO_CREATE_DIRS,
             )
         return self._qbit_config
 
@@ -208,6 +210,7 @@ class Settings(BaseSettings):
             username=candidate_username,
             password=candidate_password,
             fs_base_path=self.FS_BASE_PATH,
+            auto_create_dirs=self.AUTO_CREATE_DIRS,
         )
 
     def commit_qbit_config(self, config: QBitConfig) -> None:

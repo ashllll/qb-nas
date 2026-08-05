@@ -116,20 +116,33 @@ function connectWS() {
   // 未配置 key 时不带参数（服务端兼容模式）。
   const wsKey = apiClient.getKey();
   const wsQuery = wsKey ? `?api_key=${encodeURIComponent(wsKey)}` : "";
-  ws = new WebSocket(`${protocol}//${location.host}/ws${wsQuery}`);
-  ws.onopen = () => setWsState("online", "已连接");
-  ws.onmessage = (event) => {
+  const sock = new WebSocket(`${protocol}//${location.host}/ws${wsQuery}`);
+  ws = sock;
+  // 心跳定时器为连接级闭包：每个连接只操作自己的定时器，
+  // 避免 API Key 快速重连时旧连接误清新连接的定时器（stale onclose）。
+  let heartbeatTimer = null;
+  sock.onopen = () => {
+    setWsState("online", "已连接");
+    // 服务端 5 分钟无消息即关闭僵尸连接（websocket.py idle timeout），
+    // 客户端每 30s 发送文本 ping 维持连接；onclose 时清理定时器。
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = setInterval(() => {
+      if (sock.readyState === WebSocket.OPEN) sock.send("ping");
+    }, 30000);
+  };
+  sock.onmessage = (event) => {
     try {
       handleMsg(JSON.parse(event.data));
     } catch (error) {
       addLog(`事件解析失败: ${error.message}`, "error");
     }
   };
-  ws.onclose = () => {
+  sock.onclose = () => {
+    clearInterval(heartbeatTimer);
     setWsState("offline", "重连中");
     reconnectTimer = setTimeout(connectWS, 2000);
   };
-  ws.onerror = () => ws.close();
+  sock.onerror = () => sock.close();
 }
 
 function setWsState(state, label) {
@@ -233,9 +246,21 @@ function handleMsg(msg) {
       renderTable();
       addLog("资源库已清空", "warn");
       break;
+    case "crawl_error":
+      setCrawling(false);
+      setProgress(0);
+      // found_handler_failed 等变体将原始 dict 放入 msg（嵌套），取其中的字符串字段
+      const crawlErr =
+        typeof msg.msg === "string"
+          ? msg.msg
+          : msg.message || msg.error || "爬取失败";
+      addLog(crawlErr, "error");
+      toast(crawlErr, "error");
+      break;
     case "error":
-      addLog(msg.msg || "发生未知错误", "error");
-      toast(msg.msg || "发生未知错误", "error");
+      setCrawling(false);
+      addLog(msg.msg || msg.message || "发生未知错误", "error");
+      toast(msg.msg || msg.message || "发生未知错误", "error");
       break;
     case "clipboard_status":
       clipCount = msg.magnet_count || clipCount;

@@ -157,7 +157,14 @@ class HarvestPipeline:
                 elif t == "progress":
                     await self._bus.emit(Event(EventType.CRAWL_PROGRESS, msg))
                 elif t == "error":
-                    await self._bus.emit(Event(EventType.CRAWL_ERROR, msg))
+                    # 爬虫消息携带 type="error"，会覆盖事件类型（Event.as_dict 中 data 后展开）；
+                    # 剥离该键，保证前端能识别 crawl_error 并复位爬取状态。
+                    await self._bus.emit(
+                        Event(
+                            EventType.CRAWL_ERROR,
+                            {k: v for k, v in msg.items() if k != "type"},
+                        )
+                    )
                 elif t == "done":
                     await self._bus.emit(
                         Event(EventType.CRAWL_DONE, {"total": msg["total"], "url": msg["url"]})

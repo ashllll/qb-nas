@@ -472,3 +472,40 @@ if __name__ == "__main__":
     test_download_result_is_observable_after_queued_store_change()
     test_no_new_items_skips_classify()
     print("=== Phase Pipeline tests passed! ===")
+
+
+class ErrorCrawlPhase(FakeCrawlPhase):
+    """产出 error 消息的 Fake Phase（模拟爬虫失败路径）。"""
+
+    async def crawl(self, url: str, depth: int = 1):
+        self.called_with.append((url, depth))
+        yield {"type": "error", "msg": "爬取超时 (30s)", "url": url}
+
+
+def test_crawl_error_event_type_not_overridden_by_data():
+    """pipeline 发射 CRAWL_ERROR 时，爬虫消息携带的 type='error' 不得覆盖事件类型。"""
+    bus = MessageBus()
+    received = []
+
+    async def capture(event: Event):
+        received.append(event)
+
+    bus.subscribe(EventType.CRAWL_ERROR, capture)
+    store = FakeStore()
+    pipeline = HarvestPipeline(
+        crawler=ErrorCrawlPhase(),
+        classifier=FakeClassifyPhase(),
+        qbit=FakeDownloadPhase(success=True),
+        store=AsyncItemStore(store),
+        bus=bus,
+    )
+
+    asyncio.run(pipeline.execute("https://example.com", depth=1))
+
+    assert len(received) == 1
+    ev = received[0]
+    assert ev.type == EventType.CRAWL_ERROR
+    d = ev.as_dict()
+    assert d["type"] == "crawl_error"  # 发射层已剥离 data 中的 type 键
+    assert d["msg"] == "爬取超时 (30s)"
+    assert "type" not in d or d["type"] == "crawl_error"

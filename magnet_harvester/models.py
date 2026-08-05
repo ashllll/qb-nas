@@ -70,7 +70,7 @@ class CrawlRequest(BaseModel):
 
 
 class DownloadRequest(BaseModel):
-    hashes: List[str]
+    hashes: List[str] = Field(min_length=1, max_length=500)
 
 
 class QBitConfigUpdate(BaseModel):

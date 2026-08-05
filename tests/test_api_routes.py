@@ -7,6 +7,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
 from fastapi import FastAPI
 
 from tests._client import asgi_client
@@ -593,3 +594,16 @@ def test_update_config_rejects_invalid_candidate_without_mutating_runtime():
     assert resp.status_code == 422
     assert ctx.core.qbit is old_qbit
     assert old_qbit.closed is False
+
+
+def test_download_request_hashes_rejected_when_empty_or_oversized():
+    """DownloadRequest.hashes 需要 1-500 条，空列表与超限均被 Pydantic 拒绝。"""
+    from pydantic import ValidationError
+
+    from magnet_harvester.models import DownloadRequest
+
+    with pytest.raises(ValidationError):
+        DownloadRequest(hashes=[])            # min_length=1
+    with pytest.raises(ValidationError):
+        DownloadRequest(hashes=["h"] * 501)   # max_length=500
+    assert len(DownloadRequest(hashes=["h"] * 500).hashes) == 500
