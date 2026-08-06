@@ -209,12 +209,14 @@ class TestValidateCrawlUrlWithFakeIp:
             validate_crawl_url("http://198.18.0.1/admin")
 
     def test_accepts_fake_ip_when_flag_enabled(self):
-        """allow_fake_ip=True 放行 198.18.0.0/15。"""
-        assert validate_crawl_url("http://198.18.2.102/torrents", allow_fake_ip=True) is True
+        """字面 IP 不再豁免：allow_fake_ip=True 也拒绝 198.18.0.0/15 字面地址。"""
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://198.18.2.102/torrents", allow_fake_ip=True)
 
     def test_accepts_198_19_x_when_flag_enabled(self):
-        """198.19.x 属于 /15 范围，也应放行。"""
-        assert validate_crawl_url("http://198.19.255.255/test", allow_fake_ip=True) is True
+        """198.19.x 属于 /15 范围，字面地址同样拒绝。"""
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://198.19.255.255/test", allow_fake_ip=True)
 
     def test_still_rejects_192_168_with_fake_ip_flag(self):
         """allow_fake_ip=True 不应绕过 RFC 1918 私有地址。"""
@@ -248,8 +250,9 @@ class TestValidateCrawlUrlWithFakeIp:
             validate_crawl_url("http://[::ffff:198.18.2.102]/admin")
 
     def test_accepts_ipv4_mapped_fake_ip_with_flag(self):
-        """allow_fake_ip=True 放行 IPv4-mapped fake-IP。"""
-        assert validate_crawl_url("http://[::ffff:198.18.2.102]/admin", allow_fake_ip=True) is True
+        """IPv4-mapped fake-IP 也是字面地址，allow_fake_ip=True 时同样拒绝。"""
+        with pytest.raises(URLValidationError, match="private"):
+            validate_crawl_url("http://[::ffff:198.18.2.102]/admin", allow_fake_ip=True)
 
 
 @pytest.mark.asyncio

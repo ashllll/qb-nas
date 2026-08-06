@@ -48,7 +48,13 @@ def _validate_hostname(hostname: str | None, allow_fake_ip: bool = False) -> Non
     if hostname.lower() == "localhost":
         raise URLValidationError("URL resolves to a private address")
     try:
-        if _is_unsafe_address(hostname, allow_fake_ip=allow_fake_ip):
+        # 字面 IP 不做 fake-IP 豁免（fake-IP 只对域名解析生效，字面直连不走代理池）
+        literal_flag = False
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        literal_flag = allow_fake_ip
+    try:
+        if _is_unsafe_address(hostname, allow_fake_ip=literal_flag):
             raise URLValidationError("URL resolves to a private address")
     except URLValidationError:
         raise

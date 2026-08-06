@@ -326,7 +326,7 @@ class MagnetCrawler:
             await events.put({"type": "error", "msg": msg, "url": result_url})
             return
 
-        items = self._extract_page_items(result, source_url=result_url)
+        items = await asyncio.to_thread(self._extract_page_items, result, source_url=result_url)
         new_count = 0
         for item in items:
             hash_key = item.get("hash")
