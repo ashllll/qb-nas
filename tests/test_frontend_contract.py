@@ -25,7 +25,9 @@ def test_frontend_throttles_transient_qbit_logs_but_keeps_real_failures():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     assert "LOG_DEDUPE_WINDOW_MS" in app_js
     assert '"qbit-transient-retry"' in app_js
-    assert "qB 状态暂时异常，正在重试" in app_js
+    # 无 error_msg 的兜底文案不得承诺「正在重试」（同步层只报告状态，无自动重试）
+    assert "qB 状态异常，请在 qB 中检查该种子" in app_js
+    assert "正在重试" not in app_js
     assert "下载失败 · ${name} · ${msg.error_msg}" in app_js
 
 

@@ -47,6 +47,26 @@ def test_map_torrent_status_for_completed_queued_upload():
 def test_map_torrent_status_for_error():
     result = TorrentStatusMapper.map({"state": "error", "progress": 0.0})
     assert result["status"] == TaskStatus.error
+    assert result["error_msg"] == "qB 种子状态异常: error"
+
+
+def test_map_torrent_status_missing_files_carries_readable_error():
+    """missingFiles 必须透传为可读原因，前端据此提示用户检查文件而非等待重试。"""
+    result = TorrentStatusMapper.map({"state": "missingFiles", "progress": 0.4})
+    assert result["status"] == TaskStatus.error
+    assert result["error_msg"] == "qB 种子状态异常: missingFiles"
+
+
+def test_map_torrent_status_unrecognized_state_carries_error_msg():
+    result = TorrentStatusMapper.map({"state": "", "progress": 0.0})
+    assert result["status"] == TaskStatus.error
+    assert result["error_msg"] == "qB 种子状态无法识别: 空"
+
+
+def test_map_torrent_status_healthy_states_have_no_error_msg():
+    for state, progress in [("downloading", 0.4), ("uploading", 1.0), ("queuedDL", 0.0)]:
+        result = TorrentStatusMapper.map({"state": state, "progress": progress})
+        assert result["error_msg"] is None
 
 
 def test_qbit_client_status_mapping_keeps_backward_compatibility():

@@ -43,6 +43,9 @@ class QBittorrentClient:
         self._last_ping_result: bool | None = None
         self._ping_lock = asyncio.Lock()
         self._cached_default_path: str | None = None
+        # 路径探测串行化：PUT /api/config 清缓存后，并发下载任务会同时进入
+        # resolve() 重复探测并重复打印日志（如日志中两次「基础路径（从分类 …）」）
+        self._default_path_lock = asyncio.Lock()
         # LRU 有界字典，防止异常/恶意分类名导致无限增长（上限 200）
         self._category_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._category_locks_guard = asyncio.Lock()
@@ -167,29 +170,34 @@ class QBittorrentClient:
         if self._cached_default_path is not None:
             return self._cached_default_path or None
 
-        # 1-2. 从已有分类/种子推断（通过 QBitPathResolver）
-        path = await self._path_resolver.resolve()
-        if path:
-            self._cached_default_path = path
-            return path
+        # double-checked locking：避免并发调用同时探测（重复网络请求与日志）
+        async with self._default_path_lock:
+            if self._cached_default_path is not None:
+                return self._cached_default_path or None
 
-        # 3. 兜底：/app/defaultSavePath（Docker 下可能返回容器内部路径）
-        try:
-            r = await self._req("GET", "/app/defaultSavePath")
-            if r.status_code == 200:
-                path = r.text.strip()
-                if path:
-                    self._cached_default_path = path
-                    log.warning(
-                        f"未找到已有分类或种子，使用 qB 默认路径: {path}"
-                        f"（Docker 版可能返回容器内部路径而非 NAS 路径）"
-                    )
-                    return path
-        except Exception as e:
-            log.warning(f"get_default_save_path 异常: {e}")
+            # 1-2. 从已有分类/种子推断（通过 QBitPathResolver）
+            path = await self._path_resolver.resolve()
+            if path:
+                self._cached_default_path = path
+                return path
 
-        self._cached_default_path = ""  # 负缓存：避免重复网络请求
-        return None
+            # 3. 兜底：/app/defaultSavePath（Docker 下可能返回容器内部路径）
+            try:
+                r = await self._req("GET", "/app/defaultSavePath")
+                if r.status_code == 200:
+                    path = r.text.strip()
+                    if path:
+                        self._cached_default_path = path
+                        log.warning(
+                            f"未找到已有分类或种子，使用 qB 默认路径: {path}"
+                            f"（Docker 版可能返回容器内部路径而非 NAS 路径）"
+                        )
+                        return path
+            except Exception as e:
+                log.warning(f"get_default_save_path 异常: {e}")
+
+            self._cached_default_path = ""  # 负缓存：避免重复网络请求
+            return None
 
     def clear_cached_path(self):
         """清除缓存的路径，强制下次重新检测（/api/config PUT 时调用）"""

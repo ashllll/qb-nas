@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from magnet_harvester.context.app_context import BackgroundTaskSpawner, StatsTracker
-from magnet_harvester.models import MagnetItem
+from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import PipelineProtocol
 from magnet_harvester.store import ItemStore
 from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
@@ -67,11 +67,30 @@ class UserActionExecutor:
         if self._pipeline is None:
             return {"status": "error", "reason": "pipeline unavailable"}
 
-        if not self._spawn(self._pipeline.download(hashes), name=task_name):
+        # 预检：与 DownloadTransitions.submitting 的前置条件一致（pending/error → adding），
+        # 避免「已提交 N 个」与实际受理数不符、被跳过的条目毫无反馈
+        eligible: list[str] = []
+        skipped = 0
+        for h in hashes:
+            item = await self._store.get(h)
+            if item is not None and item.status in {TaskStatus.pending, TaskStatus.error}:
+                eligible.append(h)
+            else:
+                skipped += 1
+
+        if not eligible:
+            return {
+                "status": "skipped",
+                "count": 0,
+                "skipped": skipped,
+                "reason": "所选条目均已在下载队列或状态不可提交",
+            }
+
+        if not self._spawn(self._pipeline.download(eligible), name=task_name):
             return {"status": "error", "reason": "task manager unavailable"}
         if self._stats is not None:
             self._stats.record_download()
-        return {"status": "started", "count": len(hashes)}
+        return {"status": "started", "count": len(eligible), "skipped": skipped}
 
     async def download_pending(self) -> dict:
         pending = await self._store.get_pending()

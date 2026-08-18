@@ -364,13 +364,25 @@ async function downloadSelected() {
   const button = document.getElementById("dlBtn");
   setButtonBusy(button, true, "发送中");
   try {
-    await apiClient.fetch("/api/download", {
+    const result = await apiClient.fetch("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hashes: [...selected] }),
     });
-    addLog(`已提交 ${selected.size} 个下载任务`, "info");
-    toast("下载任务已提交", "success");
+    // 以服务端实际受理数为准；被跳过的条目（已在队列/状态不允许）给出反馈
+    if (result.status === "skipped" || !result.count) {
+      addLog(
+        `没有可提交的下载任务（${result.skipped || selected.size} 个条目已在队列或状态不允许）`,
+        "warn"
+      );
+      toast("没有可提交的下载任务", "error");
+    } else {
+      const skippedNote = result.skipped
+        ? `，${result.skipped} 个已在队列跳过`
+        : "";
+      addLog(`已提交 ${result.count} 个下载任务${skippedNote}`, "info");
+      toast("下载任务已提交", "success");
+    }
   } catch (error) {
     toast(error.message, "error");
   } finally {
@@ -550,7 +562,8 @@ const logDedupe = new Map();
 function addLog(message, type = "") {
   const now = Date.now();
   const dedupeKey =
-    type === "warning" && message.startsWith("qB 状态暂时异常，正在重试")
+    type === "warning" &&
+    message.startsWith("qB 状态异常，请在 qB 中检查该种子")
       ? "qbit-transient-retry"
       : `${type}:${message}`;
   const previous = logDedupe.get(dedupeKey) || 0;
@@ -585,7 +598,7 @@ function logDownloadState(item, msg) {
   else if (msg.status === "success") addLog(`下载完成 · ${name}`, "found");
   else if (msg.status === "error")
     if (msg.error_msg) addLog(`下载失败 · ${name} · ${msg.error_msg}`, "error");
-    else addLog(`qB 状态暂时异常，正在重试 · ${name}`, "warning");
+    else addLog(`qB 状态异常，请在 qB 中检查该种子 · ${name}`, "warning");
 }
 
 function setButtonBusy(button, busy, label = "") {

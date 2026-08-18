@@ -180,12 +180,17 @@ async def test_start_crawl_rejects_target_denied_by_pipeline():
 async def test_add_to_queue():
     pipeline = FakePipeline()
     tasks = FakeTaskManager()
-    actions = _make_executor(pipeline=pipeline, tasks=tasks)
+    store = FakeStore()
+    # 预检只受理 store 中 pending/error 状态的条目
+    store.add(MagnetItem(hash="A", name="a", magnet="m:?xt=urn:btih:A"))
+    store.add(MagnetItem(hash="B", name="b", magnet="m:?xt=urn:btih:B"))
+    actions = _make_executor(store=store, pipeline=pipeline, tasks=tasks)
     result = await actions.download(["A", "B"], task_name="download_batch")
     await asyncio.sleep(0)
 
     assert result["status"] == "started"
     assert result["count"] == 2
+    assert result["skipped"] == 0
     assert pipeline.download_hashes == ["A", "B"]
     assert tasks.calls == ["download_batch"]
 
@@ -194,7 +199,11 @@ async def test_add_to_queue():
 async def test_ingest_schedules_download_through_managed_action_path():
     pipeline = FakePipeline()
     tasks = FakeTaskManager()
-    actions = _make_executor(pipeline=pipeline, tasks=tasks)
+    store = FakeStore()
+    # 真实链路中 pipeline.ingest 会把条目写入 store（classified → pending）；
+    # 这里预置等价状态，验证 download 经预检后被调度
+    store.add(MagnetItem(hash="CLIP", name="Clipboard", magnet="magnet:?xt=urn:btih:CLIP"))
+    actions = _make_executor(store=store, pipeline=pipeline, tasks=tasks)
     item = MagnetItem(hash="CLIP", name="Clipboard", magnet="magnet:?xt=urn:btih:CLIP")
 
     accepted = await actions.ingest([item], auto_download=True)

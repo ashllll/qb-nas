@@ -318,6 +318,8 @@ class HarvestPipeline:
         async with semaphore:
             try:
                 if not await self._downloads.submitting(hash_key):
+                    # 预检后状态被并发改动（如已在队列/下载中），静默跳过但留痕
+                    log.debug("跳过下载 %s：条目状态不允许提交（可能已在队列）", hash_key)
                     return
                 ok = await self._qbit.add_magnet(item.magnet, item.category, item.save_path or "")
                 if ok:

@@ -63,7 +63,12 @@ _STUDIO_WITH_DATE = re.compile(
 
 
 def extract_studio(name: str) -> Optional[str]:
-    """从文件名提取工作室名称。"""
+    """从文件名提取工作室名称。
+
+    已知厂牌（KNOWN_STUDIOS）返回规范名；未收录的厂牌做智能大小写后
+    同样作为分类返回，避免同类内容因白名单覆盖不全而一半归厂牌、
+    一半落「其他」。纯数字或过短的前缀视为误匹配（如 "1917 19 12 25"）。
+    """
     # 清理常见噪音前缀
     cleaned = name.strip()
 
@@ -74,6 +79,9 @@ def extract_studio(name: str) -> Optional[str]:
         normalized = normalize_known_studio(raw)
         if normalized:
             return normalized
+        # 未知厂牌：排除纯数字/过短前缀的误匹配
+        if len(raw) >= 3 and not raw.isdigit():
+            return normalize_studio(raw)
 
     return None
 

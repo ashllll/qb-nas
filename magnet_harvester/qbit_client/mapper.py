@@ -34,8 +34,12 @@ class TorrentStatusMapper:
         }
         error_states = {"error", "missingFiles", "unknown"}
 
+        # qB 侧异常状态时给出可读原因，供前端区分「文件缺失」与「状态未知」，
+        # 避免笼统的「暂时异常」误导（同步层只报告状态，不存在自动重试）
+        error_msg: str | None = None
         if state in error_states:
             status = TaskStatus.error
+            error_msg = f"qB 种子状态异常: {state}"
         elif progress >= 1.0:
             status = TaskStatus.success
         elif (
@@ -53,9 +57,11 @@ class TorrentStatusMapper:
             status = TaskStatus.downloading
         else:
             status = TaskStatus.error
+            error_msg = f"qB 种子状态无法识别: {state or '空'}"
 
         return {
             "status": status,
             "progress": round(progress * 100, 1),
             "torrent_state": state or None,
+            "error_msg": error_msg,
         }

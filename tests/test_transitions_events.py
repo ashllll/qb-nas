@@ -165,3 +165,96 @@ async def test_store_changed_item_carries_updated_at():
     serialized = json.loads(json.dumps(event.data, default=_json_serializer))
     assert isinstance(serialized["item"]["updated_at"], str)
     assert serialized["item"]["updated_at"]
+
+
+# ── 6. reconcile_snapshot 透传 qB 异常状态为可读 error_msg ──
+
+
+@pytest.mark.asyncio
+async def test_reconcile_snapshot_propagates_qbit_error_message():
+    """qB 侧 missingFiles 必须落到 error_msg，DOWNLOAD_RESULT 事件携带真实原因。"""
+    store = _make_store()
+    bus = RecordingBus()
+    transitions = DownloadTransitions(store=store, bus=bus)
+    await store.add(
+        MagnetItem(
+            hash="QBITERR1",
+            name="Missing Files Item",
+            magnet="magnet:?xt=urn:btih:QBITERR1",
+            status=TaskStatus.queued,
+        )
+    )
+    item = await store.get("QBITERR1")
+
+    changed = await transitions.reconcile_snapshot(
+        "QBITERR1",
+        item,
+        {"state": "missingFiles", "progress": 0.4},
+        was_removed=False,
+    )
+
+    assert changed is True
+    updated = await store.get("QBITERR1")
+    assert updated.status == TaskStatus.error
+    assert updated.error_msg == "qB 种子状态异常: missingFiles"
+    event = _event(bus, EventType.DOWNLOAD_RESULT)
+    assert event is not None
+    assert event.data["status"] == "error"
+    assert event.data["error_msg"] == "qB 种子状态异常: missingFiles"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_snapshot_same_error_does_not_reemit():
+    """连续两轮相同的异常快照不产生字段变化，不重复发射事件刷屏。"""
+    store = _make_store()
+    bus = RecordingBus()
+    transitions = DownloadTransitions(store=store, bus=bus)
+    await store.add(
+        MagnetItem(
+            hash="QBITERR2",
+            name="Repeated Error Item",
+            magnet="magnet:?xt=urn:btih:QBITERR2",
+            status=TaskStatus.queued,
+        )
+    )
+
+    snapshot = {"state": "missingFiles", "progress": 0.4}
+    item = await store.get("QBITERR2")
+    first = await transitions.reconcile_snapshot("QBITERR2", item, snapshot, was_removed=False)
+    item = await store.get("QBITERR2")
+    second = await transitions.reconcile_snapshot("QBITERR2", item, snapshot, was_removed=False)
+
+    assert first is True
+    assert second is False
+    results = [e for e in bus.events if e.type == EventType.DOWNLOAD_RESULT]
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_snapshot_clears_error_message_on_recovery():
+    """qB 状态从异常恢复到下载中时，error_msg 必须被清除。"""
+    store = _make_store()
+    bus = RecordingBus()
+    transitions = DownloadTransitions(store=store, bus=bus)
+    await store.add(
+        MagnetItem(
+            hash="QBITREC1",
+            name="Recovering Item",
+            magnet="magnet:?xt=urn:btih:QBITREC1",
+            status=TaskStatus.error,
+            error_msg="qB 种子状态异常: missingFiles",
+        )
+    )
+    item = await store.get("QBITREC1")
+
+    changed = await transitions.reconcile_snapshot(
+        "QBITREC1",
+        item,
+        {"state": "downloading", "progress": 0.5},
+        was_removed=False,
+    )
+
+    assert changed is True
+    updated = await store.get("QBITREC1")
+    assert updated.status == TaskStatus.downloading
+    assert updated.error_msg is None

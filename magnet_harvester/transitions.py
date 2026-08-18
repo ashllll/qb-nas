@@ -324,7 +324,12 @@ class DownloadTransitions(_TransitionBase):
             fields["progress"] = mapped["progress"]
         if item.torrent_state != mapped["torrent_state"]:
             fields["torrent_state"] = mapped["torrent_state"]
-        if item.error_msg and mapped["status"] != TaskStatus.error:
+        mapped_error = mapped.get("error_msg")
+        if mapped["status"] == TaskStatus.error and mapped_error:
+            # qB 侧异常（missingFiles/error/unknown）透传真实原因，替代笼统提示
+            if item.error_msg != mapped_error:
+                fields["error_msg"] = mapped_error
+        elif item.error_msg and mapped["status"] != TaskStatus.error:
             fields["error_msg"] = None
 
         if fields:
