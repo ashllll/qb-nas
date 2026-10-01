@@ -159,7 +159,7 @@ class FakeClassifier:
         return {"cache_size": 0, "hit_rate": 0.0}
 
 
-def _make_app():
+def _make_app(extra_items=()):
     store = FakeStore()
     store.add(
         MagnetItem(
@@ -170,6 +170,8 @@ def _make_app():
             status=TaskStatus.pending,
         )
     )
+    for item in extra_items:
+        store.add(item)
     error_handler = ErrorHandler()
     pipeline = FakePipeline()
     bg_manager = FakeBGManager()
@@ -271,6 +273,56 @@ def test_items_route_requires_assembled_item_queries():
 
     assert resp.status_code == 500
     assert resp.json()["detail"] == "Item queries not configured"
+
+
+def test_items_filter_accepts_studio_classified_open_category():
+    """StudioRule 产出的厂牌分类能入库，就必须能按它过滤。
+
+    回归背景：route 层用固定 9 类白名单校验 ?category=，而分类实际是开放集合，
+    于是真实存在的厂牌分类被 422 拒绝。
+    """
+    studio_item = MagnetItem(
+        hash="STUDIO1234567890",
+        name="Vixen 24 05 20 Example",
+        magnet="magnet:?xt=urn:btih:STUDIO1234567890",
+        category="Vixen",
+        status=TaskStatus.pending,
+    )
+    app, _ctx = _make_app(extra_items=[studio_item])
+
+    with asgi_client(app) as client:
+        filtered = client.get("/api/items", params={"category": "Vixen"})
+        listed = client.get("/api/items")
+        categories = client.get("/api/categories")
+
+    assert filtered.status_code == 200, filtered.json()
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["category"] == "Vixen"
+    # 该分类必须能被列表接口返回（否则"不能过滤"就无从谈起）
+    assert "Vixen" in {item["category"] for item in listed.json()["items"]}
+    # 且必须可被发现，前端才能提供对应筛选项
+    assert "Vixen" in categories.json()["categories"]
+
+
+def test_items_filter_unknown_category_returns_empty_not_error():
+    """不存在的分类应返回空结果，而不是 422 —— 分类集合是开放的。"""
+    app, _ctx = _make_app()
+
+    with asgi_client(app) as client:
+        resp = client.get("/api/items", params={"category": "NoSuchCategory"})
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 0
+
+
+def test_items_filter_rejects_overlong_category():
+    """分类过滤仍需边界校验：超长输入应被拒绝而不是透传给 store。"""
+    app, _ctx = _make_app()
+
+    with asgi_client(app) as client:
+        resp = client.get("/api/items", params={"category": "x" * 500})
+
+    assert resp.status_code == 422
 
 
 def test_stats_route_uses_context_stats():

@@ -27,6 +27,10 @@ log = logging.getLogger(__name__)
 
 VALID_CATEGORIES = {"电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"}
 
+# 分类是开放集合（StudioRule 以厂牌名作为分类），因此不做白名单校验，
+# 仅保留长度上限，避免超长输入透传到 store。
+_MAX_CATEGORY_LENGTH = 64
+
 router = APIRouter()
 
 
@@ -102,10 +106,10 @@ async def get_items(
                 status_code=422,
                 detail=f"Invalid status: {status}. Valid values: {[v.value for v in TaskStatus]}",
             )
-    if category is not None and category not in VALID_CATEGORIES:
+    if category is not None and len(category) > _MAX_CATEGORY_LENGTH:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid category: {category}. Valid values: {sorted(VALID_CATEGORIES)}",
+            detail=f"Invalid category: 长度不得超过 {_MAX_CATEGORY_LENGTH} 字符",
         )
     result = await _item_queries(ctx).page_items(
         category=category,
@@ -291,8 +295,18 @@ async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_
 
 
 @router.get("/api/categories")
-async def get_categories():
-    return {"categories": sorted(VALID_CATEGORIES)}
+async def get_categories(ctx: AppContext = Depends(get_context)):
+    """内置分类与当前实际存在分类的并集。
+
+    分类是开放集合：StudioRule 命中厂牌时以厂牌名作为分类，这类分类能入库、
+    能按它过滤，若不在此公布，前端就无从提供对应筛选项。
+    """
+    categories = set(VALID_CATEGORIES)
+    item_queries = ctx.app_services.item_queries
+    if item_queries is not None:
+        stats = await item_queries.get_stats()
+        categories.update(cat for cat in stats.get("by_category", {}) if cat)
+    return {"categories": sorted(categories)}
 
 
 @router.get("/api/clipboard")
