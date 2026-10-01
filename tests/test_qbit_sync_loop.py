@@ -86,6 +86,11 @@ class FailingQbitClient:
         return set()
 
 
+class FailingStore(FakeStore):
+    def list(self, *args, **kwargs):
+        raise RuntimeError("store unavailable")
+
+
 class RecordingStore(FakeStore):
     def __init__(self):
         super().__init__()
@@ -284,6 +289,25 @@ async def test_sync_failure_backs_off_without_scanning_store():
 
     assert qbit.poll_calls >= 1
     assert store.list_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_store_failure_does_not_terminate_sync_loop():
+    loop = QBitSyncLoop(
+        qbit_client=FakeQbitClient(),
+        store=AsyncItemStore(FailingStore()),
+        bus=MessageBus(),
+        poll_interval=0.01,
+        max_failure_backoff=0.05,
+    )
+
+    await loop.start()
+    await asyncio.sleep(0.03)
+
+    assert loop._task is not None
+    assert not loop._task.done()
+
+    await loop.stop()
 
 
 class FakeTransitions:

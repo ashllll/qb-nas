@@ -146,10 +146,19 @@ class QBitSyncLoop:
                 continue
             self._backoff.record_success()
 
-            tracked_items = await store.list(
-                status=_SYNC_ACTIVE_STATUSES,
-                limit=_MAX_STORE_ITEMS,
-            )
+            try:
+                tracked_items = await store.list(
+                    status=_SYNC_ACTIVE_STATUSES,
+                    limit=_MAX_STORE_ITEMS,
+                )
+            except Exception as e:
+                self._backoff.record_failure()
+                log.warning(
+                    "qB 状态同步读取本地条目失败，将退避到 %.1fs 后重试: %s",
+                    self._backoff.next_delay(),
+                    e,
+                )
+                continue
             if len(tracked_items) >= _MAX_STORE_ITEMS:
                 log.error(
                     "tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items)
