@@ -236,6 +236,39 @@ def test_no_false_positives():
     assert len(items) == 0, "不应提取到任何磁力链接"
 
 
+def test_malformed_input_never_raises_and_result_stays_bounded():
+    """畸形/对抗性输入不得抛异常，且结果必须有界、结构合法。
+
+    解析器处理的是来自任意站点的不可信文本，属信任边界。这里只锁定"不崩、
+    不放大、结构合法"三项，不重复断言已在 test_hash_validation_unified 覆盖的
+    哈希长度边界。
+    """
+    hash_hex = "0123456789abcdef0123456789abcdef01234567"
+    adversarial = {
+        "空字符串": "",
+        "仅前缀": "magnet:?xt=urn:btih:",
+        "畸形百分号转义": "%zz%1%%%2 " * 500 + f"magnet:?xt=urn:btih:{hash_hex}",
+        "NULL 字节": f"magnet:?xt=urn:btih:{hash_hex}\x00\x00trailing",
+        "大量裸百分号": "%" * 5000,
+        "未闭合 base64 候选": "bWFnbmV0" + "A" * 300,
+        "畸形 btih 超长尾部": "magnet:?xt=urn:btih:" + "z" * 10000,
+    }
+
+    for label, text in adversarial.items():
+        items = extract_from_text(text)  # 不得抛异常
+        assert len(items) <= max(len(text), 1), f"{label}: 结果条数异常放大"
+        hashes = [item["hash"] for item in items]
+        assert all(hashes), f"{label}: 出现空 hash"
+        assert len(hashes) == len(set(hashes)), f"{label}: 结果未按 hash 去重"
+
+    # 畸形转义与 NULL 字节都不应妨碍其中真正有效的磁力被提取
+    assert (
+        extract_from_text("%zz%1%%%2 " * 100 + f"magnet:?xt=urn:btih:{hash_hex}")[0]["hash"]
+        == hash_hex.upper()
+    )
+    assert extract_from_text(f"magnet:?xt=urn:btih:{hash_hex}\x00")[0]["hash"] == hash_hex.upper()
+
+
 # ---- 重复磁力不得重复解析（性能回归）----
 
 
