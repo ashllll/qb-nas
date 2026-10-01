@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 log = logging.getLogger(__name__)
@@ -77,7 +78,8 @@ class Settings(BaseSettings):
     QBIT_HOST: str = "http://192.168.1.100:8080"
     QBIT_USERNAME: str = "admin"
     QBIT_PASSWORD: str = "adminadmin"
-    QBIT_SYNC_INTERVAL: float = 2.0
+    # 必须为正：同步循环每轮以该间隔休眠，0 会退化成无休眠紧循环
+    QBIT_SYNC_INTERVAL: float = Field(default=2.0, gt=0)
 
     SERVICE_HOST: str = "127.0.0.1"
     SERVICE_PORT: int = 8899

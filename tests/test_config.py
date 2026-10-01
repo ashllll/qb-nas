@@ -7,6 +7,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
+
 from magnet_harvester.config import CrawlerConfig, QBitConfig, Settings
 
 
@@ -175,6 +177,24 @@ def test_allow_fake_ip_config_wires_to_crawler():
     default_cfg = Settings(CRAWLER_ALLOW_FAKE_IP=False)
     assert default_cfg.CRAWLER_ALLOW_FAKE_IP is False
     assert default_cfg.crawler.allow_fake_ip is False
+
+
+def test_qbit_sync_interval_must_be_positive(monkeypatch):
+    """QBIT_SYNC_INTERVAL 必须为正：0 会让同步循环变成无休眠紧循环。
+
+    QBitSyncLoop._run 每轮先 wait_for(stop_event, timeout=next_delay())，无失败时
+    next_delay() 即该间隔。设为 0 时每轮立即超时并立刻轮询 qB + SQLite。
+    """
+    from pydantic import ValidationError
+
+    for bad in ("0", "-1", "0.0"):
+        monkeypatch.setenv("QBIT_SYNC_INTERVAL", bad)
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)
+
+    # 闭环：合法的下限值必须仍被接受，避免把校验写死成"拒绝一切小值"
+    monkeypatch.setenv("QBIT_SYNC_INTERVAL", "0.1")
+    assert Settings(_env_file=None).QBIT_SYNC_INTERVAL == 0.1
 
 
 if __name__ == "__main__":
