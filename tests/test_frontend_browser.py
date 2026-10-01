@@ -107,6 +107,83 @@ async def test_frontend_loads_css_and_javascript_as_local_modules(static_server_
 
 
 @pytest.mark.asyncio
+async def test_frontend_renders_open_categories_from_api_and_filters(static_server_url):
+    """StudioRule 产出的开放分类必须能在 UI 上筛选。
+
+    回归背景：分类是开放集合，但 filter tab 是 index.html 里硬编码的 10 个，
+    因此 /api/categories 公布的厂牌分类在 UI 上无从筛选。此测试经真实浏览器
+    验证：该分类会渲染成 tab，点击后确实生效。
+    """
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=True)
+        page = await browser.new_page()
+        console_problems: list[str] = []
+        page.on(
+            "console",
+            lambda message: (
+                console_problems.append(message.text)
+                if message.type in {"error", "warning"}
+                else None
+            ),
+        )
+        await page.add_init_script(
+            """
+            window.WebSocket = class {
+              constructor() { setTimeout(() => this.onopen?.(), 0); }
+              send() {}
+              close() {}
+            };
+            """
+        )
+
+        async def handle_api(route, request):
+            if request.url.endswith("/api/categories"):
+                payload = {"categories": ["电影", "Vixen", "MetArt"]}
+            elif request.url.endswith("/api/clipboard"):
+                payload = {"running": False, "magnet_count": 0}
+            elif request.url.endswith("/api/status"):
+                payload = {"qbittorrent": "online"}
+            else:
+                payload = {}
+            await route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(payload)
+            )
+
+        await page.route("**/api/**", handle_api)
+        await page.goto(static_server_url, wait_until="domcontentloaded")
+        await page.wait_for_selector('[data-cat="Vixen"]', timeout=5000)
+
+        # 开放分类渲染成 tab，且不重复内置 tab
+        categories = await page.locator(".filter-tab").evaluate_all(
+            "elements => elements.map((element) => element.dataset.cat)"
+        )
+        assert categories.count("电影") == 1, "内置分类不得被重复添加"
+        assert "Vixen" in categories
+        assert "MetArt" in categories
+
+        # 点击后筛选必须真实生效
+        await page.evaluate(
+            """
+            () => handleMsg({type: 'init', items: [
+              {hash: 'STUDIO', name: 'Studio Item', status: 'pending', category: 'Vixen'},
+              {hash: 'MOVIE', name: 'Movie Item', status: 'pending', category: '电影'}
+            ]})
+            """
+        )
+        assert await page.locator("#tbody tr").count() == 2
+
+        await page.locator('[data-cat="Vixen"]').click()
+        assert await page.locator("#tbody tr").count() == 1
+        assert "Studio Item" in await page.locator("#tbody").inner_text()
+        assert await page.locator('[data-cat="Vixen"]').get_attribute("class") == (
+            "filter-tab active"
+        )
+
+        assert console_problems == []
+        await browser.close()
+
+
+@pytest.mark.asyncio
 async def test_frontend_transport_and_item_state_behave_through_browser(static_server_url):
     requests: list[dict] = []
 

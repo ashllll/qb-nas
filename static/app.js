@@ -679,6 +679,43 @@ async function initClipStatus() {
   }
 }
 
+async function initCategoryTabs() {
+  // 分类是开放集合：StudioRule 命中厂牌时以厂牌名作为分类，静态 tab 覆盖不到。
+  // 从 /api/categories 补齐，否则这些条目在 UI 上无法筛选。
+  const nav = document.querySelector(".filter-tabs");
+  if (!nav) return;
+
+  let categories;
+  try {
+    const data = await apiClient.fetch("/api/categories");
+    categories = Array.isArray(data.categories) ? data.categories : [];
+  } catch {
+    return; // 静默降级：保留静态 tab，不影响其他功能
+  }
+
+  const existing = new Set(
+    [...nav.querySelectorAll(".filter-tab")].map((tab) => tab.dataset.cat)
+  );
+  const missing = categories.filter(
+    (name) => typeof name === "string" && name.trim() && !existing.has(name)
+  );
+  if (!missing.length) return;
+
+  const fragment = document.createDocumentFragment();
+  for (const name of missing) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "filter-tab";
+    button.dataset.cat = name;
+    // 名称来自不可信分类结果，用 textContent 写入以规避注入面
+    button.textContent = name;
+    // 与静态 tab 同构：仓库现有 tab 也走内联 onclick
+    button.setAttribute("onclick", "setFilter(this.dataset.cat)");
+    fragment.appendChild(button);
+  }
+  nav.appendChild(fragment);
+}
+
 function setMobileView(view) {
   document.getElementById("appWindow").dataset.mobileView = view;
   document
@@ -741,6 +778,7 @@ connectWS();
 loadConfig();
 checkStatus();
 initClipStatus();
+initCategoryTabs();
 renderTable();
 addLog("工作台已就绪", "info");
 setInterval(checkStatus, 30000);

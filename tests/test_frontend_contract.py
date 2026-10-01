@@ -50,3 +50,38 @@ def test_frontend_handles_crawl_progress_event():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     assert 'case "crawl_progress"' in app_js
     assert 'case "progress"' not in app_js  # 旧依赖 data 覆盖行为的分支已移除
+
+
+def test_frontend_consumes_open_categories_from_api():
+    """分类是开放集合，前端必须消费 /api/categories 才能筛选厂牌分类。"""
+    import re
+
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    assert "/api/categories" in app_js
+
+    # 必须真正接线：断言"定义之后存在顶层调用语句"，而不是断言子串出现
+    # （函数定义行本身也含 initCategoryTabs()，那样的断言在未接线时照样通过）
+    definition = re.search(r"^async function initCategoryTabs\(\)", app_js, re.M)
+    assert definition, "initCategoryTabs 未定义"
+    assert re.search(r"^initCategoryTabs\(\);", app_js[definition.end() :], re.M), (
+        "必须在启动序列中调用，否则接线等于没有"
+    )
+
+    # 抽取该函数自身的花括号范围，避免把相邻函数一起纳入断言
+    body = _function_body(app_js, definition.end())
+    # 分类名来自不可信内容：必须以 textContent 写入（赋值到 HTML 则构成注入面）
+    assert "button.textContent = name" in body
+
+
+def _function_body(source: str, search_from: int) -> str:
+    """返回 search_from 之后第一个函数体的花括号区间内容。"""
+    start = source.index("{", search_from)
+    depth = 0
+    for index in range(start, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise AssertionError("函数体未闭合")
