@@ -58,11 +58,14 @@ if __name__ == "__main__":
 
 
 def test_handle_crawl_result_does_not_block_event_loop():
-    """大页面解析不得阻塞事件循环（to_thread 化）。
+    """大页面解析必须卸载到工作线程，不得占用事件循环线程。
 
-    注：本测试依赖机器速度——阈值按保守值取，快机器上心跳更多，
-    慢机器上只要 to_thread 生效（非完全阻塞）即可通过。
+    断言"解析发生在非事件循环线程"这一确定性事实，取代此前基于心跳计数的
+    时序阈值：to_thread 之后解析是 CPU 密集的正则工作，会与事件循环争抢 GIL，
+    心跳次数只反映 GIL 调度，无法区分"已卸载但抢占激烈"与"完全未卸载"，
+    因而在快机器上会误报失败。
     """
+    import threading
 
     def _big_markdown():
         magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
@@ -85,27 +88,23 @@ def test_handle_crawl_result_does_not_block_event_loop():
             config=CrawlerConfig(headless=True, timeout=30, allowed_resolutions=("2160p", "4k"))
         )
         events = asyncio.Queue()
-        heartbeat_ticks = []
+        loop_thread = threading.get_ident()
+        seen_threads = []
 
-        async def heartbeat():
-            # 事件循环空闲时每 2ms 跳一次；解析若同步阻塞则期间无心跳
-            while True:
-                await asyncio.sleep(0.002)
-                heartbeat_ticks.append(1)
+        original_extract = crawler._extract_page_items
 
-        hb = asyncio.create_task(heartbeat())
-        try:
-            await crawler._handle_crawl_result(
-                SlowResult(), "https://example.com/big", events, set()
-            )
-        finally:
-            hb.cancel()
-            await asyncio.gather(hb, return_exceptions=True)
+        def spy_extract(result, *, source_url):
+            seen_threads.append(threading.get_ident())
+            return original_extract(result, source_url=source_url)
 
-        # 同步解析（阻塞 ~670ms）时心跳为 0；to_thread 后 GIL 间隙可跳动。
-        # 阈值取保守值 ≥15（GIL 周期性饿死下仍远低于 2ms/次的理论值）。
-        assert len(heartbeat_ticks) >= 15, (
-            f"事件循环被阻塞，解析期间心跳仅 {len(heartbeat_ticks)} 次"
+        crawler._extract_page_items = spy_extract
+
+        await crawler._handle_crawl_result(SlowResult(), "https://example.com/big", events, set())
+
+        assert seen_threads, "解析函数未被调用，测试未覆盖目标路径"
+        assert all(tid != loop_thread for tid in seen_threads), (
+            f"解析在事件循环线程上同步执行（loop={loop_thread}, 实际={seen_threads}），"
+            "必须经 asyncio.to_thread 卸载"
         )
 
     asyncio.run(run())
