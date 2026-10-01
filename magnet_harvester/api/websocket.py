@@ -23,6 +23,14 @@ router = APIRouter()
 
 _INIT_PAGE_SIZE = 500
 
+# 单次 send_text 上限：慢客户端不得无限占用初始化/广播路径
+_SEND_TIMEOUT = 3.0
+# 关闭不可用连接的等待上限
+_CLOSE_TIMEOUT = 1.0
+# 初始化阶段的背压上限：客户端不读时不得让队列无限增长
+_MAX_INIT_QUEUE_ITEMS = 1000
+_MAX_INIT_QUEUE_BYTES = 4 * 1024 * 1024
+
 
 def _json_serializer(obj: Any) -> str:
     if isinstance(obj, (datetime, date)):
@@ -47,6 +55,27 @@ class WSBroadcaster:
         self._active_ws.discard(ws)
         self._initializing_ws.pop(ws, None)
 
+    async def _send_text(self, ws: WebSocket, data: str) -> None:
+        """发送受 _SEND_TIMEOUT 约束，避免不读数据的客户端卡死整条路径。"""
+        await asyncio.wait_for(ws.send_text(data), timeout=_SEND_TIMEOUT)
+
+    async def _close_ws(self, ws: WebSocket, *, code: int, reason: str) -> None:
+        """关闭连接，成功后才解除登记。
+
+        只从集合中移除而不关闭会让客户端收不到 onclose：它仍会定期 ping、
+        服务端也照常回 pong，于是空闲超时永不触发，连接既不投递事件也永不断开
+        （前端仅在 onclose 时重连），表现为 UI 永久静默直到手动刷新。
+
+        因此关闭失败时保留登记，让下一次广播继续重试，而不是留下一个
+        既不投递也无人再处理的连接。
+        """
+        try:
+            await asyncio.wait_for(ws.close(code=code, reason=reason), timeout=_CLOSE_TIMEOUT)
+        except Exception:
+            log.warning("WebSocket 关闭失败，保留登记以便重试", exc_info=True)
+            return
+        self.remove(ws)
+
     def shutdown(self):
         """取消 MessageBus 订阅，断开强引用以允许 GC 回收。
 
@@ -62,7 +91,7 @@ class WSBroadcaster:
         data = json.dumps(
             {"type": "init", "items": items}, ensure_ascii=False, default=_json_serializer
         )
-        await ws.send_text(data)
+        await self._send_text(ws, data)
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store is None:
@@ -84,12 +113,13 @@ class WSBroadcaster:
                 await self.send_init(ws, payloads)
                 first_page = False
             elif payloads:
-                await ws.send_text(
+                await self._send_text(
+                    ws,
                     json.dumps(
                         {"type": "init_page", "items": payloads},
                         ensure_ascii=False,
                         default=_json_serializer,
-                    )
+                    ),
                 )
 
             offset += len(page)
@@ -103,11 +133,12 @@ class WSBroadcaster:
             offset = 0
 
     async def _send_init_done(self, ws: WebSocket, total: int) -> None:
-        await ws.send_text(
+        await self._send_text(
+            ws,
             json.dumps(
                 {"type": "init_done", "total": total},
                 ensure_ascii=False,
-            )
+            ),
         )
 
     async def _finish_initialization(self, ws: WebSocket) -> None:
@@ -119,7 +150,7 @@ class WSBroadcaster:
                 batch = list(queued)
                 queued.clear()
                 for data in batch:
-                    await ws.send_text(data)
+                    await self._send_text(ws, data)
                 continue
             self._initializing_ws.pop(ws, None)
             self._active_ws.add(ws)
@@ -200,10 +231,10 @@ class WSBroadcaster:
     async def _send_control(self, ws: WebSocket, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, default=_json_serializer)
         try:
-            await ws.send_text(data)
+            await self._send_text(ws, data)
         except Exception:
-            log.debug("_send_control send_text 失败（连接可能已断开）", exc_info=True)
-            self.remove(ws)
+            log.debug("_send_control send_text 失败，关闭连接", exc_info=True)
+            await self._close_ws(ws, code=1011, reason="control send failed")
 
     async def _on_event(self, event: Event):
         if not self._active_ws and not self._initializing_ws:
@@ -234,10 +265,29 @@ class WSBroadcaster:
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
 
-        for queued in self._initializing_ws.values():
+        # 初始化阶段的背压：客户端不读时不得让队列无限增长。
+        # 先快照再关闭，避免迭代中修改 _initializing_ws。
+        stalled: list[WebSocket] = []
+        queues: list[list[str]] = []
+        for ws, queued in list(self._initializing_ws.items()):
+            queued_bytes = sum(len(entry) for entry in queued)
+            if (
+                len(queued) + 1 > _MAX_INIT_QUEUE_ITEMS
+                or queued_bytes + len(data) > _MAX_INIT_QUEUE_BYTES
+            ):
+                stalled.append(ws)
+            else:
+                queues.append(queued)
+        for queued in queues:
             queued.append(data)
+        for ws in stalled:
+            log.warning(
+                "WebSocket 初始化阶段积压超限（>%d 条或 >%d 字节），关闭连接",
+                _MAX_INIT_QUEUE_ITEMS,
+                _MAX_INIT_QUEUE_BYTES,
+            )
+            await self._close_ws(ws, code=1013, reason="initialization backlog exceeded")
         _DEAD = b"DEAD"  # sentinel
-        _SEND_TIMEOUT = 3.0  # per-client 广播超时
 
         async def _send(ws: WebSocket):
             client_state = getattr(ws, "client_state", None)
@@ -292,7 +342,17 @@ class WSBroadcaster:
                 elif result is _DEAD:
                     dead.add(ws)
         finally:
-            self._active_ws.difference_update(dead)
+            if dead:
+                # 必须真正关闭：否则客户端收不到 onclose（仍在 ping、仍收到 pong），
+                # 连接既不投递事件也永不断开，前端不会重连。
+                # 关闭失败的连接由 _close_ws 保留登记，下一次广播继续重试 ——
+                # 此处不能无条件 difference_update，否则会抹掉该重试语义。
+                await asyncio.gather(
+                    *(
+                        self._close_ws(ws, code=1011, reason="send failed or timed out")
+                        for ws in dead
+                    )
+                )
 
 
 @router.websocket("/ws")
