@@ -69,6 +69,7 @@ test-results/
 .reasonix/
 reasonix.toml
 .planning/
+.codex/
 architecture-review-*.html
 
 # 会话延续产物（已弃用，不再使用）
