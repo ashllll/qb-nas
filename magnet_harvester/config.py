@@ -287,9 +287,10 @@ class Settings(BaseSettings):
 
         for line in lines:
             key = cls._env_line_key(line)
-            if key in remaining:
+            if key in updates:
                 newline = "\n" if line.endswith("\n") else ""
-                rendered.append(f"{key}={cls._format_env_value(remaining.pop(key))}{newline}")
+                rendered.append(f"{key}={cls._format_env_value(updates[key])}{newline}")
+                remaining.pop(key, None)
             else:
                 rendered.append(line)
 

@@ -100,6 +100,37 @@ def test_persist_qbit_config_updates_env_without_dropping_other_values(tmp_path)
     assert "old.example" not in text
 
 
+def test_persist_qbit_config_replaces_duplicate_keys_used_on_reload(monkeypatch, tmp_path):
+    for key in ("QBIT_HOST", "QBIT_USERNAME", "QBIT_PASSWORD"):
+        monkeypatch.delenv(key, raising=False)
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "QBIT_HOST=http://old-first.example:8080\n"
+        "QBIT_USERNAME=old-first-user\n"
+        "QBIT_PASSWORD=old-first-password\n"
+        "QBIT_HOST=http://old-last.example:8080\n"
+        "QBIT_USERNAME=old-last-user\n"
+        "QBIT_PASSWORD=old-last-password\n",
+        encoding="utf-8",
+    )
+    cfg = Settings(_env_file=None)
+
+    cfg.persist_qbit_config(
+        QBitConfig(
+            host="http://new.example:8080",
+            username="new-user",
+            password="new-password",
+        ),
+        env_path=env_path,
+    )
+
+    reloaded = Settings(_env_file=env_path)
+    assert reloaded.QBIT_HOST == "http://new.example:8080"
+    assert reloaded.QBIT_USERNAME == "new-user"
+    assert reloaded.QBIT_PASSWORD == "new-password"
+
+
 def test_check_disk_space_reports_configured_path(monkeypatch, tmp_path):
     import magnet_harvester.config as config_module
 
