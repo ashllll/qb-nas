@@ -2,6 +2,9 @@ import asyncio
 import base64
 import os
 import sys
+from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -93,8 +96,6 @@ def test_clipboard_accepts_html_escaped_and_quoted_magnet():
 
 def test_processed_content_fifo_eviction_not_full_clear():
     """_processed_content 达到上限时应 FIFO 逐出一半，不应全部清零。"""
-    from unittest.mock import patch
-
     store = FakeStore()
     bus = NullBus()
     monitor = ClipboardMonitor(
@@ -146,6 +147,47 @@ def test_processed_content_fifo_eviction_not_full_clear():
     total = len(monitor._processed_content)
     assert surviving > 0, f"逐出后应保留部分旧条目，实际保留 {surviving} 个（总数 {total}）"
     assert total > 100, f"逐出后大小应保留约一半，实际 {total}"
+
+
+@pytest.mark.asyncio
+async def test_successful_read_resets_failure_cycle_budget():
+    """被成功读取隔开的故障不应累计为连续失败并触发自动停机。"""
+    monitor = ClipboardMonitor(
+        bus=NullBus(),
+        store=AsyncItemStore(FakeStore()),
+        classifier=LocalClassifier(),
+        pipeline=None,
+        poll_interval=0.001,
+    )
+    monitor.MAX_CONSECUTIVE_FAILURES = 1
+    monitor._max_failure_cycles = 2
+    monitor._running = True
+
+    loop = asyncio.get_running_loop()
+    paste_results = iter([RuntimeError("temporary failure"), "", RuntimeError("temporary failure")])
+
+    def mock_paste():
+        try:
+            result = next(paste_results)
+        except StopIteration:
+            loop.call_soon_threadsafe(monitor._stop_event.set)
+            return ""
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    async def no_backoff(_seconds: float):
+        return None
+
+    with (
+        patch(
+            "magnet_harvester.services.clipboard_monitor.pyperclip.paste", side_effect=mock_paste
+        ),
+        patch("magnet_harvester.services.clipboard_monitor.asyncio.sleep", side_effect=no_backoff),
+    ):
+        await monitor._run()
+
+    assert monitor.is_running
 
 
 if __name__ == "__main__":

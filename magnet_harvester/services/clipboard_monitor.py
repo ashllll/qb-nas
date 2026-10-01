@@ -133,6 +133,7 @@ class ClipboardMonitor:
             try:
                 content = await asyncio.to_thread(pyperclip.paste)
                 self._consecutive_failures = 0
+                self._total_failure_cycles = 0
             except Exception as e:
                 self._consecutive_failures += 1
                 log.warning(
