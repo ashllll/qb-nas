@@ -5,7 +5,12 @@ def test_runtime_shutdown_waits_for_tasks_before_closing_resources():
     import asyncio
 
     from magnet_harvester.assembly import AppRuntime
-    from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState
+    from magnet_harvester.context.app_context import (
+        AppContext,
+        AppServices,
+        CoreServices,
+        RuntimeState,
+    )
 
     order = []
 

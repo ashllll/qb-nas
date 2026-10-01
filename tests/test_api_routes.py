@@ -655,7 +655,7 @@ def test_download_request_hashes_rejected_when_empty_or_oversized():
     from magnet_harvester.models import DownloadRequest
 
     with pytest.raises(ValidationError):
-        DownloadRequest(hashes=[])            # min_length=1
+        DownloadRequest(hashes=[])  # min_length=1
     with pytest.raises(ValidationError):
-        DownloadRequest(hashes=["h"] * 501)   # max_length=500
+        DownloadRequest(hashes=["h"] * 501)  # max_length=500
     assert len(DownloadRequest(hashes=["h"] * 500).hashes) == 500
