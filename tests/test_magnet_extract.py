@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from magnet_harvester.magnet_parser import (
     HASH_RE,
     JSON_MAGNET_RE,
+    _iter_magnet_candidates,
+    _normalise_text_sources,
     extract_from_text,
     parse_magnet,
     try_decode_base64,
@@ -232,6 +234,78 @@ def test_no_false_positives():
     """
     items = extract_from_text(text)
     assert len(items) == 0, "不应提取到任何磁力链接"
+
+
+# ---- 重复磁力不得重复解析（性能回归）----
+
+
+def _count_parse_calls(text: str, monkeypatch) -> int:
+    """统计 extract_from_text 对 parse_magnet 的调用次数。"""
+    import magnet_harvester.magnet_parser as parser_module
+
+    calls = {"n": 0}
+    real_parse = parser_module.parse_magnet
+
+    def counting_parse(raw: str):
+        calls["n"] += 1
+        return real_parse(raw)
+
+    monkeypatch.setattr(parser_module, "parse_magnet", counting_parse)
+    extract_from_text(text)
+    return calls["n"]
+
+
+def test_repeated_identical_magnet_is_parsed_once(monkeypatch):
+    """同一 hash 出现 N 次时，只应解析一次（去重必须在解析前短路）。
+
+    回归背景：此前 _iter_magnet_candidates 产出的每个候选字符串都会完整
+    解析（unquote + HASH_RE.search + 构造 dict），随后才被 seen 丢弃，
+    导致大量重复磁力时开销随出现次数线性增长。
+    """
+    magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+    text = " ".join([magnet] * 50)
+    assert _count_parse_calls(text, monkeypatch) == 1
+
+
+def test_repeated_magnet_parsing_cost_does_not_scale_with_duplicates(monkeypatch):
+    """两倍重复量不得使解析调用次数翻倍（线性增长回归防护）。"""
+    magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+    small = _count_parse_calls(" ".join([magnet] * 20), monkeypatch)
+    large = _count_parse_calls(" ".join([magnet] * 40), monkeypatch)
+    assert large == small == 1
+
+
+def _reference_extract_from_text(text: str) -> list[dict]:
+    """改动前的等价实现，用于比对语义未漂移。"""
+    items: list[dict] = []
+    seen: set[str] = set()
+    for raw in _iter_magnet_candidates(_normalise_text_sources(text)):
+        item = parse_magnet(raw)
+        if item and item["hash"] not in seen:
+            seen.add(item["hash"])
+            items.append(item)
+    return items
+
+
+def test_dedup_fast_path_preserves_output_equivalence():
+    """新增的解析前去重短路不得改变提取结果（顺序、字段、数量）。"""
+    magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+    case = "\n".join(
+        [
+            # 同一 hash：首现无 dn，其后带 dn —— 必须保留首次出现的那条
+            magnet,
+            f"{magnet}&dn=Later%20Name",
+            # Base32 btih
+            "magnet:?xt=urn:btih:AAAABBBBCCCCDDDDEEEEFFFFAAAABBBB",
+            # HTML 转义 + URL 编码形式
+            "magnet:?xt=urn:btih:1111222233334444555566661111222233334444&amp;dn=A%20B",
+            # JSON 包裹
+            '{"url": "magnet:?xt=urn:btih:2222333344445555666677772222333344445555"}',
+            # 短 hash 必须被拒绝
+            "magnet:?xt=urn:btih:abc123",
+        ]
+    )
+    assert extract_from_text(case) == _reference_extract_from_text(case)
 
 
 if __name__ == "__main__":

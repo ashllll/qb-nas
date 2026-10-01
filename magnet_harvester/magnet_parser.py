@@ -67,10 +67,9 @@ def parse_magnet(raw_raw: str) -> Optional[dict]:
     """将单个磁力链接字符串解析为结构化数据"""
     raw = _clean_raw_magnet(raw_raw)
     decoded = urllib.parse.unquote(raw)
-    m = HASH_RE.search(decoded)
-    if not m:
+    btih = _hash_from_raw(decoded)
+    if not btih:
         return None
-    btih = m.group(1).upper()
 
     dn_match = re.search(r"[?&]dn=([^&]+)", decoded)
     name = urllib.parse.unquote(dn_match.group(1)) if dn_match else f"Unknown_{btih[:8]}"
@@ -222,7 +221,17 @@ def _iter_json_magnets(text_sources: Iterable[str]):
                 yield raw
 
 
+def _hash_from_raw(raw: str) -> Optional[str]:
+    """返回未解码原文中直接可见的 btih（parse_magnet 所用同一正则），否则 None。"""
+    match = HASH_RE.search(raw)
+    return match.group(1).upper() if match else None
+
+
 def _append_unique_magnet(items: List[dict], seen: Set[str], raw: str) -> None:
+    # parse_magnet 前先用同一正则短路：重复 hash 不必再做 unquote、二次匹配和
+    # dict 构造。raw 中直读的 hash 与 parse_magnet 解码后的结果一致。
+    if _hash_from_raw(raw) in seen:
+        return
     item = parse_magnet(raw)
     if item and item["hash"] not in seen:
         seen.add(item["hash"])
