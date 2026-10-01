@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
+from magnet_harvester.utils import bg_tasks
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 
@@ -116,6 +117,41 @@ async def test_shutdown_cancels_and_awaits_all_tasks():
     await mgr.shutdown()
 
     assert cancelled.is_set()
+    assert mgr.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_shutdown_timeout_is_bounded_when_task_ignores_cancellation(monkeypatch):
+    release = asyncio.Event()
+    started = asyncio.Event()
+
+    async def stubborn():
+        started.set()
+        while not release.is_set():
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                continue
+
+    mgr = BGTaskManager()
+    stubborn_task = mgr.create(stubborn(), name="stubborn")
+    await started.wait()
+
+    real_wait_for = asyncio.wait_for
+
+    async def short_wait_for(awaitable, *, timeout):
+        return await real_wait_for(awaitable, timeout=0.01)
+
+    monkeypatch.setattr(bg_tasks.asyncio, "wait_for", short_wait_for)
+    shutdown_task = asyncio.create_task(mgr.shutdown())
+
+    try:
+        done, _ = await asyncio.wait({shutdown_task}, timeout=0.1)
+        assert shutdown_task in done
+    finally:
+        release.set()
+        await asyncio.gather(shutdown_task, stubborn_task, return_exceptions=True)
+
     assert mgr.active_count == 0
 
 
