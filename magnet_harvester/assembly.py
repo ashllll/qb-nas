@@ -249,6 +249,7 @@ def build_runtime() -> AppRuntime:
         ),
         runtime=RuntimeState(
             api_key=settings.API_KEY,
+            allow_insecure_write_api=settings.ALLOW_INSECURE_WRITE_API,
             stats=stats,
             bg_manager=bg_manager,
             error_handler=error_handler,

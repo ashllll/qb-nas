@@ -16,10 +16,18 @@ from starlette.websockets import WebSocketState
 
 from magnet_harvester.bus import Event, MessageBus
 from magnet_harvester.store import ItemStore
+from magnet_harvester.utils.interface_guard import request_arrived_on_non_loopback_interface
 from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _insecure_writes_allowed(ctx) -> bool:
+    """是否显式允许无鉴权写操作（开发豁免）。"""
+    runtime = getattr(ctx, "runtime", None)
+    return bool(getattr(runtime, "allow_insecure_write_api", False))
+
 
 _INIT_PAGE_SIZE = 500
 
@@ -387,6 +395,17 @@ async def websocket_endpoint(ws: WebSocket):
     # 非空时必须携带匹配的 api_key 查询参数 —— 浏览器 WebSocket
     # API 无法自定义请求头，因此走 query param（见 static/app.js）。
     expected_key = getattr(getattr(ctx, "runtime", None), "api_key", "") or ""
+    # 未配置 API_KEY 时的兜底：经非 loopback 接口进入的订阅同样拒绝。
+    # 与 HTTP 中间件同源判定（ASGI scope 的 server = 该连接被接受的本机接口地址），
+    # 因此与启动方式无关，本机 loopback 使用不受影响。
+    if not expected_key.strip() and not _insecure_writes_allowed(ctx):
+        if request_arrived_on_non_loopback_interface(ws.scope):
+            log.warning("拒绝经非 loopback 接口进入的无鉴权 WebSocket 连接")
+            try:
+                await ws.close(code=4403, reason="non-loopback access without API key")
+            except Exception:
+                log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
+            return
     # 与 REST（utils/auth.py）一致：strip 后为空视为未配置认证（兼容模式）
     if expected_key.strip():
         # 与 REST（utils/auth.py）一致：两侧 strip 后比较

@@ -150,6 +150,8 @@ class RuntimeState:
     """运行时协调层：生命周期、热替换、错误处理。"""
 
     api_key: str = ""
+    # 显式开发豁免：为真时允许无鉴权写操作（含跨接口），用于有意为之的本地开发
+    allow_insecure_write_api: bool = False
     stats: StatsTracker | None = None
     bg_manager: BackgroundTaskSpawner | None = None
     error_handler: ErrorHandlerLike | None = None
