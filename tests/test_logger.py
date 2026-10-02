@@ -118,3 +118,48 @@ def test_redacting_access_formatter_masks_api_key():
     out = fmt.format(record)
     assert "SECRET123" not in out
     assert "api_key=***" in out
+
+
+def test_redacting_default_formatter_masks_websocket_handshake_key():
+    """WebSocket 握手行由 default formatter 输出，必须同样脱敏。
+
+    回归背景：脱敏只挂在 access formatter 上，而 WS 握手行走 uvicorn.error
+    logger + default formatter，实测 stderr 明文出现
+    `INFO: 127.0.0.1:52083 - "WebSocket /ws?api_key=TOPSECRET123" [accepted]`。
+    """
+    import logging
+
+    from magnet_harvester.logger import RedactingDefaultFormatter
+
+    record = logging.LogRecord(
+        name="uvicorn.error",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='%s - "%s" %s',
+        args=("127.0.0.1:52083", "WebSocket /ws?api_key=TOPSECRET123", "[accepted]"),
+        exc_info=None,
+    )
+    out = RedactingDefaultFormatter("%(levelname)s:     %(message)s").format(record)
+
+    assert "TOPSECRET123" not in out
+    assert "api_key=***" in out
+    # 脱敏不得吃掉收尾引号（旧正则 [^&\s]* 会连引号一起吞掉，破坏日志格式）
+    assert out.endswith('" [accepted]'), f"收尾引号被破坏: {out!r}"
+
+
+def test_uvicorn_log_config_redacts_both_formatters():
+    """access 与 default 两个 formatter 都必须换成脱敏版。"""
+    from magnet_harvester.logger import uvicorn_log_config
+
+    config = uvicorn_log_config()
+    assert (
+        config["formatters"]["access"]["()"] == "magnet_harvester.logger.RedactingAccessFormatter"
+    )
+    assert (
+        config["formatters"]["default"]["()"] == "magnet_harvester.logger.RedactingDefaultFormatter"
+    )
+
+    # 真实 uvicorn logger 绑定：uvicorn.error 走 default handler，是 WS 握手行的出路
+    assert config["handlers"]["default"]["formatter"] == "default"
+    assert config["loggers"]["uvicorn"]["handlers"] == ["default"]

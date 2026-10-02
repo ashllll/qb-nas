@@ -15,12 +15,14 @@ import re
 import sys
 from pathlib import Path
 
-from uvicorn.logging import AccessFormatter
+from uvicorn.logging import AccessFormatter, DefaultFormatter
 
 
-# ── uvicorn access log 脱敏 ─────────────────────────
-
-_API_KEY_RE = re.compile(r"(api_key=)[^&\s]*")
+# ── uvicorn 日志脱敏 ─────────────────────────
+#
+# API Key 经查询串传递（浏览器 WebSocket 无法自定义请求头），因此它会出现在
+# 握手 URL 里。字符类必须排除引号与分隔符，否则会连带吃掉收尾引号破坏日志格式。
+_API_KEY_RE = re.compile(r"""(api_key=)[^&\s"'#;]*""")
 
 
 class RedactingAccessFormatter(AccessFormatter):
@@ -30,8 +32,28 @@ class RedactingAccessFormatter(AccessFormatter):
         return _API_KEY_RE.sub(r"\1***", super().format(record))
 
 
+class RedactingDefaultFormatter(DefaultFormatter):
+    """uvicorn 默认 formatter 的脱敏版。
+
+    WebSocket 握手行由 uvicorn.error logger + default formatter 输出
+    （access formatter 只覆盖 HTTP access log），因此不加这层时
+    "WebSocket /ws?api_key=..." 会明文进入 stderr，被 docker/systemd/nohup 收集。
+
+    必须继承 uvicorn 的 DefaultFormatter：它的格式串含 %(levelprefix)s 且带
+    use_colors 参数，换成标准 logging.Formatter 会让 dictConfig 直接失败。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _API_KEY_RE.sub(r"\1***", super().format(record))
+
+
 def uvicorn_log_config() -> dict:
-    """基于 uvicorn 默认 LOGGING_CONFIG，替换 access formatter 为脱敏版。"""
+    """基于 uvicorn 默认 LOGGING_CONFIG，为 access 与 default 两个 formatter
+    都套上脱敏版。
+
+    default formatter 必须一并脱敏：WebSocket 握手行走的是 uvicorn.error
+    logger，若只改 access，`/ws?api_key=...` 仍会明文写入 stderr。
+    """
     from uvicorn.config import LOGGING_CONFIG
 
     config = copy.deepcopy(LOGGING_CONFIG)
@@ -40,6 +62,13 @@ def uvicorn_log_config() -> dict:
         access = dict(access)
         access["()"] = "magnet_harvester.logger.RedactingAccessFormatter"
         config["formatters"]["access"] = access
+
+    default = config["formatters"].get("default")
+    if default:
+        default = dict(default)
+        # default 用的是 logging.Formatter 的 fmt 语法，保留其原格式串
+        default["()"] = "magnet_harvester.logger.RedactingDefaultFormatter"
+        config["formatters"]["default"] = default
     return config
 
 
