@@ -71,16 +71,22 @@ SMOKE_SUBMIT=1 SMOKE_QBIT_... python scripts/smoke_production.py
 - 未配置 `API_KEY` 时 `/ws` 保持开放（本地回环默认部署兼容模式）；
   非本机部署必须配置 `API_KEY`，否则资源名称/来源/下载状态可被未授权订阅。
 
-## 3.1 启动方式与启动期鉴权强制
+## 3.1 启动方式与鉴权强制
 
-启动期校验依据**真实绑定地址**：非 loopback 且未配置 `API_KEY`（也未设
-`ALLOW_INSECURE_WRITE_API=true`）时拒绝启动。真实地址由启动入口通过
-`MH_BOUND_HOST` 告知应用。
+无鉴权（未配置 `API_KEY` 且未设 `ALLOW_INSECURE_WRITE_API=true`）时，写操作有两层防护：
 
-因此**只支持 `python run.py` 启动**。直接用
-`uvicorn magnet_harvester.main:app --host 0.0.0.0` 时应用无法得知真实绑定地址，
-该校验会失效（退回按 `SERVICE_HOST` 判断），可能把无鉴权写接口暴露到 LAN ——
-不要使用该启动方式。
+1. **启动期**：校验**真实绑定地址**，非 loopback 即拒绝启动。真实地址按优先级取自
+   启动入口设置的 `MH_BOUND_HOST`、uvicorn CLI 的 `--host` 参数、`UVICORN_HOST`。
+2. **请求期兜底**：经**非 loopback 网卡**进入的无鉴权写请求一律 403；WebSocket
+   握手同样处理。判定依据是 ASGI scope 的 `server`（该连接被接受的本机接口地址，
+   实测绑定 `0.0.0.0` 时经 loopback 为 `127.0.0.1`、经 LAN 为真实网卡 IP），
+   与启动方式无关，也不依赖 Host / X-Forwarded-* 等可伪造头部。
+
+两层的意义不同：第 1 层给出清晰的启动失败信息；第 2 层即使有人用非受支持的启动
+方式（如 `uvicorn magnet_harvester.main:app --host 0.0.0.0`）也无法从 LAN 写操作。
+本机 `127.0.0.1` 访问不受影响，读接口不做限制。
+
+仍推荐用 `python run.py` 启动。
 
 ## 4. 验收结论判定
 

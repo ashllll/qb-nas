@@ -25,11 +25,12 @@ scrapling install
 cp .env.example .env            # then edit .env with your qB credentials
 
 # Run
-python run.py                   # 唯一受支持的启动方式
+python run.py                   # 推荐启动方式
 
 # 不要用 `uvicorn magnet_harvester.main:app --host ...` 直接启动：
-# 该路径下应用无法得知真实绑定地址，启动期鉴权强制（非 loopback 且无
-# API_KEY 时必须拒绝启动）会失效，可能把无鉴权写接口暴露到 LAN。
+# 虽然已加防护（启动期会解析 --host 并拒绝非 loopback 的无鉴权暴露，且请求层
+# 会拒绝经非 loopback 接口进入的无鉴权写请求），但该路径不再受"应用知晓真实
+# 绑定地址"这一契约保护，属非受支持用法。
 
 # Test
 python -m pytest tests -v
@@ -89,7 +90,7 @@ npm run check    # lint + test
 | `services/`        | Background and user-facing services: `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `ClipboardMonitor`, `SiteAuth`, `SystemStats` |
 | `context/`         | `AppContext` (dependency container) + `QBitRuntime` (hot-swap adapter)                                                                                                 |
 | `api/`             | REST routes, WebSocket broadcaster, static page router                                                                                                                 |
-| `utils/`           | `url_validator` (SSRF protection), `auth`, `bg_tasks`, `serializers`                                                                                                   |
+| `utils/`           | `url_validator` (SSRF protection), `auth`, `interface_guard` (非 loopback 无鉴权写拦截), `bg_tasks`, `serializers`                                                     |
 
 ### Classification rule chain
 
@@ -194,7 +195,14 @@ All settings in `.env` (see `.env.example`). Key categories:
 | `MIN_DISK_SPACE_GB`               | `10.0`                      | Disk warning threshold                                  |
 | `SITE_COOKIES`                    | `{}`                        | JSON `{"domain": "cookie-string"}` for cookie injection |
 
-**Security posture**: Service refuses to start on non-loopback without `API_KEY` or `ALLOW_INSECURE_WRITE_API=true`.
+**Security posture**:
+
+- 未配置 `API_KEY`（且未设 `ALLOW_INSECURE_WRITE_API=true`）时：
+  - **启动期**拒绝绑定到非 loopback 地址（真实地址取自 `MH_BOUND_HOST` / uvicorn
+    `--host` / `UVICORN_HOST`，优先级同序）
+  - **请求期**拒绝经非 loopback 网卡进入的写请求（403）与 WebSocket 握手，
+    判定依据 ASGI scope 的 `server`，与启动方式无关；本机 loopback 不受影响
+- 推荐用 `python run.py` 启动（它设置 `MH_BOUND_HOST`，可给出最准确的启动期判定）
 
 ## Conventions
 
