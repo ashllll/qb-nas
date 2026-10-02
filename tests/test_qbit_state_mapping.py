@@ -69,6 +69,73 @@ def test_map_torrent_status_healthy_states_have_no_error_msg():
         assert result["error_msg"] is None
 
 
+# qBittorrent 全部合法 torrent state。来源：qB WebAPI sync/torrentPeers 与
+# torrents/info 文档；"空" 表示该字段缺失，属异常数据，不在本表内。
+LEGITIMATE_QB_STATES = [
+    "error",
+    "missingFiles",
+    "uploading",
+    "pausedUP",
+    "queuedUP",
+    "stalledUP",
+    "checkingUP",
+    "forcedUP",
+    "allocating",
+    "downloading",
+    "metaDL",
+    "forcedMetaDL",
+    "pausedDL",
+    "queuedDL",
+    "stalledDL",
+    "checkingDL",
+    "forcedDL",
+    "checkingResumeData",
+    "moving",
+    "unknown",
+    "stoppedDL",
+    "stoppedUP",
+]
+
+
+def test_no_legitimate_qb_state_is_treated_as_unrecognized():
+    """合法 qB 状态不得落进「无法识别」分支。
+
+    回归背景：allocating / forcedMetaDL / stoppedDL / stoppedUP 不在映射表内，
+    落进 else 被判 error。allocating 是大种子添加后的必然阶段（预分配空间），
+    因此每添加一个大种子，2 秒后同步循环就会把条目写成 error 并推给前端。
+    """
+    for state in LEGITIMATE_QB_STATES:
+        for progress in (0.0, 0.5, 1.0):
+            result = TorrentStatusMapper.map({"state": state, "progress": progress})
+            assert result["error_msg"] != f"qB 种子状态无法识别: {state}", (
+                f"合法状态 {state!r}（progress={progress}）被判为无法识别"
+            )
+
+
+def test_allocating_and_forced_meta_dl_are_downloading():
+    """预分配与强制元数据下载属进行中，不是错误。"""
+    for state in ("allocating", "forcedMetaDL"):
+        result = TorrentStatusMapper.map({"state": state, "progress": 0.0})
+        assert result["status"] == TaskStatus.downloading, f"{state} 应为 downloading"
+        assert result["error_msg"] is None
+
+
+def test_stopped_states_mirror_paused_states():
+    """qB 5.x 用 stoppedDL/stoppedUP 取代 pausedDL/pausedUP，语义需对齐。
+
+    只比较映射结论（status/progress/error_msg）；torrent_state 有意保留 qB 原样
+    状态串供前端展示，两者本就不同。
+    """
+    conclusion = ("status", "progress", "error_msg")
+    for stopped, paused in (("stoppedDL", "pausedDL"), ("stoppedUP", "pausedUP")):
+        for progress in (0.0, 0.4, 1.0):
+            got = TorrentStatusMapper.map({"state": stopped, "progress": progress})
+            want = TorrentStatusMapper.map({"state": paused, "progress": progress})
+            assert {k: got[k] for k in conclusion} == {k: want[k] for k in conclusion}, (
+                f"{stopped} 与 {paused} 在 progress={progress} 时映射结论不一致"
+            )
+
+
 def test_qbit_client_status_mapping_keeps_backward_compatibility():
     states = [
         ("queuedDL", 0.0),

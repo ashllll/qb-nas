@@ -17,18 +17,23 @@ class TorrentStatusMapper:
             "downloading",
             "forcedDL",
             "metaDL",
+            "forcedMetaDL",
             "stalledDL",
             "checkingDL",
             "checkingResumeData",
             "moving",
             "pausedDL",
+            "stoppedDL",
             "queuedDL",
+            # 预分配空间阶段：大种子添加后的必然过程，不是错误
+            "allocating",
         }
         success_states = {
             "uploading",
             "stalledUP",
             "forcedUP",
             "pausedUP",
+            "stoppedUP",
             "checkingUP",
             "queuedUP",
         }
