@@ -308,6 +308,15 @@ class DownloadTransitions(_TransitionBase):
             if was_removed and item.status != TaskStatus.success:
                 await self.removed(hash_key, item.status)
                 return True
+            if item.status == TaskStatus.adding:
+                # adding 只可能在本进程 submitting()→submitted() 之间出现，而这两个
+                # 动作都不涉及 qB 中种子的存在性。因此快照缺失即意味着上一次提交
+                # 中途被杀（强杀/断电），submitted() 永不执行：此时必须兜底判失败，
+                # 否则条目永久停留在「添加中」（submitting 只接受 pending/error，
+                # 没有任何重试路径）。queued/downloading 等状态则可能只是本轮快照
+                # 缺失或用户在 qB 侧操作，不做处理。
+                await self.failed(hash_key, "提交中断：条目未出现在 qBittorrent 中")
+                return True
             return False
 
         try:

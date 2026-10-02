@@ -171,6 +171,66 @@ async def test_store_changed_item_carries_updated_at():
 
 
 @pytest.mark.asyncio
+async def test_reconcile_snapshot_fails_stuck_adding_item():
+    """进程在 submitting 与 submitted 之间被杀后，条目不得永久卡在 adding。
+
+    回归背景：submitting() 先写 adding，若进程随即被强杀/断电，submitted() 永不
+    执行；重启后该条目既不在 qB 中、也不会出现在 removed 集合里，reconcile 直接
+    return False，而 submitting() 只接受 pending/error —— 条目永久停留在「添加中」，
+    且没有任何重试路径。
+    """
+    store = _make_store()
+    bus = RecordingBus()
+    transitions = DownloadTransitions(store=store, bus=bus)
+    await store.add(
+        MagnetItem(
+            hash="STUCKADD1",
+            name="Stuck Adding Item",
+            magnet="magnet:?xt=urn:btih:STUCKADD1",
+            status=TaskStatus.adding,
+        )
+    )
+    item = await store.get("STUCKADD1")
+
+    changed = await transitions.reconcile_snapshot(
+        "STUCKADD1",
+        item,
+        None,
+        was_removed=False,
+    )
+
+    assert changed is True, "卡在 adding 的条目应被判定失败"
+    updated = await store.get("STUCKADD1")
+    assert updated.status == TaskStatus.error, f"仍停留在 {updated.status}"
+    assert updated.error_msg
+
+
+@pytest.mark.asyncio
+async def test_reconcile_snapshot_leaves_other_missing_statuses_alone():
+    """只有 adding 需要兜底：queued/downloading 可能只是本轮快照缺失，不得误判。"""
+    store = _make_store()
+    transitions = DownloadTransitions(store=store, bus=RecordingBus())
+    for hash_key, status in (
+        ("MISSING_Q1", TaskStatus.queued),
+        ("MISSING_D1", TaskStatus.downloading),
+        ("MISSING_S1", TaskStatus.success),
+        ("MISSING_P1", TaskStatus.pending),
+    ):
+        await store.add(
+            MagnetItem(
+                hash=hash_key,
+                name=f"Item {hash_key}",
+                magnet=f"magnet:?xt=urn:btih:{hash_key}",
+                status=status,
+            )
+        )
+        item = await store.get(hash_key)
+        changed = await transitions.reconcile_snapshot(hash_key, item, None, was_removed=False)
+        assert changed is False, f"{status} 在快照缺失时不应被修改"
+        assert (await store.get(hash_key)).status == status
+
+
+@pytest.mark.asyncio
 async def test_reconcile_snapshot_propagates_qbit_error_message():
     """qB 侧 missingFiles 必须落到 error_msg，DOWNLOAD_RESULT 事件携带真实原因。"""
     store = _make_store()
