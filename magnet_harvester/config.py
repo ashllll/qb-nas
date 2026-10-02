@@ -231,9 +231,18 @@ class Settings(BaseSettings):
         }
         self._write_env_values(path, updates)
 
-    def validate_security_posture(self) -> None:
-        """Reject network-exposed write endpoints without explicit protection."""
-        host = self.SERVICE_HOST.strip().lower()
+    def validate_security_posture(self, bound_host: str | None = None) -> None:
+        """Reject network-exposed write endpoints without explicit protection.
+
+        bound_host 是服务**实际绑定**的地址。不能只看 SERVICE_HOST：文档给出的
+        备用启动方式 `uvicorn magnet_harvester.main:app --host 0.0.0.0` 会真正绑定
+        到 LAN，而 .env 里 SERVICE_HOST 仍是 127.0.0.1，只读环境变量会把这种部署
+        误判为 loopback 并放行，导致 LAN 上出现无鉴权写接口。
+
+        bound_host 为 None 时退回环境变量语义（无法取得真实地址时的既有行为）。
+        """
+        host = (bound_host if bound_host is not None else self.SERVICE_HOST).strip().lower()
+        # 通配绑定（0.0.0.0 / ::）覆盖所有网卡，视同非 loopback
         loopback = host == "localhost"
         if not loopback:
             try:

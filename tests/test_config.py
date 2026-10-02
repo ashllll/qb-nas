@@ -224,6 +224,38 @@ def test_env_value_dollar_placeholder_is_a_documented_limitation(tmp_path):
     assert read_back != "${EVIL}", "dotenv 行为已变，需重新评估该限制"
 
 
+def test_security_posture_rejects_real_bind_address_not_just_env():
+    """鉴权强制必须依据真实监听地址，而非 SERVICE_HOST 环境变量。
+
+    回归背景：validate_security_posture 只读 SERVICE_HOST（.env.example 默认
+    127.0.0.1 → 判定 loopback 后早返回），而文档给出的备用启动方式
+    `uvicorn magnet_harvester.main:app --host 0.0.0.0` 会让服务真正绑定到 LAN，
+    此时 API_KEY 为空 → require_api_key 直接放行 → LAN 上出现无鉴权写接口。
+    """
+    # 环境变量仍是 loopback，但真实绑定地址是非 loopback → 必须拒绝
+    cfg = Settings(SERVICE_HOST="127.0.0.1", API_KEY="", ALLOW_INSECURE_WRITE_API=False)
+    with pytest.raises(RuntimeError, match="non-loopback"):
+        cfg.validate_security_posture(bound_host="0.0.0.0")
+    with pytest.raises(RuntimeError, match="non-loopback"):
+        cfg.validate_security_posture(bound_host="192.168.1.194")
+
+    # 真实绑定地址是 loopback → 放行
+    cfg.validate_security_posture(bound_host="127.0.0.1")
+    cfg.validate_security_posture(bound_host="::1")
+    cfg.validate_security_posture(bound_host="localhost")
+
+    # 显式配置了 API_KEY → 放行（即使绑定到 LAN）
+    secured = Settings(SERVICE_HOST="127.0.0.1", API_KEY="k", ALLOW_INSECURE_WRITE_API=False)
+    secured.validate_security_posture(bound_host="0.0.0.0")
+
+    # 显式开发豁免 → 放行
+    dev = Settings(SERVICE_HOST="127.0.0.1", API_KEY="", ALLOW_INSECURE_WRITE_API=True)
+    dev.validate_security_posture(bound_host="0.0.0.0")
+
+    # 真实绑定地址未知时，退回环境变量语义（保持既有行为）
+    cfg.validate_security_posture(bound_host=None)
+
+
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
     test_crawler_allowed_resolutions_falls_back_when_empty()

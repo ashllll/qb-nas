@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -35,12 +36,27 @@ def _configure_cors(app: FastAPI) -> None:
         )
 
 
+def _bound_host() -> str | None:
+    """取本次运行**实际绑定**的监听地址，取不到返回 None。
+
+    只校验 settings.SERVICE_HOST 会被 --host 覆盖绕过：环境变量仍是 127.0.0.1，
+    服务却真的绑到了 LAN。uvicorn 不把 host 写进环境变量，Server.current 在
+    lifespan 时也尚未赋值（实测为 None），因此由启动器显式告知：
+    run.py 会设置 MH_BOUND_HOST，uvicorn 的 UVICORN_HOST 也一并认。
+    """
+    for name in ("MH_BOUND_HOST", "UVICORN_HOST"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return None
+
+
 # ═══════════════════════════════════════════════════
 # Lifespan
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings.validate_security_posture()
+    settings.validate_security_posture(bound_host=_bound_host())
 
     runtime = build_runtime()
     app.state.ctx = runtime.ctx
