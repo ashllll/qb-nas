@@ -275,6 +275,22 @@ async def test_replace_qbit_config_does_not_replace_on_persist_failure():
     assert old_qbit.closed is False
 
 
+def test_real_qbit_client_exposes_config_for_hot_swap_rollback():
+    """真实 QBittorrentClient 必须暴露 config，否则热替换失败时 .env 不会回滚。
+
+    回归背景：app_context 用 `getattr(old_qbit, "config", None)` 取旧配置来回滚，
+    但真实客户端只存 self._config —— 旧配置恒为 None，回滚分支永不执行：内存里
+    仍是旧客户端，磁盘 .env 却已写入新配置，重启即用坏配置。
+
+    此前的测试用 FakeQbit（其 __init__ 里恰好设了 self.config）掩盖了该差异，
+    故这里直接对真实类做接口断言。"""
+    from magnet_harvester.qbit_client import QBittorrentClient
+
+    assert hasattr(QBittorrentClient, "config"), (
+        "QBittorrentClient 缺少 config 属性，热替换失败时无法回滚 .env"
+    )
+
+
 async def test_replace_qbit_config_rolls_back_dependents_when_runtime_swap_fails():
     created = []
     old_config = QBitConfig(host="http://old:8080")

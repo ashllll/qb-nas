@@ -62,6 +62,15 @@ class QBittorrentClient:
         )
 
     @property
+    def config(self) -> QBitConfig:
+        """只读配置快照。
+
+        QBitRuntime.replace_qbit_config 用它保存旧配置，以便热替换失败时把
+        .env 回滚回去；缺少该属性会让回滚分支永不执行，造成内存与磁盘不一致。
+        """
+        return self._config
+
+    @property
     def last_error(self) -> str | None:
         return self.stats.last_error
 
