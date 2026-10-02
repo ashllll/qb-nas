@@ -2,8 +2,11 @@
 """Magnet Harvester — 磁力链接采集与分类服务
 
 Usage:
-    python run.py                    # 启动服务 (http://0.0.0.0:8899)
-    uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
+    python run.py                    # 启动服务（地址取 SERVICE_HOST:SERVICE_PORT，默认 127.0.0.1:8899）
+
+不要用 `uvicorn magnet_harvester.main:app --host ...` 直接启动：该路径下应用无法
+得知真实绑定地址，启动期鉴权强制会失效。启动入口会设置 MH_BOUND_HOST 把真实
+绑定地址告知应用，因此请统一用本脚本。
 """
 import os
 

@@ -25,9 +25,11 @@ scrapling install
 cp .env.example .env            # then edit .env with your qB credentials
 
 # Run
-python run.py
-# or
-uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
+python run.py                   # 唯一受支持的启动方式
+
+# 不要用 `uvicorn magnet_harvester.main:app --host ...` 直接启动：
+# 该路径下应用无法得知真实绑定地址，启动期鉴权强制（非 loopback 且无
+# API_KEY 时必须拒绝启动）会失效，可能把无鉴权写接口暴露到 LAN。
 
 # Test
 python -m pytest tests -v

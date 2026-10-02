@@ -60,13 +60,27 @@ SMOKE_SUBMIT=1 SMOKE_QBIT_... python scripts/smoke_production.py
 ## 3. WebSocket API Key 的已知权衡
 
 - `/ws` 的 API Key 通过查询参数传递（浏览器 WebSocket 无法自定义请求头）。
-  后果：**反代/Uvicorn 访问日志会记录完整请求行（含 key）**。
-  缓解：非本机部署时，在反代层重写/脱敏 access log 的查询串；
-  或将 key 视为短期凭据并定期轮换。
+  应用自身日志已脱敏：`uvicorn_log_config()` 给 access 与 default 两个 formatter
+  都套了脱敏版，HTTP access log 与 WebSocket 握手行（后者由 uvicorn.error /
+  default formatter 输出）中的 `api_key=` 值都会写成 `***`。
+  **仍存在的外部暴露面**：反代（nginx/traefik 等）自己的 access log 在应用之外
+  记录原始请求行。非本机部署时需在反代层重写/脱敏查询串，或将 key 视为短期
+  凭据并定期轮换。
 - 认证在 `ws.accept()` 之前完成，失败连接（4401）不进入广播器；
   比较使用 `secrets.compare_digest`（恒定时间），拒绝日志不含 key 内容。
 - 未配置 `API_KEY` 时 `/ws` 保持开放（本地回环默认部署兼容模式）；
   非本机部署必须配置 `API_KEY`，否则资源名称/来源/下载状态可被未授权订阅。
+
+## 3.1 启动方式与启动期鉴权强制
+
+启动期校验依据**真实绑定地址**：非 loopback 且未配置 `API_KEY`（也未设
+`ALLOW_INSECURE_WRITE_API=true`）时拒绝启动。真实地址由启动入口通过
+`MH_BOUND_HOST` 告知应用。
+
+因此**只支持 `python run.py` 启动**。直接用
+`uvicorn magnet_harvester.main:app --host 0.0.0.0` 时应用无法得知真实绑定地址，
+该校验会失效（退回按 `SERVICE_HOST` 判断），可能把无鉴权写接口暴露到 LAN ——
+不要使用该启动方式。
 
 ## 4. 验收结论判定
 
