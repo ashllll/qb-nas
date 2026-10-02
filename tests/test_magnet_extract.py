@@ -236,6 +236,42 @@ def test_no_false_positives():
     assert len(items) == 0, "不应提取到任何磁力链接"
 
 
+def test_xt_not_first_parameter_is_still_extracted():
+    """magnet URI 不要求 xt 是首个参数；非首参的 xt 也必须被提取。
+
+    回归背景：MAGNET_RE 把 'xt=urn:btih:' 钉死在 'magnet:?' 之后，于是
+    'magnet:?dn=Name&xt=urn:btih:<hash>' 整条漏采（extract_from_text 返回 0），
+    而 parse_magnet 对同一字符串能正确解析 —— 爬取会静默报「0 个资源」。
+    """
+    hash_hex = "0123456789abcdef0123456789abcdef01234567"
+    variants = [
+        f"magnet:?dn=Hello.World&xt=urn:btih:{hash_hex}",
+        f"magnet:?tr=udp%3A%2F%2Ftracker.example%3A80&xt=urn:btih:{hash_hex}",
+        f"magnet:?dn=A&tr=x&xt=urn:btih:{hash_hex}",
+        f"magnet:?xl=1024&xt=urn:btih:{hash_hex}&dn=Trailing",
+    ]
+    for text in variants:
+        items = extract_from_text(text)
+        assert len(items) == 1, f"未提取到: {text}"
+        assert items[0]["hash"] == hash_hex.upper()
+
+
+def test_xt_not_first_parameter_keeps_dn_and_ordering():
+    """非首参形态同样要解析出 dn，并按 hash 去重、保持首次出现顺序。"""
+    first = "1111111111111111111111111111111111111111"
+    second = "2222222222222222222222222222222222222222"
+    text = "\n".join(
+        [
+            f"magnet:?dn=First.Name&xt=urn:btih:{first}",
+            f"magnet:?dn=Second.Name&xt=urn:btih:{second}",
+            f"magnet:?dn=First.Again&xt=urn:btih:{first}",
+        ]
+    )
+    items = extract_from_text(text)
+    assert [item["hash"] for item in items] == [first.upper(), second.upper()]
+    assert items[0]["name"] == "First.Name", "应保留首次出现的 dn"
+
+
 def test_malformed_input_never_raises_and_result_stays_bounded():
     """畸形/对抗性输入不得抛异常，且结果必须有界、结构合法。
 

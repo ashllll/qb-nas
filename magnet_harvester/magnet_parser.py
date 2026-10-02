@@ -25,8 +25,12 @@ log = logging.getLogger(__name__)
 
 BTIH_VALUE_PATTERN = r"(?:[a-fA-F0-9]{40}|[a-zA-Z2-7]{32})"
 
+# xt 允许出现在任意参数位置：magnet URI 不要求 xt 首发，钉死位置会整条漏采
+# （见 test_xt_not_first_parameter_is_still_extracted）。前缀用非贪婪匹配定位到
+# xt，尾部沿用原有的终止字符集。
 MAGNET_RE = re.compile(
-    rf'magnet:\?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])(?:[^\s\'"<>\)]+)?',
+    rf"magnet:\?[^\s\'\"<>\)]*?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])"
+    rf"(?:[^\s\'\"<>\)]+)?",
     re.IGNORECASE,
 )
 
