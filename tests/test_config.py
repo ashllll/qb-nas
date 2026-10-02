@@ -197,6 +197,33 @@ def test_qbit_sync_interval_must_be_positive(monkeypatch):
     assert Settings(_env_file=None).QBIT_SYNC_INTERVAL == 0.1
 
 
+def test_env_value_round_trips_dollar_signs(tmp_path):
+    """含 $ 的值写入 .env 后必须原样读回。
+
+    回归背景：_format_env_value 曾把 $ 转义为 \\$，但 python-dotenv 不做 \\$
+    反转义，于是 'p$ss' 落盘为 "p\\$ss"、读回 'p\\\\$ss' —— 通过 UI 保存含 $ 的
+    qB 密码后，重启即登录失败，且要到重启后才暴露。
+    """
+    env_path = tmp_path / ".env"
+    for value in ("plainpass", "p$ss", "P@ss$word", "a$b$c", "trailing$", "中文$密码"):
+        Settings._write_env_values(env_path, {"QBIT_PASSWORD": value})
+        assert Settings(_env_file=env_path).QBIT_PASSWORD == value, (
+            f"{value!r} 未能原样读回，落盘内容: {env_path.read_text(encoding='utf-8').strip()}"
+        )
+
+
+def test_env_value_dollar_placeholder_is_a_documented_limitation(tmp_path):
+    """${...} 形式的字面量无法在 .env 中表示（dotenv 会当变量插值）。
+
+    实测：双引号/单引号/加反斜杠三种写法读回分别是 ''、''、'\\\\'。
+    这里把它固定为已知限制，避免误以为已修好。
+    """
+    env_path = tmp_path / ".env"
+    Settings._write_env_values(env_path, {"QBIT_PASSWORD": "${EVIL}"})
+    read_back = Settings(_env_file=env_path).QBIT_PASSWORD
+    assert read_back != "${EVIL}", "dotenv 行为已变，需重新评估该限制"
+
+
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
     test_crawler_allowed_resolutions_falls_back_when_empty()

@@ -333,13 +333,18 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _format_env_value(value: str) -> str:
+        """按 .env 双引号规则转义。
+
+        不要转义 $：python-dotenv 不做 \\$ 反转义，转义会把反斜杠写进值里
+        （'p$ss' 会变成 'p\\$ss'，重启后 qB 登录失败）。${...} 形式的字面量在
+        .env 中无法表示（dotenv 会当变量插值），这是该格式的固有限制。
+        """
         escaped = (
             value.replace("\\", "\\\\")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
             .replace('"', '\\"')
-            .replace("$", "\\$")
         )
         return f'"{escaped}"'
 
