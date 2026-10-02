@@ -688,7 +688,9 @@ class SQLiteItemStore:
                 params.append(status)
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        sql = f"SELECT * FROM magnet_items {where} ORDER BY name ASC LIMIT ?"
+        # 排序键必须与内存后端的 _item_name_key（name.lower()）一致；补 hash 作
+        # 稳定次序键，避免同名条目在分页间重复或漏项
+        sql = f"SELECT * FROM magnet_items {where} ORDER BY LOWER(name) ASC, hash ASC LIMIT ?"
         params.append(limit)
 
         with self._lock, self._connect() as db:
@@ -785,7 +787,8 @@ class SQLiteItemStore:
                 return total, []
             offset = max(0, offset)
             cursor = db.execute(
-                f"SELECT * FROM magnet_items {where} ORDER BY name ASC LIMIT ? OFFSET ?",
+                f"SELECT * FROM magnet_items {where} "
+                "ORDER BY LOWER(name) ASC, hash ASC LIMIT ? OFFSET ?",
                 params + [limit, offset],
             )
             items = [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
