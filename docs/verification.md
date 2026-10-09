@@ -99,6 +99,33 @@ SMOKE_SUBMIT=1 SMOKE_QBIT_... python scripts/smoke_production.py
 
 仍推荐用 `python run.py` 启动。
 
+## 3.2 SSRF 防护的已知残余风险（TOCTOU / DNS rebinding）
+
+`CrawlTargetAdmission.admit()`（`magnet_harvester/utils/url_validator.py:153-168`）
+解析主机名并校验**全部**解析结果，但返回的是**原 URL**，连接时必然再次解析：
+
+```python
+addresses = await self._resolver(parsed.hostname or "", port)   # :159 校验用解析
+...
+return candidate                                               # :168 连接时再解析一次
+```
+
+因此存在经典的 check-then-connect 窗口：目标域名首次解析为公网地址通过校验，
+真正建连前再解析为 `127.0.0.1`/内网即可绕过。
+
+- 已验证的缓解：`scrapling_spider.py` 安装的 `page.route` 逐请求复检**确实生效**
+  （scrapling 安装版 `_controllers.py:346-350` 会消费 `page_setup`），且 SSRF 的
+  常规绕过写法（十进制 `2130706433`、`0x7f.0.0.1`、`127.1`、`[::ffff:127.0.0.1]` 等）
+  在 `admit()` 均被拒。
+- 但该复检同样是 check-then-connect（校验用解析 ≠ Chromium 建连用解析），且
+  robots / 静态 fetcher 路径不经过 `page.route`。
+- `admit_redirect_chain`（重定向链全链校验）**当前无生产调用方**，仅有测试引用
+  （`tests/test_url_validator.py:161,175,195`），因此重定向链校验实际未接线。
+
+**彻底修法**（未实施，需改动连接层）：解析一次后把 IP 固定用于连接 —— httpx 自定义
+transport，或 Chromium 的 `--host-resolver-rules`；也可在建连后校验对端 IP。
+未实施的原因是它改动爬虫的连接与浏览器启动参数，属架构改动而非局部修补。
+
 ## 4. 验收结论判定
 
 | 状态                      | 判定                                                                            |
