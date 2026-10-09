@@ -30,14 +30,17 @@ LAN_IP = "192.168.0.230"
 class _ScopeOverride:
     """把 scope['server'] 改成指定本机接口地址后再交给内层应用。"""
 
-    def __init__(self, app, server):
+    def __init__(self, app, server, client=None):
         self.app = app
         self.server = server
+        self.client = client
 
     async def __call__(self, scope, receive, send):
         if scope["type"] in {"http", "websocket"}:
             scope = dict(scope)
             scope["server"] = self.server
+            if self.client is not None:
+                scope["client"] = self.client
         await self.app(scope, receive, send)
 
 
@@ -76,6 +79,43 @@ def test_guard_scope_classification():
     assert request_arrived_on_non_loopback_interface({}) is False
 
 
+def test_request_origin_check_uses_both_server_and_client():
+    """两侧都要看：只看 server 会漏掉本机反向代理这一常见部署形态。
+
+    实测背景：后端绑 127.0.0.1 + 本机反代（nginx/traefik）转发**远程**请求时，
+    后端仍观测到 server=('127.0.0.1', ...)，只有 client 反映真实来源
+    （uvicorn 的 proxy-headers 会按 X-Forwarded-For 重写 client，
+    实测带该头部时 scope['client'] 变为 ('203.0.113.9', 0)）。
+    """
+    # 本机直达：两侧都是 loopback → 本机访问
+    assert (
+        request_arrived_on_non_loopback_interface(
+            {"server": ("127.0.0.1", 8899), "client": ("127.0.0.1", 51234)}
+        )
+        is False
+    )
+
+    # 本机反代转发远程请求：server 是 loopback，client 是真实来源 → 必须识别为外部
+    assert (
+        request_arrived_on_non_loopback_interface(
+            {"server": ("127.0.0.1", 8899), "client": (LAN_IP, 0)}
+        )
+        is True
+    )
+    assert (
+        request_arrived_on_non_loopback_interface(
+            {"server": ("127.0.0.1", 8899), "client": ("203.0.113.9", 0)}
+        )
+        is True
+    )
+
+    # 直接经对外网卡进入：server 即非 loopback（client 缺失也要拦住）
+    assert request_arrived_on_non_loopback_interface({"server": (LAN_IP, 8899)}) is True
+
+    # 字段缺失/形态异常不应误判为外部
+    assert request_arrived_on_non_loopback_interface({"server": None, "client": None}) is False
+
+
 @pytest.fixture
 def guard_settings(monkeypatch):
     """按需设置模块级 settings，并保证测试期间一直生效。
@@ -93,8 +133,8 @@ def guard_settings(monkeypatch):
     return _apply
 
 
-def _guarded_app(server):
-    """构造只含守卫中间件的最小应用，scope['server'] 可注入。"""
+def _guarded_app(server, client=None):
+    """构造只含守卫中间件的最小应用，scope 的 server/client 可注入。"""
     import magnet_harvester.main as main_module
 
     inner = FastAPI()
@@ -108,7 +148,7 @@ def _guarded_app(server):
         return {"ok": True}
 
     inner.middleware("http")(main_module._interface_guard)
-    return httpx.ASGITransport(app=_ScopeOverride(inner, server))
+    return httpx.ASGITransport(app=_ScopeOverride(inner, server, client))
 
 
 def _request(transport, method: str, path: str = "/api/probe"):
@@ -131,6 +171,26 @@ def test_unauth_write_from_lan_interface_is_rejected(guard_settings):
 def test_unauth_write_from_loopback_interface_is_allowed(guard_settings):
     guard_settings(api_key="", insecure=False)
     assert _request(_guarded_app(("127.0.0.1", 8899)), "POST").status_code == 200
+
+
+def test_unauth_write_forwarded_by_local_proxy_is_rejected(guard_settings):
+    """本机反向代理转发远程请求：server 是 loopback，client 是真实来源 → 拒绝。
+
+    这是 NAS 上常见的远程访问拓扑（nginx/traefik 反代到 127.0.0.1 后端）。
+    只依据 server 判定会让这类请求被当成本机访问而放行。
+    """
+    guard_settings(api_key="", insecure=False)
+    transport = _guarded_app(("127.0.0.1", 8899), client=(LAN_IP, 0))
+    resp = _request(transport, "POST")
+    assert resp.status_code == 403, resp.text
+    assert "non-loopback" in resp.json()["detail"]
+
+
+def test_direct_local_write_still_allowed_when_both_sides_loopback(guard_settings):
+    """本机直达（两侧都是 loopback）不受影响 —— 避免修复反代盲区时误伤本地使用。"""
+    guard_settings(api_key="", insecure=False)
+    transport = _guarded_app(("127.0.0.1", 8899), client=("127.0.0.1", 51234))
+    assert _request(transport, "POST").status_code == 200
 
 
 def test_read_from_lan_interface_is_not_guarded(guard_settings):

@@ -37,14 +37,29 @@ def is_non_loopback_interface(address: str | None) -> bool:
 
 
 def request_arrived_on_non_loopback_interface(scope: Mapping[str, Any]) -> bool:
-    """该请求是否经非 loopback 网卡进入本机。
+    """该请求是否来自非 loopback 来源。
 
-    只信 ASGI 层的 "server"（服务器真实绑定的本机地址），不使用 Host/X-Forwarded-*
-    等可被客户端伪造的头部。
+    两侧都要看，缺一不可：
+
+    - ``server``：该连接被接受的**本机接口地址**。绑定 0.0.0.0 时经 loopback 为
+      127.0.0.1、经 LAN 为真实网卡地址，因此能识别"直接经对外网卡进来"。
+    - ``client``：连接来源地址。**本机反向代理**（nginx/traefik 反代到 127.0.0.1
+      后端）会让 server 恒为 127.0.0.1，此时只有 client 能反映真实来源；uvicorn
+      的 proxy-headers 会按 X-Forwarded-For 重写该字段（实测）。
+
+    两者都是 loopback 才算本机访问；任一为非 loopback 即视为外部来源。本机浏览器
+    用 LAN IP 访问自己也会命中（client 为该 IP），属预期：改用 localhost 或配置
+    API_KEY。
     """
     server = scope.get("server")
-    address = server[0] if isinstance(server, (tuple, list)) and server else None
-    return is_non_loopback_interface(address if isinstance(address, str) else None)
+    client = scope.get("client")
+
+    server_addr = server[0] if isinstance(server, (tuple, list)) and server else None
+    client_addr = client[0] if isinstance(client, (tuple, list)) and client else None
+
+    return is_non_loopback_interface(
+        server_addr if isinstance(server_addr, str) else None
+    ) or is_non_loopback_interface(client_addr if isinstance(client_addr, str) else None)
 
 
 def needs_interface_guard(scope: Mapping[str, Any]) -> bool:
