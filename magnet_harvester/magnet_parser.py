@@ -28,8 +28,14 @@ BTIH_VALUE_PATTERN = r"(?:[a-fA-F0-9]{40}|[a-zA-Z2-7]{32})"
 # xt 允许出现在任意参数位置：magnet URI 不要求 xt 首发，钉死位置会整条漏采
 # （见 test_xt_not_first_parameter_is_still_extracted）。前缀用非贪婪匹配定位到
 # xt，尾部沿用原有的终止字符集。
+#
+# 前缀必须设上限：无界前缀会让该正则在"含大量 magnet:? 但没有 xt"的文本上退化成
+# O(n^2)（病态输入 64KB 实测 1.4s，1MB 外推约 400s），且因为全程持有 GIL，
+# asyncio.to_thread 挡不住 —— 单个被爬页面即可让 API/WS/同步循环全停摆。
+# 512 对真实链接足够（xt 通常在前 ~100 字符内），实测正常输入结果完全一致。
+MAGNET_LEADING_MAX = 512
 MAGNET_RE = re.compile(
-    rf"magnet:\?[^\s\'\"<>\)]*?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])"
+    rf"magnet:\?[^\s\'\"<>\)]{{0,{MAGNET_LEADING_MAX}}}?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])"
     rf"(?:[^\s\'\"<>\)]+)?",
     re.IGNORECASE,
 )
