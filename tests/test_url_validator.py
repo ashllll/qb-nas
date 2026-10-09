@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import httpx
 import pytest
 
 from magnet_harvester.utils.url_validator import (
     CrawlTargetAdmission,
-    REDIRECT_PROBE_TIMEOUT_SEC,
     URLValidationError,
     validate_crawl_url,
 )
@@ -116,10 +114,6 @@ class TestValidateCrawlUrl:
             validate_crawl_url("https://example.com/" + "a" * 9000)
 
 
-def test_redirect_probe_timeout_is_short_for_crawl_speed():
-    assert REDIRECT_PROBE_TIMEOUT_SEC == 2.0
-
-
 @pytest.mark.asyncio
 async def test_admission_rejects_hostname_resolving_to_private_address():
     async def private_resolver(_hostname, _port):
@@ -140,61 +134,6 @@ async def test_admission_wraps_dns_timeout_as_validation_error():
 
     with pytest.raises(URLValidationError, match="cannot be resolved"):
         await admission.admit("https://slow-dns.example")
-
-
-@pytest.mark.asyncio
-async def test_admission_rejects_redirect_to_private_address():
-    async def resolver(hostname, _port):
-        return ["10.0.0.5"] if hostname == "internal.example" else ["93.184.216.34"]
-
-    async def redirect_probe(url):
-        if url == "https://public.example":
-            return "http://internal.example/admin"
-        return None
-
-    admission = CrawlTargetAdmission(
-        resolver=resolver,
-        redirect_probe=redirect_probe,
-    )
-
-    with pytest.raises(URLValidationError, match="private"):
-        await admission.admit_redirect_chain("https://public.example")
-
-
-@pytest.mark.asyncio
-async def test_redirect_probe_failure_is_fail_closed():
-    async def resolver(_hostname, _port):
-        return ["93.184.216.34"]
-
-    async def failing_probe(_url):
-        raise httpx.TimeoutException("probe timed out")
-
-    admission = CrawlTargetAdmission(resolver=resolver, redirect_probe=failing_probe)
-
-    with pytest.raises(URLValidationError, match="redirect"):
-        await admission.admit_redirect_chain("https://public.example")
-
-
-@pytest.mark.asyncio
-async def test_redirect_chain_allows_exact_configured_redirect_limit():
-    async def resolver(_hostname, _port):
-        return ["93.184.216.34"]
-
-    async def redirect_probe(url):
-        if url == "https://public.example":
-            return "https://public.example/final"
-        return None
-
-    admission = CrawlTargetAdmission(
-        resolver=resolver,
-        redirect_probe=redirect_probe,
-        max_redirects=1,
-    )
-
-    assert (
-        await admission.admit_redirect_chain("https://public.example")
-        == "https://public.example/final"
-    )
 
 
 # ── allow_fake_ip 参数测试 (mihomo/Clash fake-IP 198.18.0.0/15 SSRF 豁免) ──

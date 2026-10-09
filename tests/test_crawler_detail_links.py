@@ -14,10 +14,6 @@ async def public_resolver(_hostname: str, _port: int) -> list[str]:
     return ["93.184.216.34"]
 
 
-async def no_redirect(_url: str) -> None:
-    return None
-
-
 class FakeSpider:
     def __init__(self, items=None, errors=None):
         self.items = list(items or [])
@@ -54,7 +50,6 @@ def make_crawler(spider: FakeSpider, **config) -> SpiderCrawler:
         config=CrawlerConfig(**config),
         target_admission=CrawlTargetAdmission(
             resolver=public_resolver,
-            redirect_probe=no_redirect,
         ),
     )
 

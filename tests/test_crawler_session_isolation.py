@@ -12,10 +12,6 @@ async def public_resolver(_hostname, _port):
     return ["93.184.216.34"]
 
 
-async def no_redirect(_url):
-    return None
-
-
 class OverlappingCrawler(MagnetCrawler):
     def _build_spider(self, root_url, depth):
         class FakeSpider:
@@ -50,7 +46,6 @@ async def test_overlapping_crawl_sessions_report_independent_metrics():
         config=CrawlerConfig(concurrency=1),
         target_admission=CrawlTargetAdmission(
             resolver=public_resolver,
-            redirect_probe=no_redirect,
         ),
     )
 

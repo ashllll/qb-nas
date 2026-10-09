@@ -101,13 +101,13 @@ SMOKE_SUBMIT=1 SMOKE_QBIT_... python scripts/smoke_production.py
 
 ## 3.2 SSRF 防护的已知残余风险（TOCTOU / DNS rebinding）
 
-`CrawlTargetAdmission.admit()`（`magnet_harvester/utils/url_validator.py:153-168`）
+`CrawlTargetAdmission.admit()`（`magnet_harvester/utils/url_validator.py:119-134`）
 解析主机名并校验**全部**解析结果，但返回的是**原 URL**，连接时必然再次解析：
 
 ```python
-addresses = await self._resolver(parsed.hostname or "", port)   # :159 校验用解析
+addresses = await self._resolver(parsed.hostname or "", port)   # :125 校验用解析
 ...
-return candidate                                               # :168 连接时再解析一次
+return candidate                                               # :134 连接时再解析一次
 ```
 
 因此存在经典的 check-then-connect 窗口：目标域名首次解析为公网地址通过校验，
@@ -119,8 +119,10 @@ return candidate                                               # :168 连接时�
   在 `admit()` 均被拒。
 - 但该复检同样是 check-then-connect（校验用解析 ≠ Chromium 建连用解析），且
   robots / 静态 fetcher 路径不经过 `page.route`。
-- `admit_redirect_chain`（重定向链全链校验）**当前无生产调用方**，仅有测试引用
-  （`tests/test_url_validator.py:161,175,195`），因此重定向链校验实际未接线。
+- 重定向链全链校验**已删除**（原 `admit_redirect_chain` / `_probe_redirect` /
+  `CrawlTargetAdmission._client` 均无生产调用方，属未接线的死代码）。它此前由
+  AGENTS.md 描述为已生效的能力，属"文档说做了、代码没做"；删掉后该表述与实际一致，
+  也去掉了该类持有的空转 `httpx.AsyncClient`。
 
 **彻底修法**（未实施，需改动连接层）：解析一次后把 IP 固定用于连接 —— httpx 自定义
 transport，或 Chromium 的 `--host-resolver-rules`；也可在建连后校验对端 IP。

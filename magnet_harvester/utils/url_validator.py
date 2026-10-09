@@ -6,9 +6,7 @@ import asyncio
 import ipaddress
 import socket
 from collections.abc import Awaitable, Callable
-from urllib.parse import urljoin, urlparse
-
-import httpx
+from urllib.parse import urlparse
 
 
 class URLValidationError(ValueError):
@@ -16,10 +14,8 @@ class URLValidationError(ValueError):
 
 
 Resolver = Callable[[str, int], Awaitable[list[str]]]
-RedirectProbe = Callable[[str], Awaitable[str | None]]
 
 
-REDIRECT_PROBE_TIMEOUT_SEC = 2.0
 MAX_CRAWL_URL_LENGTH = 8192
 
 # mihomo (Clash Meta) / Clash fake-IP 模式使用 198.18.0.0/15（RFC 2544 基准测试范围）
@@ -109,46 +105,16 @@ async def _resolve_host(hostname: str, port: int, timeout: float = 5.0) -> list[
     return list({record[4][0] for record in records})
 
 
-async def _probe_redirect(url: str) -> str | None:
-    async with httpx.AsyncClient(
-        follow_redirects=False,
-        timeout=REDIRECT_PROBE_TIMEOUT_SEC,
-    ) as client:
-        response = await client.head(url)
-    if response.is_redirect:
-        location = response.headers.get("location")
-        return urljoin(url, location) if location else None
-    return None
-
-
 class CrawlTargetAdmission:
-    """Admits initial, discovered, and redirect Crawl targets."""
+    """Admits initial and discovered Crawl targets."""
 
     def __init__(
         self,
         resolver: Resolver | None = None,
-        redirect_probe: RedirectProbe | None = None,
-        max_redirects: int = 5,
         allow_fake_ip: bool = False,
     ):
         self._resolver = resolver or _resolve_host
-        self._max_redirects = max_redirects
         self._allow_fake_ip = allow_fake_ip
-        self._client = httpx.AsyncClient(
-            follow_redirects=False,
-            timeout=REDIRECT_PROBE_TIMEOUT_SEC,
-        )
-        self._redirect_probe = redirect_probe or self._default_probe
-
-    async def _default_probe(self, url: str) -> str | None:
-        response = await self._client.head(url)
-        if response.is_redirect:
-            location = response.headers.get("location")
-            return urljoin(url, location) if location else None
-        return None
-
-    async def close(self) -> None:
-        await self._client.aclose()
 
     async def admit(self, url: str) -> str:
         candidate = url.strip()
@@ -166,18 +132,3 @@ class CrawlTargetAdmission:
         ):
             raise URLValidationError("URL resolves to a private address")
         return candidate
-
-    async def admit_redirect_chain(self, url: str) -> str:
-        current = await self.admit(url)
-        redirects = 0
-        while True:
-            try:
-                target = await self._redirect_probe(current)
-            except httpx.HTTPError as exc:
-                raise URLValidationError("URL redirect chain cannot be verified") from exc
-            if target is None:
-                return current
-            if redirects >= self._max_redirects:
-                raise URLValidationError("URL redirects too many times")
-            current = await self.admit(target)
-            redirects += 1

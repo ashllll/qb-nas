@@ -234,7 +234,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 - **Hot-swap qB config**: `QBitRuntime.replace_qbit_config()` validates, persists, and swaps the client atomically
 - **SSRF protection**: `url_validator` blocks loopback, link-local, multicast, RFC 1918
   addresses. **注意已知残余风险**：`admit()` 校验 DNS 解析结果但连接时重新解析
-  （TOCTOU/DNS rebinding），且 `admit_redirect_chain` 无生产调用方 —— 详见
+  （TOCTOU/DNS rebinding）；重定向链校验未接线，相关代码已删除 —— 详见
   `docs/verification.md` 3.2。爬取路径另有 `page.route` 逐请求复检作缓解
 - **正则必须有界**: 输入来自被爬页面与控制面板，无界量词会在"含大量触发前缀但无
   有效匹配"的文本上退化成 O(n²)，单个页面即可让服务停摆（`MAGNET_RE` 持有 GIL，

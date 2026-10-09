@@ -148,11 +148,6 @@ class MagnetCrawler:
         for spider in tuple(self._active_spiders):
             spider.request_stop()
         self._started = False
-        if self._target_admission is not None and hasattr(self._target_admission, "close"):
-            try:
-                await self._target_admission.close()
-            except Exception as e:
-                log.warning(f"关闭 CrawlTargetAdmission 时出错: {e}")
         log.info("Scrapling Spider 爬虫已关闭")
 
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]:

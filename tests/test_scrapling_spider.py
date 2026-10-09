@@ -18,12 +18,8 @@ async def public_resolver(_hostname: str, _port: int) -> list[str]:
     return ["93.184.216.34"]
 
 
-async def no_redirect(_url: str) -> None:
-    return None
-
-
 def admission() -> CrawlTargetAdmission:
-    return CrawlTargetAdmission(resolver=public_resolver, redirect_probe=no_redirect)
+    return CrawlTargetAdmission(resolver=public_resolver)
 
 
 class FakeLinks:
@@ -241,7 +237,6 @@ def test_browser_route_aborts_private_subresources_and_allows_public_requests():
             config=CrawlerConfig(),
             target_admission=CrawlTargetAdmission(
                 resolver=private_aware_resolver,
-                redirect_probe=no_redirect,
             ),
             cookies=[],
         )
@@ -286,7 +281,6 @@ def test_detail_url_admission_runs_concurrently():
             config=CrawlerConfig(concurrency=4, max_detail_links=8),
             target_admission=CrawlTargetAdmission(
                 resolver=concurrent_resolver,
-                redirect_probe=no_redirect,
             ),
             cookies=[],
         )
@@ -345,7 +339,6 @@ def test_detail_admission_deduplicates_and_applies_limit_before_dns():
             config=CrawlerConfig(max_detail_links=2),
             target_admission=CrawlTargetAdmission(
                 resolver=counting_resolver,
-                redirect_probe=no_redirect,
             ),
             cookies=[],
         )
@@ -378,7 +371,6 @@ def test_unsafe_early_candidates_do_not_consume_detail_capacity():
             config=CrawlerConfig(concurrency=1, max_detail_links=2),
             target_admission=CrawlTargetAdmission(
                 resolver=selective_resolver,
-                redirect_probe=no_redirect,
             ),
             cookies=[],
         )
