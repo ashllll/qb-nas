@@ -117,3 +117,37 @@ def test_pagination_is_stable_with_identical_names(param):
             os.unlink(db_path)
         except (PermissionError, FileNotFoundError):
             pass
+
+
+def test_identical_names_tie_break_matches_between_backends():
+    """同名条目的次序键必须一致（(name.lower(), hash)），两种后端顺序相同。
+
+    回归背景：内存后端只用 name.lower() 作键，SQLite 用 ORDER BY LOWER(name),
+    hash —— 同名条目的相对次序因此不同（'ffff' 先插时内存给出 ['ffff','0000']，
+    SQLite 给出 ['0000','ffff']），切换 SQLITE_PATH 即改变展示/翻页顺序。
+    """
+    items = [_make_item("f" * 40, "同名条目"), _make_item("0" * 40, "同名条目")]
+
+    memory = InMemoryItemStore()
+    for item in items:
+        memory.add(item)
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as handle:
+        db_path = handle.name
+    try:
+        sqlite = SQLiteItemStore(db_path)
+        for item in items:
+            sqlite.add(item)
+
+        mem_order = [i.hash for i in memory.list()]
+        sql_order = [i.hash for i in sqlite.list()]
+        assert mem_order == sql_order, (
+            f"同名条目次序不一致：memory={[h[:4] for h in mem_order]} "
+            f"sqlite={[h[:4] for h in sql_order]}"
+        )
+        assert mem_order[0].startswith("0"), "hash 应作次序键（'0' < 'f'）"
+    finally:
+        try:
+            os.unlink(db_path)
+        except (PermissionError, FileNotFoundError):
+            pass

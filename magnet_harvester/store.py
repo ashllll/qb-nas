@@ -27,8 +27,13 @@ from magnet_harvester.models import MagnetItem, TaskStatus
 log = logging.getLogger(__name__)
 
 
-def _item_name_key(item: MagnetItem) -> str:
-    return item.name.lower()
+def _item_name_key(item: MagnetItem) -> tuple[str, str]:
+    """排序键：(name.lower(), hash)。
+
+    hash 作稳定的次序键，必须与 SQLite 后端的 `ORDER BY LOWER(name) ASC, hash ASC`
+    一致 —— 否则同名条目在两种后端下顺序不同（切换 SQLITE_PATH 即变）。
+    """
+    return (item.name.lower(), item.hash)
 
 
 def _escape_like(s: str) -> str:
