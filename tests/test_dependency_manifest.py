@@ -33,18 +33,37 @@ def test_startup_entrypoint_reports_real_bind_address():
 
 
 def test_docs_do_not_recommend_direct_uvicorn_host_override():
-    """文档不得把 `uvicorn ... --host` 列为启动方式。
+    """文档不得把 `uvicorn ... --host` 列为可复制执行的启动方式。
 
     该路径下应用拿不到真实绑定地址，启动期鉴权强制失效（见 docs/verification.md）。
+
+    断言的是"命令行"而不是某句提示语：在 AGENTS.md / CLAUDE.md / README.md /
+    docs/verification.md 中，任何含字面 `uvicorn magnet_harvester.main:app` 的行都
+    必须在本行或紧邻上一行标注为非受支持/禁止用法。只做整句子串检查会被提示语自身
+    满足（空检查），因此强制"命令与标注相邻出现"。
     """
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     assert "python run.py" in agents
     assert "不要用 `uvicorn" in agents, "AGENTS.md 应明确标注不要用 uvicorn --host 直接启动"
-    for line in agents.splitlines():
-        stripped = line.strip()
-        # 允许出现在"不要用/禁止"说明里，但不得作为可复制执行的启动命令
-        if stripped.startswith("uvicorn ") or stripped.startswith("# or"):
-            raise AssertionError(f"AGENTS.md 仍在推荐危险启动方式: {stripped!r}")
+
+    command = re.compile(r"(?:python -m )?uvicorn\s+magnet_harvester\.main:app")
+    markers = ("不要用", "禁止", "非受支持")
+    docs = (
+        ROOT / "AGENTS.md",
+        ROOT / "CLAUDE.md",
+        ROOT / "README.md",
+        ROOT / "docs" / "verification.md",
+    )
+    for doc in docs:
+        lines = doc.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if not command.search(stripped):
+                continue
+            context = stripped + (lines[index - 1] if index else "")
+            assert any(word in context for word in markers), (
+                f"{doc.name}:{index + 1} 出现未标注为非受支持用法的 uvicorn 启动命令: {stripped!r}"
+            )
 
 
 def test_requirements_and_pyproject_runtime_dependencies_are_in_sync():
