@@ -77,14 +77,25 @@ SMOKE_SUBMIT=1 SMOKE_QBIT_... python scripts/smoke_production.py
 
 1. **启动期**：校验**真实绑定地址**，非 loopback 即拒绝启动。真实地址按优先级取自
    启动入口设置的 `MH_BOUND_HOST`、uvicorn CLI 的 `--host` 参数、`UVICORN_HOST`。
-2. **请求期兜底**：经**非 loopback 网卡**进入的无鉴权写请求一律 403；WebSocket
-   握手同样处理。判定依据是 ASGI scope 的 `server`（该连接被接受的本机接口地址，
-   实测绑定 `0.0.0.0` 时经 loopback 为 `127.0.0.1`、经 LAN 为真实网卡 IP），
-   与启动方式无关，也不依赖 Host / X-Forwarded-* 等可伪造头部。
+2. **请求期兜底**：来自**非 loopback 来源**的无鉴权写请求一律 403；WebSocket
+   握手同样处理。判定同时看 ASGI scope 的两侧，缺一不可：
+   - `server` —— 该连接被接受的**本机接口地址**。实测绑定 `0.0.0.0` 时经 loopback
+     为 `127.0.0.1`、经 LAN 为真实网卡 IP，用于识别"直接经对外网卡进来"。
+   - `client` —— 连接来源地址。**本机反向代理**（nginx/traefik 反代到 `127.0.0.1`
+     后端）会让 `server` 恒为 `127.0.0.1`，此时只有 `client` 反映真实来源。
+
+   只看 `server` 会漏掉反代形态（实测：反代转发远程请求时后端仍观测到
+   `server=('127.0.0.1', ...)`）；只看 `client` 则漏掉直连形态。两侧都是 loopback
+   才算本机访问。该判定与启动方式无关。
+
+   已知边界：`client` 会被 uvicorn 按 `X-Forwarded-For` 重写（实测），而该头部可被
+   客户端伪造。伪造风险被 `server` 一侧限制——想同时让 `server` 为 loopback，攻击者
+   必须先在本机内发起连接。因此本项属**尽力而为的兜底**，不能替代 `API_KEY`。
 
 两层的意义不同：第 1 层给出清晰的启动失败信息；第 2 层即使有人用非受支持的启动
 方式（如 `uvicorn magnet_harvester.main:app --host 0.0.0.0`）也无法从 LAN 写操作。
-本机 `127.0.0.1` 访问不受影响，读接口不做限制。
+本机 `127.0.0.1` 访问不受影响（本机浏览器改用 `localhost` 而非 LAN IP），读接口不
+做限制，配置了 `API_KEY` 则两层都不介入。
 
 仍推荐用 `python run.py` 启动。
 

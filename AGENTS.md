@@ -200,8 +200,10 @@ All settings in `.env` (see `.env.example`). Key categories:
 - 未配置 `API_KEY`（且未设 `ALLOW_INSECURE_WRITE_API=true`）时：
   - **启动期**拒绝绑定到非 loopback 地址（真实地址取自 `MH_BOUND_HOST` / uvicorn
     `--host` / `UVICORN_HOST`，优先级同序）
-  - **请求期**拒绝经非 loopback 网卡进入的写请求（403）与 WebSocket 握手，
-    判定依据 ASGI scope 的 `server`，与启动方式无关；本机 loopback 不受影响
+  - **请求期**拒绝来自非 loopback 来源的写请求（403）与 WebSocket 握手，同时依据
+    ASGI scope 的 `server`（本机接口地址）与 `client`（连接来源，覆盖本机反代形态），
+    与启动方式无关；本机 loopback 不受影响。属尽力而为兜底，不能替代 `API_KEY`
+    （见 `docs/verification.md` 3.1）
 - 推荐用 `python run.py` 启动（它设置 `MH_BOUND_HOST`，可给出最准确的启动期判定）
 
 ## Conventions
