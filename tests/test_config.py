@@ -212,16 +212,29 @@ def test_env_value_round_trips_dollar_signs(tmp_path):
         )
 
 
-def test_env_value_dollar_placeholder_is_a_documented_limitation(tmp_path):
-    """${...} 形式的字面量无法在 .env 中表示（dotenv 会当变量插值）。
+def test_env_value_dollar_placeholder_is_rejected_on_persist(tmp_path):
+    """经 persist_qbit_config 落盘时，含 ${...} 的值必须被拒绝而不是静默写错。
 
-    实测：双引号/单引号/加反斜杠三种写法读回分别是 ''、''、'\\\\'。
-    这里把它固定为已知限制，避免误以为已修好。
+    回归背景：'p${X}word' 会被 dotenv 当变量插值，写盘后读回 'pword' —— 本次会话
+    内存里的配置仍正常，要重启才暴露，属**静默改坏密码**。该形式在 .env 中无法
+    表示（python-dotenv 1.2.2 对双引号/单引号/裸值一律插值，且
+    DotEnvSettingsSource 不支持关闭插值），因此选择在写入前拒绝。
     """
+    from magnet_harvester.config import QBitConfig
+
     env_path = tmp_path / ".env"
-    Settings._write_env_values(env_path, {"QBIT_PASSWORD": "${EVIL}"})
-    read_back = Settings(_env_file=env_path).QBIT_PASSWORD
-    assert read_back != "${EVIL}", "dotenv 行为已变，需重新评估该限制"
+    with pytest.raises(ValueError, match="无法写入"):
+        Settings().persist_qbit_config(
+            QBitConfig(host="http://h:8080", username="u", password="p$ss${X}word"),
+            env_path,
+        )
+    assert not env_path.exists(), "被拒绝的值不应落盘"
+
+    # 单个 $（非 ${ 形式）不受影响，仍可正常往返
+    Settings().persist_qbit_config(
+        QBitConfig(host="http://h:8080", username="u", password="p$ss#中文"), env_path
+    )
+    assert Settings(_env_file=env_path).QBIT_PASSWORD == "p$ss#中文"
 
 
 def test_security_posture_rejects_real_bind_address_not_just_env():

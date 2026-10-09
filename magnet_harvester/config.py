@@ -222,8 +222,25 @@ class Settings(BaseSettings):
         self._qbit_config = None
 
     def persist_qbit_config(self, config: QBitConfig, env_path: str | Path | None = None) -> None:
-        """Persist qBittorrent connection settings to the .env file."""
+        """Persist qBittorrent connection settings to the .env file.
+
+        含 `${...}` 的值会被拒绝：该形式在 .env 中无法表示（python-dotenv 会当变量
+        插值，且 `DotEnvSettingsSource` 不支持关闭插值），写盘后重启读回的是被插值
+        改错的值 —— 静默改坏密码比报错更糟，所以这里直接拒绝。
+
+        实测：`'p${X}word'` 写盘后读回 `'pword'`；单个 `$`（如 `'p$ss'`）可正常往返。
+        """
         path = Path(env_path or self.model_config.get("env_file", ".env"))
+        for key, value in (
+            ("QBIT_HOST", config.host),
+            ("QBIT_USERNAME", config.username),
+            ("QBIT_PASSWORD", config.password),
+        ):
+            if "${" in (value or ""):
+                raise ValueError(
+                    f"{key} 含 '${{...}}'，无法写入 .env（dotenv 会当变量插值导致读回值被改错）。"
+                    "请改用不含 '${{' 的密码。"
+                )
         updates = {
             "QBIT_HOST": config.host,
             "QBIT_USERNAME": config.username,
