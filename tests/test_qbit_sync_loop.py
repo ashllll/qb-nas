@@ -21,19 +21,13 @@ class FakeQbitClient:
     def __init__(self):
         self._snapshot = {}
         self._removed = set()
-
-    async def poll_torrent_snapshot(self):
-        return dict(self._snapshot)
+        self.poll_calls = 0
 
     async def poll_torrent_snapshot_with_removed(self):
+        self.poll_calls += 1
         removed = set(self._removed)
         self._removed.clear()
         return dict(self._snapshot), removed
-
-    def take_recently_removed(self):
-        removed = set(self._removed)
-        self._removed.clear()
-        return removed
 
     def map_torrent_status(self, torrent):
         from magnet_harvester.models import TaskStatus
@@ -56,34 +50,19 @@ class SnapshotOnlyQbitClient:
         self._snapshot = {}
         self._removed = set()
 
-    async def poll_torrent_snapshot(self):
-        return dict(self._snapshot)
-
     async def poll_torrent_snapshot_with_removed(self):
         removed = set(self._removed)
         self._removed.clear()
         return dict(self._snapshot), removed
-
-    def take_recently_removed(self):
-        removed = set(self._removed)
-        self._removed.clear()
-        return removed
 
 
 class FailingQbitClient:
     def __init__(self):
         self.poll_calls = 0
 
-    async def poll_torrent_snapshot(self):
-        self.poll_calls += 1
-        raise RuntimeError("qB offline")
-
     async def poll_torrent_snapshot_with_removed(self):
         self.poll_calls += 1
         raise RuntimeError("qB offline")
-
-    def take_recently_removed(self):
-        return set()
 
 
 class FailingStore(FakeStore):
@@ -99,6 +78,16 @@ class RecordingStore(FakeStore):
     def list(self, *args, **kwargs):
         self.list_calls += 1
         return super().list(*args, **kwargs)
+
+
+class FlakyStore(RecordingStore):
+    """首次 list() 抛错，之后正常 —— 复现「读取本地条目失败」的那一轮。"""
+
+    def list(self, *args, **kwargs):
+        self.list_calls += 1
+        if self.list_calls == 1:
+            raise RuntimeError("store unavailable")
+        return FakeStore.list(self, *args, **kwargs)
 
 
 class FakeTaskManager:
@@ -450,7 +439,7 @@ async def test_reconcile_progress_excludes_cancelled_inflight_item():
 
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(
-            loop._reconcile_batch(items, {}, set(), progress),
+            loop._reconcile_batch(items, {}, progress),
             timeout=0.01,
         )
 
@@ -526,6 +515,77 @@ async def test_sync_removed_torrent_emits_store_changed_and_download_result():
     assert updated.torrent_state == "removed"
     assert any(e.type == EventType.STORE_CHANGED for e in bus.events)
     assert any(e.type == EventType.DOWNLOAD_RESULT for e in bus.events)
+
+
+@pytest.mark.asyncio
+async def test_removal_survives_a_failed_store_list():
+    """qB 只报一轮的移除，不能因为该轮 store.list() 失败就永久丢失。
+
+    qB 的 /sync/maindata 是 rid 增量协议：torrents_removed 只在发生的那一轮出现，
+    之后不再重发。所以本轮拿到的移除必须一直保留到真正被处理过为止。
+    """
+    qbit = FakeQbitClient()
+    store = FlakyStore()
+    bus = MessageBus()
+
+    store.add(
+        MagnetItem(
+            hash="GONE",
+            name="Gone",
+            magnet="magnet:?xt=urn:btih:GONE",
+            status=TaskStatus.downloading,
+        )
+    )
+    qbit._removed = {"gone"}  # 只在第一轮出现
+
+    loop = QBitSyncLoop(qbit_client=qbit, store=AsyncItemStore(store), bus=bus, poll_interval=0.05)
+    await loop.start()
+    await asyncio.sleep(0.3)
+    await loop.stop()
+
+    assert store.list_calls >= 2, "需要至少一轮失败的 list() 和一轮成功的 list()"
+
+    updated = store.get("GONE")
+    assert updated.status == TaskStatus.error
+    assert updated.torrent_state == "removed"
+
+
+@pytest.mark.asyncio
+async def test_removed_torrent_is_reported_once_across_cycles():
+    """判过 removed 的条目不得在后续轮次重复发事件 —— 逐条消费的回归网。"""
+    qbit = FakeQbitClient()
+    store = FakeStore()
+    bus = RecordingBus()
+    transitions = DownloadTransitions(store=AsyncItemStore(store), bus=bus)
+
+    store.add(
+        MagnetItem(
+            hash="GONE",
+            name="Gone",
+            magnet="magnet:?xt=urn:btih:GONE",
+            status=TaskStatus.downloading,
+        )
+    )
+    qbit._removed = {"gone"}
+
+    loop = QBitSyncLoop(
+        qbit_client=qbit,
+        store=AsyncItemStore(store),
+        bus=bus,
+        poll_interval=0.05,
+        downloads=transitions,
+    )
+    await loop.start()
+    await asyncio.sleep(0.3)
+    await loop.stop()
+
+    # 只有真的跑过多轮同步，「只报一次」才检验到了东西；慢机器上少跑几轮
+    # 会让下面两条断言退化成假绿（不消费也不会有第二次事件可发）。
+    assert qbit.poll_calls >= 3, f"同步轮次太少（{qbit.poll_calls}），断言不成立"
+
+    assert store.get("GONE").status == TaskStatus.error
+    assert sum(e.type == EventType.STORE_CHANGED for e in bus.events) == 1
+    assert sum(e.type == EventType.DOWNLOAD_RESULT for e in bus.events) == 1
 
 
 @pytest.mark.asyncio

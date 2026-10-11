@@ -80,33 +80,26 @@ async def test_poll_tracks_removed_torrents_and_drops_them_from_snapshot():
     assert "gone" not in snapshot
     assert "stay" in snapshot
     assert removed == {"gone"}
-    assert state.take_recently_removed() == {"gone"}
 
 
 @pytest.mark.asyncio
-async def test_poll_preserves_recently_removed_when_no_new_removals():
-    """Accumulated removals must not be lost when a poll returns zero new removals."""
+async def test_poll_does_not_advance_rid_when_the_delta_is_malformed():
+    """解析抛错时 rid 必须停在原地。
+
+    rid 一旦推进，qB 就认为这份 delta 已送达，下一轮不会再重发同一份响应里的
+    ``torrents_removed`` —— 那条移除就永久丢了。所以 rid 只能在整个 delta 被
+    完整吃下之后才推进。
+    """
     state = QBitSyncState()
-    state._recently_removed = {"old"}
+    state._maindata_rid = 7
 
     async def fetch(_rid: int) -> dict:
-        return {"rid": 3, "torrents": {"new": {"state": "metaDL", "progress": 0.0}}}
+        return {"rid": 9, "torrents_removed": 42}  # 非可迭代 → 解析抛错
 
-    await state.poll(fetch)
+    with pytest.raises(TypeError, match="not iterable"):
+        await state.poll(fetch)
 
-    # Old removals are preserved — only take_recently_removed() clears them.
-    assert state.take_recently_removed() == {"old"}
-
-
-def test_take_recently_removed_returns_and_clears():
-    state = QBitSyncState()
-    state._recently_removed = {"a", "b"}
-
-    first = state.take_recently_removed()
-    second = state.take_recently_removed()
-
-    assert first == {"a", "b"}
-    assert second == set()
+    assert state._maindata_rid == 7
 
 
 @pytest.mark.asyncio
@@ -131,6 +124,6 @@ if __name__ == "__main__":
     asyncio.run(test_poll_lowercases_hashes())
     asyncio.run(test_poll_returns_cached_snapshot_when_fetch_fails())
     asyncio.run(test_poll_tracks_removed_torrents_and_drops_them_from_snapshot())
-    test_take_recently_removed_returns_and_clears()
+    asyncio.run(test_poll_does_not_advance_rid_when_the_delta_is_malformed())
     asyncio.run(test_poll_passes_current_rid_to_fetch())
     print("=== qB sync state tests passed! ===")

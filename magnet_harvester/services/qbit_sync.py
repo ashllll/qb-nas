@@ -30,9 +30,7 @@ _SYNC_ACTIVE_STATUSES = [
 
 
 class QBitSyncClient(Protocol):
-    async def poll_torrent_snapshot(self) -> dict: ...
     async def poll_torrent_snapshot_with_removed(self) -> tuple[dict, set[str]]: ...
-    def take_recently_removed(self) -> set[str]: ...
 
 
 @dataclass
@@ -85,6 +83,10 @@ class QBitSyncLoop:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._downloads = downloads or DownloadTransitions(store=store, bus=bus)
+        # qB 的 torrents_removed 是 rid 增量：只在发生的那一轮出现，之后不再重发。
+        # 这里保留到某个 hash 真正被 reconcile 过为止，否则一次 store 读取失败或
+        # 一轮批次超时就会让条目永久停在 downloading。
+        self._pending_removed: set[str] = set()
 
     async def start(self):
         async with self._lock:
@@ -145,6 +147,7 @@ class QBitSyncLoop:
                 )
                 continue
             self._backoff.record_success()
+            self._pending_removed |= removed_hashes
 
             try:
                 tracked_items = await store.list(
@@ -176,13 +179,17 @@ class QBitSyncLoop:
                         },
                     )
                 )
+            # qB 会报出大量我们没在追踪的种子（用户在 qB 侧自己删的、别的工具加的），
+            # 没人认领的移除必须丢掉，否则保留集随运行时长无界增长。
+            self._pending_removed &= {item.hash.lower() for item in tracked_items}
+
             if not tracked_items:
                 continue
 
             progress = _ReconcileProgress()
             try:
                 await asyncio.wait_for(
-                    self._reconcile_batch(tracked_items, snapshot, removed_hashes, progress),
+                    self._reconcile_batch(tracked_items, snapshot, progress),
                     timeout=60.0,
                 )
             except asyncio.TimeoutError:
@@ -197,17 +204,20 @@ class QBitSyncLoop:
         self,
         tracked_items: list,
         snapshot: dict,
-        removed_hashes: set[str],
         progress: _ReconcileProgress | None = None,
     ):
-        """逐条 reconcile tracked items，每次 reconcile 前后检查 stop 信号。"""
+        """逐条 reconcile tracked items，每次 reconcile 前后检查 stop 信号。
+
+        待处理的移除直接读 ``self._pending_removed``，且**只在 reconcile 成功之后**
+        才消费掉：批次超时或中途 break 时没被看过的条目，下一轮仍会被判 removed。
+        """
         for item in tracked_items:
             if self._stop_event.is_set():
                 break
 
             hash_key = item.hash
             torrent = snapshot.get(hash_key.lower())
-            is_removed = hash_key.lower() in removed_hashes
+            is_removed = hash_key.lower() in self._pending_removed
 
             try:
                 await self._downloads.reconcile_snapshot(
@@ -222,6 +232,11 @@ class QBitSyncLoop:
                     hash_key,
                     e,
                 )
+            else:
+                if is_removed:
+                    # 不消费就会每轮重发 removed 事件：store.update 每次都写新的
+                    # updated_at，transitions.removed() 没有幂等守卫。
+                    self._pending_removed.discard(hash_key.lower())
 
             if progress is not None:
                 progress.processed += 1

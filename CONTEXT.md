@@ -54,6 +54,10 @@ The optional helper module that maps configured filename keywords to Local class
 
 The background process that polls qBittorrent state and reconciles tracked Magnet items with the current torrent snapshot.
 
+### Pending removal
+
+A torrent hash that qBittorrent reported in a `torrents_removed` delta but that `QBitSyncLoop` has not yet reconciled against a tracked Magnet item. The delta is one-shot — qB never repeats it and the hash is already gone from the accumulated snapshot — so the loop retains it until the item is reconciled, and drops it once consumed or once no tracked item can claim it.
+
 ### TorrentStatusMapper
 
 The qB lifecycle module that maps qBittorrent torrent state snapshots to Magnet item task status fields.

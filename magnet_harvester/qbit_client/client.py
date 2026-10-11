@@ -128,17 +128,12 @@ class QBittorrentClient:
             log.error(f"get_maindata 未知异常: {e}", exc_info=True)
             raise
 
-    async def poll_torrent_snapshot(self) -> Dict[str, dict]:
-        """增量同步 qB torrent 状态，并缓存当前快照。"""
-        snapshot, _removed = await self._sync_state.poll(self.get_maindata)
-        return snapshot
-
     async def poll_torrent_snapshot_with_removed(self) -> tuple[Dict[str, dict], set[str]]:
-        """增量同步 qB torrent 状态，原子返回快照和本轮移除的哈希。"""
-        return await self._sync_state.poll(self.get_maindata)
+        """增量同步 qB torrent 状态，原子返回快照和本轮移除的哈希。
 
-    def take_recently_removed(self) -> set[str]:
-        return self._sync_state.take_recently_removed()
+        第二个元素是本轮增量，不是「至今累计」——保留到处理完为止是调用方的责任。
+        """
+        return await self._sync_state.poll(self.get_maindata)
 
     @staticmethod
     def map_torrent_status(torrent: dict) -> dict:
