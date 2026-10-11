@@ -72,7 +72,11 @@ def test_guard_scope_classification():
     assert needs_interface_guard({"type": "http", "method": "delete"}) is True
     assert needs_interface_guard({"type": "http", "method": "PATCH"}) is True
     assert needs_interface_guard({"type": "http", "method": "GET"}) is False
-    assert needs_interface_guard({"type": "websocket"}) is True
+
+    # WebSocket 不走本守卫：app.middleware("http") 装的是 BaseHTTPMiddleware，
+    # 它对非 http scope 直接透传（见 needs_interface_guard 的 docstring）。
+    # WS 的来源判定在 api/websocket.py 的握手处理里单独完成。
+    assert needs_interface_guard({"type": "websocket"}) is False
 
     assert request_arrived_on_non_loopback_interface({"server": (LAN_IP, 8899)}) is True
     assert request_arrived_on_non_loopback_interface({"server": ("127.0.0.1", 8899)}) is False

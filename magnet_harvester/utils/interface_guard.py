@@ -63,7 +63,12 @@ def request_arrived_on_non_loopback_interface(scope: Mapping[str, Any]) -> bool:
 
 
 def needs_interface_guard(scope: Mapping[str, Any]) -> bool:
-    """该请求是否属于需要守卫的范畴：写方法或 WebSocket 升级。"""
-    if scope.get("type") == "websocket":
-        return True
+    """该请求是否属于需要守卫的范畴：写方法。
+
+    只适用于 HTTP。WebSocket 不走本守卫：`app.middleware("http")` 安装的是
+    Starlette 的 BaseHTTPMiddleware，其 `__call__` 对非 ``http`` scope 直接透传，
+    因此原来的 ``scope["type"] == "websocket"`` 分支不可达（且该中间件只会返回
+    HTTP 响应，对 websocket scope 也无法表达"拒绝"）。WS 侧的来源判定在
+    ``api/websocket.py`` 的握手处理里用 ``is_non_loopback_interface`` 单独完成。
+    """
     return str(scope.get("method", "")).upper() in WRITE_METHODS
