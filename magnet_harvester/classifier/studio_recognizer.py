@@ -56,8 +56,16 @@ _STUDIO_WITH_DATE = re.compile(
     r"(?:^\[[^\]]+\]\s*)?"  ## 可选: [Tag] 前缀
     r"([A-Za-z0-9]+(?:[\s.\-][A-Za-z0-9]+)*?)"  ## 工作室名 (含连字符/点)
     r"[\s.]"  ## 分隔符
-    r"\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"  ## 日期 YY MM DD（\b 防止匹配 2022.2160p 中的 20.22.21）
+    r"(?<!\d)\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"  ## 日期 YY MM DD（\b 防 2022.2160p 中 20.22.21；(?<!\d) 防四位年份内嵌匹配）
     r"(?:[\s.]|$)",  ## 日期后边界
+    re.IGNORECASE,
+)
+
+# 未知厂牌时，若日期段后紧跟发布/编码标记（如 2160p、REPACK），
+# 说明是「片名 + 两位发行日期」（Avatar.24.05.20.2160p），而非「厂牌 + 日期」。
+_RELEASE_MARKER_RE = re.compile(
+    r"^(?:2160p|4k|1080p|720p|480p|repack|proper|remux|blu-?ray|bdrip|"
+    r"web-?dl|webrip|hdrip|dvdrip|hdr|x26[45]|h26[45]|hevc|avc|aac|flac|mp4|mkv)\b",
     re.IGNORECASE,
 )
 
@@ -81,6 +89,9 @@ def extract_studio(name: str) -> Optional[str]:
             return normalized
         # 未知厂牌：排除纯数字/过短前缀的误匹配
         if len(raw) >= 3 and not raw.isdigit():
+            # 日期后紧跟发布/编码标记 → 普通片名 + 两位发行日期，而非厂牌 + 日期
+            if _RELEASE_MARKER_RE.match(cleaned[m.end() :]):
+                return None
             return normalize_studio(raw)
 
     return None
