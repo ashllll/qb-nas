@@ -75,6 +75,14 @@
       this.seenAt.clear();
     }
 
+    /* 单条删除（服务端 item_removed）：条目与勾选一起消失。 */
+    remove(hash) {
+      if (!hash) return false;
+      this.selected.delete(hash);
+      this.seenAt.delete(hash);
+      return this.items.delete(hash);
+    }
+
     /* 用服务端全量快照对账：
        - 服务端已经没有、且本地在本次请求开始后也没收到新事件的条目 → 删除（删掉的条目要消失）
        - 请求期间通过 WS 收到的新版本 → 保留，不被旧快照覆盖

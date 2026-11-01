@@ -100,6 +100,20 @@ class DiscoveryTransitions(_TransitionBase):
             log.warning("cleared() 后 store 仍有 %d 个条目（并发写入）", remaining)
         return count
 
+    async def removed(self, hash_key: str) -> bool:
+        """删除单条资源记录并通知界面立即移除。
+
+        只删资源库里的这一行，**不动 qBittorrent 里的种子**：用户真实下载队列
+        不归资源库管（约定：测试条目用完删掉，但不许动 qB 队列）。
+        """
+        if not await self._store.remove(hash_key):
+            return False
+        try:
+            await self._bus.emit(Event(EventType.ITEM_REMOVED, {"hash": hash_key}))
+        except Exception:
+            log.warning("ITEM_REMOVED emit 失败，item 已删除 hash=%s", hash_key, exc_info=True)
+        return True
+
 
 class ClassificationTransitions(_TransitionBase):
     """分类域：分类生命周期相关的状态转换。"""

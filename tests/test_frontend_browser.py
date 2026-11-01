@@ -83,6 +83,33 @@ async def test_frontend_loads_css_and_javascript_as_local_modules(static_server_
             }
             """
         ) == {"visible": ["NEW"], "selected": []}
+        # 单条删除（item_removed）：条目与勾选一起消失，别的条目不动
+        assert await page.evaluate(
+            """
+            () => {
+              const state = new MagnetItemState();
+              state.reset([
+                {hash: 'DELME', name: 'Delete me'},
+                {hash: 'KEEP', name: 'Keep me'}
+              ]);
+              state.selected.add('DELME');
+              const removed = state.remove('DELME');
+              return {
+                removed,
+                hasRemoved: state.items.has('DELME'),
+                selected: [...state.selected],
+                left: state.visible().map(item => item.hash),
+                removeMissing: state.remove('NOPE')
+              };
+            }
+            """
+        ) == {
+            "removed": True,
+            "hasRemoved": False,
+            "selected": [],
+            "left": ["KEEP"],
+            "removeMissing": False,
+        }
         assert await page.evaluate("() => typeof window.handleMsg") == "function"
         categories = await page.locator("[data-cat]").evaluate_all(
             "elements => elements.map((element) => element.dataset.cat)"

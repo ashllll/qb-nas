@@ -306,6 +306,12 @@ function handleMsg(msg) {
         renderTable();
       }
       break;
+    case "item_removed":
+      if (msg.hash && itemState.remove(msg.hash)) {
+        renderTable();
+        addLog("资源记录已删除（qB 队列未动）", "info");
+      }
+      break;
     case "classify_start":
       addLog(`正在分类 ${msg.count || 0} 个资源`, "info");
       break;

@@ -22,6 +22,7 @@ from magnet_harvester.context.app_context import (
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity
 from magnet_harvester.models import CrawlRequest, DownloadRequest, QBitConfigUpdate, TaskStatus
 from magnet_harvester.utils.auth import require_api_key
+from magnet_harvester.utils.infohash import normalize_infohash
 
 log = logging.getLogger(__name__)
 
@@ -386,6 +387,51 @@ async def clear_items(
                 "hint": "资源库没有被清空。稍后重试；持续失败请查 NAS 日志。",
             },
         ) from exc
+
+
+@router.delete("/api/items/{hash_key}")
+async def delete_item(
+    hash_key: str,
+    ctx: AppContext = Depends(get_context),
+    _=Depends(require_api_key),
+):
+    """删除单条资源记录（只删资源库这一行，不动 qBittorrent 里的种子）。
+
+    用途：验收/清理测试条目，以及用户删掉一条不想留的记录。整库清空仍走
+    ``DELETE /api/items?scope=all``（必须显式声明）。qB 队列请在 qBittorrent 里操作。
+    """
+    normalized = normalize_infohash(hash_key)
+    if not normalized:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "detail": "hash 不是可识别的 infohash（40 位 hex 或 32 位 base32）",
+                "code": "invalid_infohash",
+                "hint": "从资源库复制 40 位 infohash 再试；清空整库请用 DELETE /api/items?scope=all。",
+            },
+        )
+    try:
+        removed = await _actions(ctx).remove_item(normalized)
+    except Exception as exc:
+        log.exception("删除单条资源失败 hash=%s", normalized)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "detail": f"删除资源失败：{exc}",
+                "code": "delete_item_failed",
+                "hint": "这条记录没有被删除。稍后重试；持续失败请查 NAS 日志。",
+            },
+        ) from exc
+    if not removed:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "detail": "资源库里没有这个 infohash",
+                "code": "item_not_found",
+                "hint": "刷新列表确认它是否已被删除；删除 qB 里的种子请到 qBittorrent 操作。",
+            },
+        )
+    return {"status": "removed", "hash": normalized}
 
 
 @router.get("/api/categories")
