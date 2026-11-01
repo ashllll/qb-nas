@@ -250,3 +250,12 @@ if __name__ == "__main__":
     test_extract_from_crawler_markdown()
     test_no_false_positives()
     print("=== 所有磁力提取测试通过! ===")
+
+
+def test_ambiguous_32_char_hex_btih_is_not_accepted():
+    """32 位全 hex 的 btih 不能解成一个不存在的 hash（parse_magnet 返回 None）。"""
+    from magnet_harvester.magnet_parser import parse_magnet
+
+    text = "magnet:?xt=urn:btih:abcdef234567abcdef234567abcdef23&dn=Fake"
+    assert parse_magnet(text) is None
+    assert extract_from_text(text) == []

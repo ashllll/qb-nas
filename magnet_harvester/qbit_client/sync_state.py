@@ -13,6 +13,10 @@ from typing import Dict, Tuple
 
 FetchMaindata = Callable[[int], Awaitable[dict]]
 
+# 兼容接口 take_recently_removed() 的缓存上限：主路径用 poll() 的返回值，
+# 这里只留最近有限条，避免常驻服务里长期累积（每天删种子也不会无限长）。
+_MAX_RECENTLY_REMOVED = 4096
+
 
 class QBitSyncState:
     """Holds incremental sync state for the qBittorrent `/sync/maindata` endpoint."""
@@ -44,6 +48,12 @@ class QBitSyncState:
         removed = {str(h).lower() for h in (data.get("torrents_removed") or [])}
         if removed:
             self._recently_removed |= removed
+            if len(self._recently_removed) > _MAX_RECENTLY_REMOVED:
+                # 集合无序，截断保留其中一部分即可：这个集合只服务兼容接口，
+                # 本轮判定用的是返回的 removed 集合。
+                self._recently_removed = set(
+                    list(self._recently_removed)[:_MAX_RECENTLY_REMOVED]
+                )
             for hash_key in removed:
                 self._torrent_snapshot.pop(hash_key, None)
 

@@ -20,6 +20,9 @@ import urllib.parse
 _HEX40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _CANONICAL_RE = re.compile(r"^[0-9A-F]{40}$")
 _BASE32_RE = re.compile(r"^[A-Za-z2-7]{32}$")
+# 32 位且全是 hex 字符：既能被当成（不存在的）截断 hex，也能被 base32 解出 20 字节。
+# 这种 token 是歧义的，见 _normalize_token。
+_HEX_LIKE32_RE = re.compile(r"^[0-9a-fA-F]{32}$")
 _BTIH_RE = re.compile(r"btih:([0-9a-fA-F]{40}|[A-Za-z2-7]{32})", re.IGNORECASE)
 
 
@@ -61,6 +64,11 @@ def _normalize_token(token: str) -> str | None:
     if _HEX40_RE.match(token):
         return token.upper()
     if _BASE32_RE.match(token):
+        if _HEX_LIKE32_RE.match(token):
+            # 32 位全是 hex 字符：真正的 base32 infohash 里出现这种串的概率约 2^-32，
+            # 而站点把 40 位 hex 截断成 32 位却很常见。按 base32 解会得到一个
+            # 不存在的 infohash（去重、下载全错），所以这里宁可判为无法识别。
+            return None
         return _base32_to_hex(token)
     return None
 

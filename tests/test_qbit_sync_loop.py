@@ -526,3 +526,48 @@ async def test_concurrent_start_creates_only_one_task():
     assert loop._task is first_task, "重复 start() 不应替换已有 task"
 
     await loop.stop()
+
+
+class FlakyListStore(FakeStore):
+    """第一次 list 抛 SQLite 错误（locked/IO），之后正常。"""
+
+    def __init__(self):
+        super().__init__()
+        self.list_calls = 0
+
+    def list(self, *args, **kwargs):
+        self.list_calls += 1
+        if self.list_calls == 1:
+            import sqlite3
+
+            raise sqlite3.OperationalError("database is locked")
+        return super().list(*args, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_sync_loop_survives_store_error_and_keeps_polling():
+    """一轮取库失败不能让同步循环永久停摆（循环死了不会自己重启）。"""
+    store = FlakyListStore()
+    hash_key = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+    store.add(MagnetItem(hash=hash_key, name="x", magnet=f"magnet:?xt=urn:btih:{hash_key}",
+                         status=TaskStatus.downloading))
+
+    qbit = FakeQbitClient()
+    qbit._snapshot = {hash_key.lower(): {"state": "uploading", "progress": 1.0}}
+    loop = QBitSyncLoop(
+        qbit_client=qbit,
+        store=AsyncItemStore(store),
+        bus=MessageBus(),
+        poll_interval=0.01,
+    )
+
+    await loop.start()
+    try:
+        for _ in range(100):
+            if store.get(hash_key).status == TaskStatus.success:
+                break
+            await asyncio.sleep(0.01)
+        assert loop._task is not None and not loop._task.done(), "同步循环不能因为一轮异常就退出"
+        assert store.get(hash_key).status == TaskStatus.success, "下一轮应继续对账"
+    finally:
+        await loop.stop()

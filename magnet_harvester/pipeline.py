@@ -411,6 +411,8 @@ class HarvestPipeline:
                 TaskStatus.adding,
                 TaskStatus.queued,
                 TaskStatus.downloading,
+                # 已暂停 = 种子已经在 qB 里，重新分类不能把它从下载状态里踢回 pending
+                TaskStatus.paused,
                 TaskStatus.success,
                 TaskStatus.classifying,
             }

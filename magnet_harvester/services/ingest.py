@@ -20,7 +20,6 @@ import hashlib
 import logging
 import time
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from magnet_harvester.bus import Event, EventType, MessageBus
@@ -33,6 +32,7 @@ from magnet_harvester.models import IngestKind, IngestRequest, MagnetItem, TaskS
 from magnet_harvester.store import ItemStore
 from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 from magnet_harvester.utils.infohash import normalize_infohash
+from magnet_harvester.utils.timeutil import iso_utc, utc_now
 from magnet_harvester.utils.url_validator import URLValidationError, validate_crawl_url
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -84,16 +84,63 @@ class IngestService:
         self._max_attempts = max(1, int(max_attempts))
         self._semaphore = asyncio.Semaphore(max(1, int(job_concurrency)))
         self._running: dict[str, asyncio.Task] = {}
+        # 同一 event_id 的处理串行化：Mac 重发/并发重试时，第二次必须看到第一次记下的结果，
+        # 而不是两条并行处理各自「看到还没处理过」。有上限，长期运行不会积累。
+        self._event_locks: dict[str, asyncio.Lock] = {}
+        self._event_locks_guard = asyncio.Lock()
+        self._MAX_EVENT_LOCKS = 1024
 
     # ── 上报入口 ──────────────────────────
 
     async def handle_event(self, req: IngestRequest, *, source: str = "mac") -> dict:
-        """处理一条上报事件；返回 ``{ok,status,item_id,job_id,reason}``。"""
+        """处理一条上报事件；返回 ``{ok,status,item_id,job_id,reason}``。
+
+        幂等键是 ``event_id``：重发只处理一次并原样返回第一次的结果；同一 event_id
+        带着不同内容再来，按客户端事件号重复拒掉，绝不覆盖第一次的记录。
+        """
         event_id = req.event_id or uuid.uuid4().hex
         value_hash = hashlib.sha256(req.value.encode("utf-8", "replace")).hexdigest()[:16]
 
+        lock = await self._event_lock(event_id)
+        async with lock:
+            return await self._handle_event_once(req, event_id=event_id, value_hash=value_hash, source=source)
+
+    async def _event_lock(self, event_id: str) -> asyncio.Lock:
+        """按 event_id 取一把串行锁（有上限，满了先清掉没人持有的）。"""
+        async with self._event_locks_guard:
+            lock = self._event_locks.get(event_id)
+            if lock is None:
+                if len(self._event_locks) >= self._MAX_EVENT_LOCKS:
+                    for key, candidate in list(self._event_locks.items()):
+                        if not candidate.locked():
+                            del self._event_locks[key]
+                            break
+                lock = asyncio.Lock()
+                self._event_locks[event_id] = lock
+            return lock
+
+    async def _handle_event_once(
+        self,
+        req: IngestRequest,
+        *,
+        event_id: str,
+        value_hash: str,
+        source: str,
+    ) -> dict:
         previous = self._jobs.get_event(event_id)
         if previous is not None:
+            if previous.value_hash and previous.value_hash != value_hash:
+                log.warning(
+                    "event_id 重复但内容不同，拒绝处理：event_id=%s kind=%s",
+                    event_id,
+                    req.kind.value,
+                )
+                return {
+                    "ok": False,
+                    "status": "rejected",
+                    "reason": "同一 event_id 已用于另一条上报（客户端事件号重复），本次内容未处理",
+                    "event_id": event_id,
+                }
             response = previous.as_response()
             if previous.status == "accepted":
                 response["status"] = "duplicate"
@@ -303,6 +350,18 @@ class IngestService:
         return {"ok": True, "status": "accepted", "job_id": job_id, "reason": "已重新排队"}
 
     async def _run_job(self, job_id: str) -> None:
+        """跑一个抓取任务。
+
+        ``_running`` 的清理放在最外层 finally：中途任何一步（读库/写库/发事件）抛错，
+        都不能在 ``_running`` 里留下一个「看起来还在跑」的僵尸任务——否则这个 job_id
+        再也不会被重新启动，只能等重启。
+        """
+        try:
+            await self._run_job_inner(job_id)
+        finally:
+            self._running.pop(job_id, None)
+
+    async def _run_job_inner(self, job_id: str) -> None:
         job = self._jobs.get(job_id)
         if job is None:
             return
@@ -316,7 +375,7 @@ class IngestService:
                 self._jobs.update(
                     job_id,
                     status=JobStatus.running,
-                    started_at=datetime.now().isoformat(),
+                    started_at=iso_utc(utc_now()),
                     reason="",
                     message="正在找磁力…",
                     finished_at="",
@@ -428,12 +487,11 @@ class IngestService:
                     elapsed_ms=elapsed_ms,
                     browser_used=browser_used,
                     errors=errors,
-                    finished_at=datetime.now().isoformat(),
+                    finished_at=iso_utc(utc_now()),
                     **counters,
                 )
             if final is not None:
                 await self._emit_job(final)
-            self._running.pop(job_id, None)
 
     async def _handle_found(self, job: CrawlJob, raw: dict) -> str:
         """处理一条 found 事件：归一化、去重、入库、立即分类。返回 added/duplicate。"""

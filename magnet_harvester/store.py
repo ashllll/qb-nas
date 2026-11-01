@@ -16,13 +16,13 @@ import sqlite3
 import threading
 from contextlib import closing
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol
 
 from pydantic import ValidationError
 
 from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.utils.timeutil import iso_utc, parse_iso_utc, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def _validated_update(item: MagnetItem, fields: dict) -> MagnetItem | None:
         return None
     data = item.model_dump()
     data.update(fields)
-    data["updated_at"] = datetime.now()
+    data["updated_at"] = utc_now()
     try:
         return MagnetItem.model_validate(data)
     except ValidationError:
@@ -117,6 +117,12 @@ class ItemStore(Protocol):
     async def add(self, item: MagnetItem) -> bool: ...
     async def get(self, hash_key: str) -> Optional[MagnetItem]: ...
     async def update(self, hash_key: str, **fields) -> bool: ...
+    async def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool: ...
     async def remove(self, hash_key: str) -> bool: ...
     async def list(
         self,
@@ -171,6 +177,20 @@ class AsyncItemStore:
 
     async def update(self, hash_key: str, **fields) -> bool:
         return await self._invoke(self._backend.update, hash_key, **fields)
+
+    async def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool:
+        """仅当当前状态匹配时更新；比较与写入在同一把锁/同一条 SQL 里完成。"""
+        return await self._invoke(
+            self._backend.update_if_status,
+            hash_key,
+            expected_statuses,
+            **fields,
+        )
 
     async def remove(self, hash_key: str) -> bool:
         return await self._invoke(self._backend.remove, hash_key)
@@ -561,8 +581,8 @@ class SQLiteItemStore:
             "progress": item.progress,
             "torrent_state": item.torrent_state or "",
             "error_msg": item.error_msg or "",
-            "created_at": item.created_at.isoformat(),
-            "updated_at": item.updated_at.isoformat(),
+            "created_at": iso_utc(item.created_at),
+            "updated_at": iso_utc(item.updated_at),
         }
 
     @staticmethod
@@ -582,10 +602,14 @@ class SQLiteItemStore:
             ):
                 if field_name in d and d[field_name] == "":
                     d[field_name] = None
-            if "created_at" in d and isinstance(d["created_at"], str):
-                d["created_at"] = datetime.fromisoformat(d["created_at"])
-            if "updated_at" in d and isinstance(d["updated_at"], str):
-                d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+            # 时间列：老行是 naive（当年容器 TZ=UTC，按 UTC 解释），新行带 +00:00。
+            # 解析不了的脏值不丢整行——丢掉等于用户看不见、同步也修不回来。
+            for field_name in ("created_at", "updated_at"):
+                parsed = parse_iso_utc(d.get(field_name))
+                if parsed is not None:
+                    d[field_name] = parsed
+                else:
+                    d.pop(field_name, None)
             return MagnetItem(**d)
         except (ValidationError, ValueError, TypeError) as e:
             hash_val = d.get("hash", "unknown")
@@ -649,8 +673,11 @@ class SQLiteItemStore:
                 db.commit()
                 return cursor.rowcount > 0
             except sqlite3.OperationalError:
-                log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
-                return False
+                # 写不进去（库被锁/磁盘/IO）不等于「这条已经存在」：返回 False 会被上报入口
+                # 当成 duplicate，条目静默消失、用户还收到「已入库」。这里抛出去，让调用方
+                # 走失败路径（HTTP 5xx → Mac 代理会重发），下一轮重试还能补上。
+                log.error("sqlite: add(%s) 写入失败，未入库", item.hash[:16], exc_info=True)
+                raise
             except (TypeError, ValueError) as e:
                 log.error("sqlite: add(%s) 数据序列化错误: %s", item.hash[:16], e, exc_info=True)
                 raise

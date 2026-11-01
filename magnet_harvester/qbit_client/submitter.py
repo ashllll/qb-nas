@@ -16,6 +16,7 @@ from typing import Protocol
 import httpx
 
 from magnet_harvester.magnet_parser import HASH_RE
+from magnet_harvester.utils.infohash import normalize_infohash
 from magnet_harvester.qbit_client.paths import _safe_fs_segment
 
 log = logging.getLogger(__name__)
@@ -123,7 +124,10 @@ class MagnetSubmitter:
             self._recorder.error("磁力链接格式无效（缺少 btih）")
             self._recorder.failed()
             return False
-        btih_full = btih_match.group(1).upper()
+        # 磁力里的 btih 可能是 base32 写法；qB 的种子列表一律是 40 位 hex，
+        # 前缀比对必须用归一化后的 hex，否则「已存在」会被判成失败、条目误标 error。
+        btih_raw = btih_match.group(1)
+        btih_full = normalize_infohash(btih_raw) or btih_raw.upper()
         btih_prefix = btih_full[:8]
 
         category_save_path = save_path

@@ -105,28 +105,35 @@ class ClassificationTransitions(_TransitionBase):
     """分类域：分类生命周期相关的状态转换。"""
 
     async def started(self, hash_key: str):
-        item = await self._store.get(hash_key)
-        if item is not None and item.status == TaskStatus.classifying:
-            return  # 已在分类中，拒绝重复调用
-        if not await self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None):
+        """进入分类中。
+
+        只允许从 pending/error 进入：分类与「用户点下载」「qB 状态同步」是并发的，
+        读一次再无条件写回会把别人刚写好的 adding/downloading/paused 覆盖掉。
+        """
+        changed = await self._store.update_if_status(
+            hash_key,
+            {TaskStatus.pending, TaskStatus.error},
+            status=TaskStatus.classifying,
+            error_msg=None,
+        )
+        if not changed:
             return
         await self._emit_item_changed(hash_key)
 
     async def classified(self, hash_key: str, result: dict):
-        item = await self._store.get(hash_key)
-        if item is None or item.status != TaskStatus.classifying:
-            return
         category = result.get("category", "其他")
-        if not await self._store.update(
+        changed = await self._store.update_if_status(
             hash_key,
+            {TaskStatus.classifying},
             category=category,
             save_path=result.get("save_path", ""),
             status=TaskStatus.pending,
             progress=0.0,
             torrent_state=None,
             error_msg=None,
-        ):
-            log.warning("classified update 失败 %s (条目可能已被并发删除)", hash_key)
+        )
+        if not changed:
+            log.warning("classified 跳过 %s（不在 classifying，可能已被并发删除或转入下载）", hash_key)
             return
         # 重新读取以拿到 update 后的 updated_at（作为事件版本号）
         item = await self._store.get(hash_key)
@@ -149,10 +156,13 @@ class ClassificationTransitions(_TransitionBase):
 
     async def failed(self, hash_key: str, error_msg: str):
         """分类失败时回退状态到 pending，以便后续重试。"""
-        item = await self._store.get(hash_key)
-        if item is None or item.status != TaskStatus.classifying:
-            return
-        if not await self._store.update(hash_key, status=TaskStatus.pending, error_msg=error_msg):
+        changed = await self._store.update_if_status(
+            hash_key,
+            {TaskStatus.classifying},
+            status=TaskStatus.pending,
+            error_msg=error_msg,
+        )
+        if not changed:
             return
         await self._emit_item_changed(hash_key)
 
