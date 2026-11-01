@@ -17,6 +17,7 @@ import logging
 import sqlite3
 import threading
 from contextlib import closing
+from datetime import timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -210,6 +211,8 @@ class JobStore:
     # 常驻服务会一直往里写：留存上限够回溯，又不让库无限长。
     MAX_EVENTS = 5000
     MAX_JOBS = 500
+    # 排队超过这么多天还没跑的，按死任务清掉（否则豁免清理会变成无限增长）。
+    QUEUED_RETENTION_DAYS = 7
     _PRUNE_EVERY = 200
 
     def __init__(self, db_path: str | Path = "data/magnet_items.db"):
@@ -477,10 +480,19 @@ class JobStore:
                 "(SELECT event_id FROM ingest_events ORDER BY created_at DESC LIMIT ?)",
                 (self.MAX_EVENTS,),
             )
+            # 排队/进行中的任务不参与「最新 N 条」清理：删掉它等于让 /api/v1/jobs
+            # 里没有这条、find_active_by_url 认不回来（同一网址会重复建任务），跑完时
+            # update() 也找不到行，结束状态直接丢。
             db.execute(
-                "DELETE FROM crawl_jobs WHERE job_id NOT IN "
+                "DELETE FROM crawl_jobs WHERE status NOT IN (?, ?) AND job_id NOT IN "
                 "(SELECT job_id FROM crawl_jobs ORDER BY created_at DESC LIMIT ?)",
-                (self.MAX_JOBS,),
+                (JobStatus.queued, JobStatus.running, self.MAX_JOBS),
+            )
+            # 但卡死的排队任务也不能无限攒着（没人跑就一直排队）：超过保留期的照删。
+            cutoff = iso_utc(utc_now() - timedelta(days=self.QUEUED_RETENTION_DAYS))
+            db.execute(
+                "DELETE FROM crawl_jobs WHERE status = ? AND created_at < ?",
+                (JobStatus.queued, cutoff),
             )
             db.commit()
 

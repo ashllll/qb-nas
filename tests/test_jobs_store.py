@@ -144,10 +144,16 @@ def test_counts_by_status(tmp_path):
 
 
 def test_prune_keeps_recent_rows_only(tmp_path):
+    """历史任务按上限清理。
+
+    排队/进行中的任务现在豁免「最新 N 条」清理（否则跑到一半的任务会被删掉、
+    同一网址还会重复建任务，见 test_job_prune_keeps_active.py），所以这里用
+    已结束的任务来验上限本身。
+    """
     store = JobStore(tmp_path / "jobs.db")
     store.MAX_JOBS = 2
     for index in range(4):
-        store.create(_job(f"job-{index}"))
+        store.create(_job(f"job-{index}", status=JobStatus.done))
 
     store.prune()
 
