@@ -77,7 +77,10 @@ docker logs --tail 50 qb-nas-center
 - **IP 是 DHCP**：`192.168.20.193` 由路由器分配（`dynamic`）。Mac 代理填的是这个地址，换 IP 就要改；建议在路由器上给它固定租约。
 - **镜像拉取**：NAS 的 `/etc/docker/daemon.json` 已配镜像加速（`docker.fnnas.com` 等）；构建时 PyPI 自动走阿里云镜像，也可 `--pypi-index` 指定。
 - **浏览器兜底**：默认只装 HTTP 依赖（`CRAWLER_HTTP_FIRST=true`）；确实需要跑 JS 时加 `--with-browser` 重建镜像（装 Chromium，镜像大 ~400MB）。
-- **qBittorrent**：当前 NAS 上没跑、凭据也找不到。缺它只影响 Web UI 的「下载」按钮，入库不受影响；拿到地址/账号后填 `/vol3/1000/qb-nas/.env` 的 `QBIT_*` 再 `docker compose up -d --force-recreate`，或直接在 Web UI 里填。
+- **qBittorrent（已装好）**：NAS 上是 Docker 容器，WebUI `http://192.168.20.193:8085`，版本 5.2.4.10（WebAPI 2.15.1）。凭据只写在 `/vol3/1000/qb-nas/.env` 的 `QBIT_*`（600）。v5 与 v4 的差异已在代码里兼容：登录 204 + `QBT_SID_<端口>` cookie；`torrents/add` 返回 JSON；「加入即停」用 `stopped=true`（v4 用 `paused=true`）。入库阶段完全不碰 qB，只有页面点「下载」才提交，且以 stoppedDL 加入，要手动恢复才开始下载。
+- **fake-IP 必须放行**：这台局域网（Mac 与 NAS 都一样）DNS 把公开域名解析到 `198.18.x.x`（mihomo/Clash fake-IP）。`.env` 里 `CRAWLER_ALLOW_FAKE_IP=1` 不能删，否则所有网址都会被 SSRF 校验判成「不安全」。`install.sh` 会自动探测并写入。
+- **docker logs 里的 Key 已脱敏**：WebSocket 握手把 Key 放查询参数，uvicorn 会写日志；`logger.py` 已加 `RedactingDefaultFormatter`，日志里只会看到 `api_key=***`。
+- **自检**：装完跑 `bash /vol3/1000/qb-nas/verify.sh --crash`（容器、health、API Key、挂载只在 /vol3、SQLite、监听、kill -9 自愈）。脚本已用假 docker/桩 HTTP 白测：14 PASS / 0 FAIL；错 Key 时会正确 FAIL、退出码 1。
 - **更新代码**：重跑 `install.sh`（幂等，保留 API Key 和数据），会重新构建镜像并替换容器。
 - **回滚**：`--git-ref <旧 ref>` 重跑即可；数据是同一份 SQLite，向前兼容。
 - **测试/正式隔离**：测试档用独立项目名、容器名、镜像名、端口、目录；收口用 `--test --purge --yes` 清干净。
