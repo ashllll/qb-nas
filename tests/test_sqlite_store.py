@@ -391,7 +391,7 @@ class TestSQLiteItemStore:
         assert s.by_category.get("电影", 0) == 1
 
 
-def test_add_raises_instead_of_silently_dropping_on_write_failure(tmp_path, monkeypatch):
+def test_add_raises_instead_of_silently_dropping_on_write_failure(tmp_path):
     """写库失败（locked/IO）不能返回 False：上报入口会把它当成「库里已有」，
     用户收到「已入库」但条目消失。必须抛出去走失败路径，让重试补上。"""
     import sqlite3
@@ -402,9 +402,26 @@ def test_add_raises_instead_of_silently_dropping_on_write_failure(tmp_path, monk
     store = SQLiteItemStore(tmp_path / "items.db")
     item = MagnetItem(hash="D" * 40, name="x", magnet=f"magnet:?xt=urn:btih:{'D' * 40}")
 
-    def boom(*args, **kwargs):
-        raise sqlite3.OperationalError("database is locked")
+    class LockedConnection:
+        """连接可用，但一执行就报 database is locked（真实竞争时的形态）。"""
 
-    monkeypatch.setattr("magnet_harvester.store.sqlite3.connect", boom)
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            self._conn.close()
+
+        def execute(self, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+        def commit(self):
+            return None
+
+    real_connect = sqlite3.connect
+    store._connect = lambda: LockedConnection(real_connect(str(tmp_path / "items.db")))
+
     with pytest.raises(sqlite3.OperationalError):
         store.add(item)
