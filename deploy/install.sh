@@ -201,6 +201,8 @@ fi
 # ── 2. 落地目录与代码 ────────────────────────────────────────────────────────
 step "2/8 落地代码与目录"
 mkdir -p "$APP" "$DATA" "$LOGS" "$RUN" "$PREFIX/backup" "$PREFIX/venv"
+# fnOS 上有些目录 stat 出来是 000（实际可写）；给容器 uid1000 一个明确的 700
+chmod 700 "$PREFIX" "$PREFIX/venv" "$PREFIX/data" "$PREFIX/logs" "$PREFIX/run" 2>/dev/null || true
 chmod 700 "$DATA" "$RUN"; chmod 750 "$LOGS"
 cp -p "$SELF_DIR/docker/Dockerfile" "$APP/Dockerfile"
 cp -p "$SELF_DIR/docker/dockerignore" "$APP/.dockerignore"
