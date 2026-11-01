@@ -6,7 +6,8 @@
 #   调试时可用 QB_NAS_SRC=/本机/代码目录 改用本机代码；默认取 NAS 仓库里的 ref。
 # ============================================================================
 set -uo pipefail
-cd "$(dirname "$0")" || exit 1
+DIR=$(cd "$(dirname "$0")" && pwd)
+cd "$DIR" || exit 1
 pause() { if [ -t 0 ]; then printf '\n按回车关闭窗口…'; read -r _; fi; }
 NAS_USER=${QB_NAS_USER:-llll}
 NAS_HOST=${QB_NAS_HOST:-192.168.20.193}
@@ -50,20 +51,37 @@ if [ -n "${QB_NAS_SRC:-}" ]; then
   "${SSH[@]}" "bash /tmp/qb-nas-src/deploy/install.sh --source /tmp/qb-nas-src --prefix '$PREFIX'" 2>&1
   rc=$?
 else
+  # 代码从 NAS 仓库取：优先 stage/resident，退到本次分支，再退到当前分支
+  BOOT=/vol3/1000/qb-nas-bootstrap/deploy
+  if [ -f "$DIR/deploy/install.sh" ]; then
+    printf '  用随包的安装脚本：%s/deploy\n' "$DIR"
+    "${SSH[@]}" "mkdir -p $(dirname "$BOOT")" || fail "NAS 上建临时目录失败"
+    rsync -a --delete "$DIR/deploy/" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/deploy/" || fail "传安装脚本失败"
+    REMOTE_SH="bash $BOOT/install.sh"
+  else
+    REMOTE_SH=''
+  fi
   "${SSH[@]}" "set -e
-    tmp=\$(mktemp -d /tmp/qb-nas-install.XXXXXX)
     ref='$REF'
     if ! git -C '$REPO' rev-parse --verify --quiet \"\$ref^{commit}\" >/dev/null; then
-      echo '  仓库里没有 $REF，退到当前分支'; git -C '$REPO' branch --format='%(refname:short)' | sed 's/^/    /'
-      ref=\$(git -C '$REPO' symbolic-ref --short -q HEAD || echo main)
+      for cand in evox/bug-c7d3fb9b main; do
+        if git -C '$REPO' rev-parse --verify --quiet \"\$cand^{commit}\" >/dev/null; then ref=\$cand; break; fi
+      done
+      echo '  $REF 还没有，改用 '\"\$ref\"
     fi
-    git -C '$REPO' archive \"\$ref\" deploy | tar -x -C \"\$tmp\"
-    bash \"\$tmp/deploy/install.sh\" --git-ref \"\$ref\" --git-repo '$REPO' --prefix '$PREFIX'
+    if [ -n '$REMOTE_SH' ]; then
+      $REMOTE_SH --git-ref \"\$ref\" --git-repo '$REPO' --prefix '$PREFIX'
+    else
+      tmp=\$(mktemp -d /vol3/1000/qb-nas-bootstrap.XXXXXX)
+      git -C '$REPO' archive \"\$ref\" deploy | tar -x -C \"\$tmp\"
+      bash \"\$tmp/deploy/install.sh\" --git-ref \"\$ref\" --git-repo '$REPO' --prefix '$PREFIX'
+    fi
   " 2>&1
   rc=$?
 fi
 [ "${rc:-1}" -eq 0 ] || fail "安装没成功，上面是要排查的输出（NAS 上：docker logs $PREFIX 对应容器名；构建日志 $PREFIX/run/build.log）"
 
+"${SSH[@]}" "rm -rf /vol3/1000/qb-nas-bootstrap" >/dev/null 2>&1 || true
 banner "3/3 完成"
 KEY=$("${SSH[@]}" "cat '$PREFIX/api-key.txt'" 2>/dev/null)
 PORT=8899

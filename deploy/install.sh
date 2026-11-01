@@ -40,6 +40,7 @@ QBIT_HOST=""
 QBIT_USER=""
 QBIT_PASS=""
 ALLOW_ANY_DISK=0
+PREPARE=0
 LOG_LEVEL=INFO
 
 c_ok=$'\033[32m'; c_warn=$'\033[33m'; c_err=$'\033[31m'; c_dim=$'\033[2m'; c_0=$'\033[0m'
@@ -74,6 +75,7 @@ usage() {
   --test              测试档：prefix=/vol3/1000/qb-nas-test，port=18999，名字都带 -test
   --allow-any-disk    允许装到 /vol3 以外（默认拒绝，用户要求数据只在存储空间 3）
   --no-start          只准备、不构建不启动
+  --prepare           只摆文件（代码/.env/compose），不要求 docker
   -h, --help          这份说明
 USAGE
 }
@@ -99,6 +101,7 @@ while [ $# -gt 0 ]; do
     --test) PREFIX=/vol3/1000/qb-nas-test; HOST_PORT=18999; PROJECT=qb-nas-test; \
             CONTAINER=qb-nas-center-test; IMAGE=qb-nas-center:test; MODE_NAME=test; shift ;;
     --no-start) START=0; shift ;;
+    --prepare) PREPARE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "不认识的参数：$1（--help 看用法）" ;;
   esac
@@ -133,23 +136,12 @@ FREE_GB=$(df -Pk "$PREFIX" | awk 'NR==2{printf "%d", $4/1048576}')
 [ "$FREE_GB" -ge 4 ] || die "存储空间 3 剩余 ${FREE_GB}GB，不够（镜像 + 数据至少 4GB）"
 info "存储空间 3 剩余 ${FREE_GB}GB · $(df -Pk "$PREFIX" | awk 'NR==2{print $6}')"
 
+DOCKER_OK=1
 if ! docker info >/dev/null 2>&1; then
-  printf '\n%s✗ 当前用户 llll 用不了 docker（socket 属 root:docker，660）%s\n' "$c_err" "$c_0" >&2
-  cat >&2 <<EOF
-
-  这一条必须你来给（二选一，都是一次性的）：
-
-  A. NAS 终端里执行（会问你的 NAS 密码）：
-       sudo usermod -aG docker llll
-     然后断开重连 SSH（当前会话不带新组）。
-
-  B. fnOS 网页 → 用户与群组 → 选中 llll → 编辑 → 用户组勾选 docker → 保存，
-     然后重新登录 SSH。
-
-  做完重跑同一个安装命令即可。不想动权限也行：
-     用 deploy/打包-导入包.sh 生成导入包，在 fnOS Docker 界面导入（步骤见 README）。
-EOF
-  exit 3
+  DOCKER_OK=0
+  PREPARE=1
+  printf '\n%s! 当前用户 llll 用不了 docker（socket 属 root:docker，660）%s\n' "$c_warn" "$c_0" >&2
+  printf '  先把代码/配置/compose 摆到 %s，容器这一步等权限或界面导入。\n' "$PREFIX" >&2
 fi
 DOCKER_VER=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?')
 COMPOSE_VER=$(docker compose version --short 2>/dev/null || echo '?')
@@ -209,6 +201,9 @@ mkdir -p "$APP" "$DATA" "$LOGS" "$RUN" "$PREFIX/backup"
 chmod 700 "$DATA" "$RUN"; chmod 750 "$LOGS"
 cp -p "$SELF_DIR/docker/Dockerfile" "$APP/Dockerfile"
 cp -p "$SELF_DIR/docker/dockerignore" "$APP/.dockerignore"
+# 把安装器本身也放到 $PREFIX/deploy（之后重跑不用再从 Mac 传）
+rsync -a --delete --exclude '导入包/' "$SELF_DIR/" "$PREFIX/deploy/"
+chmod +x "$PREFIX/deploy/"*.sh "$PREFIX/deploy/"*.command 2>/dev/null || true
 for helper in uninstall.sh verify.sh; do
   [ -f "$SELF_DIR/$helper" ] && install -m 0755 "$SELF_DIR/$helper" "$PREFIX/$helper"
 done
@@ -287,13 +282,16 @@ sed -e "s|@@PROJECT@@|$PROJECT|g" \
     -e "s|@@WITH_BROWSER@@|$WITH_BROWSER|g" \
     "$SELF_DIR/compose.yaml.tpl" > "$COMPOSE"
 chmod 640 "$COMPOSE"
+# 备用 compose（界面不能构建时用）：官方镜像 + 首次启动装依赖
+sed -e "s|/vol3/1000/qb-nas/|$PREFIX/|g" "$SELF_DIR/docker/compose.nobuild.yaml" > "$PREFIX/compose.nobuild.yaml"
+chmod 640 "$PREFIX/compose.nobuild.yaml"
 docker compose -f "$COMPOSE" --project-name "$PROJECT" config >/dev/null \
   || die "生成的 compose.yaml 不合法（$COMPOSE）"
 info "$COMPOSE"
 
 # ── 5. 构建 + 启动 ──────────────────────────────────────────────────────────
 step "5/8 构建镜像并启动（首次 3–8 分钟，取决于拉基础镜像）"
-if [ "$START" = "1" ]; then
+if [ "$START" = "1" ] && [ "$DOCKER_OK" = "1" ]; then
   BUILD_LOG="$RUN/build.log"
   if docker compose -f "$COMPOSE" --project-name "$PROJECT" build --progress plain >"$BUILD_LOG" 2>&1; then
     tail -n 6 "$BUILD_LOG" | sed 's/^/  /'
@@ -303,13 +301,13 @@ if [ "$START" = "1" ]; then
   fi
   docker compose -f "$COMPOSE" --project-name "$PROJECT" up -d --remove-orphans 2>&1 | sed 's/^/  /'
 else
-  info "--no-start：只准备好，不构建"
+  info "跳过构建/启动（$([ "$DOCKER_OK" = "1" ] && echo "--no-start" || echo "没有 docker 权限")）"
 fi
 
 # ── 6. 健康检查 ─────────────────────────────────────────────────────────────
 step "6/8 健康检查"
 HEALTH_URL="http://$URL_HOST:$HOST_PORT/api/health"
-if [ "$START" = "1" ]; then
+if [ "$START" = "1" ] && [ "$DOCKER_OK" = "1" ]; then
   ok=0
   for i in $(seq 1 90); do
     if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1 \
@@ -329,14 +327,18 @@ if [ "$START" = "1" ]; then
   HC=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo unknown)
   info "容器 $CONTAINER · $(docker inspect -f '{{.State.Status}}' "$CONTAINER") · health=$HC"
 else
-  info "跳过（--no-start）"
+  info "跳过健康检查（构建/启动未执行）"
 fi
 
 # ── 7. 结果 ─────────────────────────────────────────────────────────────────
 step "7/8 结果"
 LAN=$(lan_ip)
-IS_LIVE=$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo 'not-running')
-RESTART_POLICY=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo '?')
+if [ "$DOCKER_OK" = "1" ]; then
+  IS_LIVE=$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo 'not-running')
+  RESTART_POLICY=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo '?')
+else
+  IS_LIVE='未启动（没有 docker 权限）'; RESTART_POLICY='unless-stopped（配置已写好）'
+fi
 DB_SIZE=$(du -h "$DATA/magnet_items.db" 2>/dev/null | cut -f1 || true)
 cat > "$PREFIX/部署信息.txt" <<INFO_EOF
 qb-nas 中心服务 · 部署信息（$MODE_NAME · $(date '+%Y-%m-%d %H:%M:%S')）
@@ -359,12 +361,16 @@ compose   $COMPOSE
   bash $PREFIX/uninstall.sh                  # 卸载（保留数据）
   bash $PREFIX/uninstall.sh --purge --yes    # 卸载并删数据
 
-以后更新代码：重跑 deploy/install.sh（幂等，保留 Key 和数据）
+以后更新代码：重跑 $PREFIX/deploy/install.sh（幂等，保留 Key 和数据）
 INFO_EOF
 chmod 600 "$PREFIX/部署信息.txt"
 
 printf '\n%s┌────────────────────────────────────────────────────────────┐%s\n' "$c_ok" "$c_0"
-printf '%s│%s 装好了：%s\n' "$c_ok" "$c_0" "$MODE_NAME"
+if [ "$DOCKER_OK" = "1" ]; then
+  printf '%s│%s 装好了：%s\n' "$c_ok" "$c_0" "$MODE_NAME"
+else
+  printf '%s│%s 文件已摆好（容器未启动）：%s\n' "$c_ok" "$c_0" "$MODE_NAME"
+fi
 printf '%s│%s 地址    http://%s:%s/\n' "$c_ok" "$c_0" "$LAN" "$HOST_PORT"
 printf '%s│%s 健康    %s\n' "$c_ok" "$c_0" "$HEALTH_URL"
 printf '%s│%s 容器    %s（status=%s · restart=%s）\n' "$c_ok" "$c_0" "$CONTAINER" "$IS_LIVE" "$RESTART_POLICY"
@@ -373,4 +379,23 @@ printf '%s│%s 日志    docker logs -f %s\n' "$c_ok" "$c_0" "$CONTAINER"
 printf '%s│%s Key     %s/api-key.txt（600）\n' "$c_ok" "$c_0" "$PREFIX"
 printf '%s└────────────────────────────────────────────────────────────┘%s\n' "$c_ok" "$c_0"
 printf '\n  %s这次生成的 API Key（只显示一次，已存 api-key.txt）：%s\n  %s%s%s\n' "$c_dim" "$c_0" "$c_ok" "$API_KEY" "$c_0"
+if [ "$DOCKER_OK" != "1" ]; then
+  cat >&2 <<EOF
+
+  文件都摆好了，还差容器这一步。二选一：
+
+  A. 给权限后一条命令（会构建镜像并起容器）：
+       sudo usermod -aG docker llll        # 或 fnOS 网页把 llll 勾进 docker 组
+       # 重新登录 SSH 后：
+       bash $PREFIX/deploy/install.sh
+
+  B. 不动权限，去 fnOS 的 Docker 界面导入：
+       · 项目/Compose 新建，粘贴 $PREFIX/compose.yaml（能构建时直接构建）
+       · 界面不能构建时，改用 $PREFIX/compose.nobuild.yaml（官方 python 镜像 + 首次启动装依赖）
+       · 数据目录 $DATA，端口 $HOST_PORT:8899，重启策略 unless-stopped
+       · API Key 在 $PREFIX/api-key.txt
+EOF
+  exit 3
+fi
+
 printf '\n  部署信息 ${PREFIX}/部署信息.txt\n\n'

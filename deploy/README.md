@@ -30,6 +30,13 @@
 ssh llll@192.168.20.193 'set -e; tmp=$(mktemp -d); git -C /vol1/1000/github/qb-nas archive stage/resident deploy | tar -x -C "$tmp"; bash "$tmp/deploy/install.sh" --git-ref stage/resident'
 ```
 
+只摆文件、不要求 docker 权限（会生成 .env/API Key/compose，容器等权限或界面导入）：
+
+```bash
+bash deploy/install.sh --prepare          # 正式目录 /vol3/1000/qb-nas
+bash deploy/install.sh --test --prepare   # 测试目录
+```
+
 测试档（不碰正式数据/端口）：
 
 ```bash
