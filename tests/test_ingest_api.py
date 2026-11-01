@@ -199,10 +199,18 @@ def test_health_needs_no_key_and_hides_credentials(tmp_path):
     assert API_KEY not in resp.text
 
 
-def test_status_requires_api_key(tmp_path):
+def test_status_read_is_public_but_ingest_write_requires_key(tmp_path):
+    """页面首屏要读真实状态（qB/采集/Mac 上报）；写入口仍必须带钥匙。"""
     app, _ctx = make_app(tmp_path)
 
     with asgi_client(app) as client:
         resp = client.get("/api/v1/status")
+        write = post_ingest(client, "magnet", MAGNET, key="")
+        write_bad = post_ingest(client, "magnet", MAGNET, key="wrong-key")
 
-    assert resp.status_code == 401
+    assert resp.status_code == 200
+    body = resp.json()
+    assert {"qbit", "crawler", "last_event_at", "jobs"} <= set(body)
+    assert API_KEY not in resp.text
+    assert write.status_code == 401
+    assert write_bad.status_code == 401

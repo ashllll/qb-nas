@@ -124,9 +124,12 @@ async def health_v1(ctx: AppContext = Depends(get_context)):
 async def status_v1(
     jobs: int = Query(10, ge=0, le=50),
     ctx: AppContext = Depends(get_context),
-    _=Depends(require_api_key),
 ):
-    """最近结果：条目/任务/上报事件 + qB、爬虫可用性。"""
+    """最近结果：条目/任务/上报事件 + qB、爬虫可用性。
+
+    只读开放：页面首屏必须能显示真实状态，不能因为「这个浏览器没钥匙」就
+    把 qB/采集/Mac 上报说成故障。写入口（ingest/jobs/retry）仍要 key。
+    """
     service = _ingest_service(ctx)
     snapshot = await service.status_snapshot(jobs_limit=jobs)
     snapshot.update(

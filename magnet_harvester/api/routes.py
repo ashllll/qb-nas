@@ -5,9 +5,10 @@ REST routes backed by AppContext dependency injection.
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from magnet_harvester.config import settings
@@ -279,7 +280,12 @@ async def health_check(ctx: AppContext = Depends(get_context)):
 
 
 @router.get("/api/config")
-async def get_config(_=Depends(require_api_key)):
+async def get_config():
+    """读取 qB 连接配置：只读开放，写仍要 key（见 update_config）。
+
+    无钥匙的浏览器（手机/别人的电脑）也要看见真实的地址与用户名，否则页面只能
+    显示占位符，用户会以为配置丢了。密码（含掩码）绝不回显，只回答是否已配置。
+    """
     return {
         "qbit_host": settings.QBIT_HOST,
         "qbit_username": settings.QBIT_USERNAME,
@@ -335,18 +341,39 @@ async def update_config(
         ) from exc
 
 
-@router.get("/api/auth")
-async def auth_status(ctx: AppContext = Depends(get_context)):
-    """公开接口：只回答"服务端是否启用了 API Key 校验"，不含任何凭据。
+def _this_key_state(request: Request, ctx: AppContext) -> tuple[bool, str]:
+    """这份请求的钥匙状态：not_required / missing / valid / invalid。
 
-    界面据此说清三种情况：服务端未配 key（任何人可写）/ 已启用（要填 key）/
-    key 不对（401 由错误处理器说明）。
+    页面所有徽章、圆点、按钮都读这一份状态，所以「这个浏览器没钥匙」与
+    「钥匙被拒」必须由服务端一次说清，不能等某个写操作 401 才反推。
+    只回状态，不回声钥匙；非 ASCII 一律按 invalid（与 REST/WS 一致）。
     """
-    required = bool((getattr(ctx.runtime, "api_key", "") or "").strip())
+    expected = (getattr(ctx.runtime, "api_key", "") or "").strip()
+    if not expected:
+        return False, "not_required"
+    supplied = (request.headers.get("x-api-key") or "").strip()
+    if not supplied:
+        return True, "missing"
+    try:
+        matches = secrets.compare_digest(supplied, expected)
+    except TypeError:
+        matches = False
+    return True, ("valid" if matches else "invalid")
+
+
+@router.get("/api/auth")
+async def auth_status(request: Request, ctx: AppContext = Depends(get_context)):
+    """公开接口：回答服务端是否要求钥匙 + 这份请求的钥匙状态，不含任何凭据。
+
+    界面据此说清四种情况：未启用鉴权 / 本浏览器没钥匙（只读）/ 钥匙被拒（只读）/
+    钥匙可用（可写）。不再用「某个接口 401」去猜整体状态。
+    """
+    required, key_state = _this_key_state(request, ctx)
     return {
         "required": required,
         "scheme": "X-API-Key" if required else None,
         "websocket": "first-message" if required else None,
+        "key": key_state,
     }
 
 

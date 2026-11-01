@@ -209,7 +209,9 @@ API_KEY=换成一串足够长的随机密钥
 ALLOW_INSECURE_WRITE_API=false
 ```
 
-前端右侧"访问安全 / API Key"输入同一密钥后，即可执行爬取、下载、清空、配置保存等写操作；WebSocket 订阅同样需要该密钥（作为查询参数传递，见 `docs/verification.md` 的已知权衡说明）。
+前端右侧"访问安全 / API Key"输入同一密钥后，即可执行爬取、下载、清空、配置保存等写操作；WebSocket 订阅同样需要该密钥（握手后第一帧提交，不进 URL）。
+
+只读接口（资源库、`/api/v1/status`、`/api/config` 的非敏感字段、`/api/auth`、健康检查）不需要密钥：没有钥匙的浏览器也能看见真实的 qB 地址、用户名与运行状态。`GET /api/auth` 会额外回答当前请求的钥匙状态（`missing` / `invalid` / `valid` / `not_required`），页面据此区分「只读」与「钥匙被拒」，而不是把缺钥匙显示成故障。密码永不回显，所有写接口仍必须带 `X-API-Key`。
 
 ### 3. 启动服务
 
