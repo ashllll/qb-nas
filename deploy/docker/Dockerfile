@@ -7,7 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     HOME=/tmp \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    TZ=Asia/Shanghai
 
 # 国内 NAS 直连 pypi.org 常超时：构建时可用 --build-arg PYPI_INDEX=https://mirrors.aliyun.com/pypi/simple/
 ARG PYPI_INDEX=""
@@ -33,6 +34,10 @@ RUN set -eux; \
 # 应用代码（static/ 被 FastAPI 直接挂载，必须一起进镜像）
 COPY magnet_harvester ./magnet_harvester
 COPY static ./static
+
+# /app 归运行用户：qB 配置持久化（persist_qbit_config）默认写包目录旁的 .env，
+# 容器里再叠加 ENV_FILE=/data/.env 落到可写卷；这里顺手把 /app 交给运行用户，避免其它写路径再撞权限。
+RUN chown -R 1000:1001 /app
 
 # 容器内非 root：uid/gid 对齐 NAS 上的 llll(1000:1001)，/vol3 上落盘的文件用户能直接读写
 USER 1000:1001

@@ -147,8 +147,11 @@ class Settings(BaseSettings):
 
     SITE_COOKIES: str = "{}"  # JSON: {"domain": "cookie1=val1; cookie2=val2"}
 
+    # ENV_FILE 允许把可写的 .env 放到挂载卷上（容器里 /app 属 root，写不进去）：
+    # 容器内用 ENV_FILE=/data/.env，配置落盘就不受镜像层可写性影响，重建也不丢。
     model_config = {
-        "env_file": str(Path(__file__).resolve().parent.parent / ".env"),
+        "env_file": os.environ.get("ENV_FILE")
+        or str(Path(__file__).resolve().parent.parent / ".env"),
         "env_file_encoding": "utf-8",
     }
 

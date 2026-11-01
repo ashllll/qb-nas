@@ -26,6 +26,10 @@ services:
       SERVICE_HOST: 0.0.0.0
       SERVICE_PORT: "8899"
       STORE_DB_PATH: /data/magnet_items.db
+      # 时区：容器默认 UTC，会让界面上的“刚刚上报”显示成 8 小时前
+      TZ: Asia/Shanghai
+      # qB 配置的持久化目标：落在可写卷上，容器重建不丢
+      ENV_FILE: /data/.env
     ports:
       - "@@HOST_PORT@@:8899"
     volumes:
