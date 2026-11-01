@@ -3,6 +3,7 @@
 回归：errors.py 曾用 datetime.now()（naive 本地时间），/api/errors 会输出
 "2026-11-01T09:10:33" 这种裸串，前端按 UTC 解析会在非 UTC 浏览器上偏 8 小时。
 """
+
 from __future__ import annotations
 
 from magnet_harvester.errors import ErrorCategory, ErrorHandler, ErrorRecord, ErrorSeverity

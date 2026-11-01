@@ -549,8 +549,14 @@ async def test_sync_loop_survives_store_error_and_keeps_polling():
     """一轮取库失败不能让同步循环永久停摆（循环死了不会自己重启）。"""
     store = FlakyListStore()
     hash_key = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
-    store.add(MagnetItem(hash=hash_key, name="x", magnet=f"magnet:?xt=urn:btih:{hash_key}",
-                         status=TaskStatus.downloading))
+    store.add(
+        MagnetItem(
+            hash=hash_key,
+            name="x",
+            magnet=f"magnet:?xt=urn:btih:{hash_key}",
+            status=TaskStatus.downloading,
+        )
+    )
 
     qbit = FakeQbitClient()
     qbit._snapshot = {hash_key.lower(): {"state": "uploading", "progress": 1.0}}

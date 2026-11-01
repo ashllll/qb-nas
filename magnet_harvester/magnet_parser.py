@@ -64,6 +64,7 @@ BASE64_VALID_RE = re.compile(r"^[a-zA-Z0-9+/]+={0,2}$")
 
 # ── infohash 归一化 ──────────────────────
 
+
 # 归一化只有一份实现（magnet_parser 与采集入口必须用同一套规则，否则同一磁力会入库两次）。
 def normalize_infohash(value: str) -> Optional[str]:
     """把一个 infohash 统一成 40 位大写 hex（实现见 ``utils.infohash``）。

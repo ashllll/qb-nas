@@ -146,14 +146,10 @@ def _http_exception_payload(request: Request, exc: StarletteHTTPException) -> di
     return _payload(status_code, detail, code=code, hint=hint)
 
 
-async def http_exception_handler(
-    request: Request, exc: StarletteHTTPException
-) -> JSONResponse:
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     payload = _http_exception_payload(request, exc)
     if exc.status_code >= 500:
-        log.error(
-            "HTTP %s %s → %s", exc.status_code, request.url.path, payload["detail"]
-        )
+        log.error("HTTP %s %s → %s", exc.status_code, request.url.path, payload["detail"])
     return JSONResponse(
         payload,
         status_code=exc.status_code,

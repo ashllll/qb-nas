@@ -28,9 +28,7 @@ log = logging.getLogger(__name__)
 #   · DEPLOYMENT_PINNED_KEYS：进程环境 > 文件 > 默认。容器监听地址、端口、
 #     数据库路径由 compose 钉死，避免 .env 与端口映射对不上。
 #   · 其余键：文件 > 环境 > 默认（文件名就是事实源，方便手改）。
-FILE_AUTHORITATIVE_KEYS: frozenset[str] = frozenset(
-    {"QBIT_HOST", "QBIT_USERNAME", "QBIT_PASSWORD"}
-)
+FILE_AUTHORITATIVE_KEYS: frozenset[str] = frozenset({"QBIT_HOST", "QBIT_USERNAME", "QBIT_PASSWORD"})
 DEPLOYMENT_PINNED_KEYS: frozenset[str] = frozenset(
     {"SERVICE_HOST", "SERVICE_PORT", "STORE_DB_PATH"}
 )
@@ -244,9 +242,7 @@ class Settings(BaseSettings):
     def config_file(self) -> Path:
         """当前生效的配置文件（容器内 /config/.env）。"""
         configured = (
-            getattr(self, "_env_file_override", None)
-            or self.model_config.get("env_file")
-            or ".env"
+            getattr(self, "_env_file_override", None) or self.model_config.get("env_file") or ".env"
         )
         return Path(str(configured)).expanduser()
 
@@ -530,7 +526,9 @@ class Settings(BaseSettings):
     @classmethod
     def _write_env_values(cls, path: Path, updates: dict[str, str]) -> None:
         try:
-            lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
+            lines = (
+                path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
+            )
         except OSError as exc:
             raise ConfigPersistError(cls._persist_hint(path, "读取现有配置失败", exc)) from exc
         remaining = dict(updates)
@@ -589,7 +587,9 @@ class Settings(BaseSettings):
             except OSError:
                 pass  # 目录 fsync 在部分文件系统/平台上不支持，不影响正确性
         except OSError as exc:
-            raise ConfigPersistError(cls._persist_hint(path, exc.strerror or "写入失败", exc)) from exc
+            raise ConfigPersistError(
+                cls._persist_hint(path, exc.strerror or "写入失败", exc)
+            ) from exc
         finally:
             if fd is not None:
                 os.close(fd)

@@ -267,9 +267,7 @@ def test_cross_origin_write_is_rejected_even_in_strict_mode(monkeypatch):
     """key 正确也不能从别的站点发起写：key 不是 CSRF 的挡箭牌。"""
     app, _ = _app(monkeypatch, mode="strict")
     with asgi_client(app) as client:
-        resp = _write(
-            client, headers={"X-API-Key": KEY, "Origin": EVIL_ORIGIN}
-        )
+        resp = _write(client, headers={"X-API-Key": KEY, "Origin": EVIL_ORIGIN})
     assert resp.status_code == 403
     assert resp.json()["code"] == "cross_origin_blocked"
 

@@ -100,9 +100,7 @@ def test_ws_rejects_without_key_when_auth_enabled(app_ctx):
 
     client = TestClient(app)
     # 新客户端连上后会立刻发一帧（值为空也算"带了"，只是没值）
-    code, reason = _connect_expect_close(
-        client, "/ws", payload={"type": "auth", "api_key": ""}
-    )
+    code, reason = _connect_expect_close(client, "/ws", payload={"type": "auth", "api_key": ""})
     assert code == 4401
     assert reason == "api_key_missing"
 
@@ -174,8 +172,6 @@ def test_ws_auth_failure_never_logs_the_key(app_ctx, caplog):
 
     client = TestClient(app)
     with caplog.at_level(logging.DEBUG):
-        code, _ = _connect_expect_close(
-            client, "/ws", payload={"type": "auth", "api_key": BAD_KEY}
-        )
+        code, _ = _connect_expect_close(client, "/ws", payload={"type": "auth", "api_key": BAD_KEY})
     assert code == 4401
     assert SECRET not in caplog.text

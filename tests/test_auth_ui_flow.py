@@ -231,9 +231,7 @@ async def test_trusted_page_writes_without_key_and_stores_nothing(static_server_
 async def test_legacy_key_is_cleared_and_never_used(static_server_url):
     """旧版本留在浏览器里的 magnet-api-key：只清不读，也不拿它去写。"""
     async with async_playwright() as playwright:
-        browser, _, page, mock = await _open(
-            playwright, static_server_url, seed_legacy=True
-        )
+        browser, _, page, mock = await _open(playwright, static_server_url, seed_legacy=True)
         state = await page.evaluate(
             """
             () => ({
@@ -255,9 +253,7 @@ async def test_legacy_key_is_cleared_and_never_used(static_server_url):
 async def test_legacy_fragment_is_scrubbed_without_being_consumed(static_server_url):
     """#key= 片段交接已作废：地址栏清干净，但不解析、不落盘、不带去请求。"""
     async with async_playwright() as playwright:
-        browser, _, page, mock = await _open(
-            playwright, f"{static_server_url}#key={LEGACY_KEY}"
-        )
+        browser, _, page, mock = await _open(playwright, f"{static_server_url}#key={LEGACY_KEY}")
         state = await page.evaluate(
             """
             () => ({
@@ -283,9 +279,7 @@ async def test_readonly_mode_is_honest_and_never_sends_writes(static_server_url)
     """严格模式：只读、人话提示、不出现「请求缺少 API Key」，写操作根本不发。"""
     api = UiApiMock(mode="strict")
     async with async_playwright() as playwright:
-        browser, _, page, mock = await _open(
-            playwright, static_server_url, api=api
-        )
+        browser, _, page, mock = await _open(playwright, static_server_url, api=api)
         save_disabled = await page.locator("#saveConfigBtn").is_disabled()
         await page.evaluate("() => saveConfig()")  # 绕过 disabled 直接调用也要挡住
         await page.wait_for_timeout(200)

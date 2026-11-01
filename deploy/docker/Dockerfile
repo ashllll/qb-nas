@@ -3,6 +3,7 @@
 #   构建上下文 = 代码根目录；镜像内以 uid 1000 运行，数据和日志走 /vol3 的 bind mount。
 FROM python:3.11-slim
 
+
 # 容器 TZ 只影响日志与容器内本地钟，不参与数据语义：数据/接口时间戳一律
 # UTC-aware（约定 §1）。日志用 UTC，便于和宿主机 `date -u` 逐条对账。
 ENV PYTHONUNBUFFERED=1 \
@@ -41,6 +42,12 @@ RUN set -eux; \
 # （那会多一层、多一份体积，且掩盖「运行时到底以谁的身份写卷」这个问题）。
 COPY --chown=1000:1001 magnet_harvester ./magnet_harvester
 COPY --chown=1000:1001 static ./static
+
+# 构建来源：ARG/ENV 放在 COPY 之后，避免每次 commit 变化把上面的 pip 依赖层缓存打穿。
+# 镜像标签与容器环境都带它，线上镜像因此能对回确切 commit（docker image inspect / printenv GIT_COMMIT）。
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
 
 # 容器内非 root：uid/gid 对齐 NAS 上的 llll(1000:1001)。
 # 这一条是配置能落盘的地基：/vol3/.../config 与 /vol3/.../data 都归 1000:1001，

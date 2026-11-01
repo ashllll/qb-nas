@@ -98,8 +98,12 @@ async def test_concurrent_same_event_id_different_value_only_one_wins(tmp_path):
     service, store, jobs = build(tmp_path, store=SlowStore(InMemoryItemStore()))
 
     results = await asyncio.gather(
-        service.handle_event(IngestRequest(event_id="evt-9", kind=IngestKind.magnet, value=MAGNET_A)),
-        service.handle_event(IngestRequest(event_id="evt-9", kind=IngestKind.magnet, value=MAGNET_B)),
+        service.handle_event(
+            IngestRequest(event_id="evt-9", kind=IngestKind.magnet, value=MAGNET_A)
+        ),
+        service.handle_event(
+            IngestRequest(event_id="evt-9", kind=IngestKind.magnet, value=MAGNET_B)
+        ),
     )
 
     statuses = sorted(result["status"] for result in results)

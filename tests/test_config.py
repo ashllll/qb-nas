@@ -159,9 +159,7 @@ def test_qbit_keys_in_config_file_win_over_process_env(tmp_path, monkeypatch):
     """
     env_path = tmp_path / ".env"
     env_path.write_text(
-        "QBIT_HOST=http://from-file:8085\n"
-        "QBIT_USERNAME=file-user\n"
-        'QBIT_PASSWORD="file-pass"\n',
+        'QBIT_HOST=http://from-file:8085\nQBIT_USERNAME=file-user\nQBIT_PASSWORD="file-pass"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("QBIT_HOST", "http://from-process-env:8080")

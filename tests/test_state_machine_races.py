@@ -48,7 +48,13 @@ async def test_started_only_moves_pending_to_classifying():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "status",
-    [TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading, TaskStatus.paused, TaskStatus.success],
+    [
+        TaskStatus.adding,
+        TaskStatus.queued,
+        TaskStatus.downloading,
+        TaskStatus.paused,
+        TaskStatus.success,
+    ],
 )
 async def test_started_does_not_clobber_active_states(status):
     """用户已经点过下载（adding）或 qB 里已经在跑（downloading/paused）时，分类不能改状态。"""

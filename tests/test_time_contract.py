@@ -62,8 +62,7 @@ def _insert_raw_row(db_path, **overrides) -> None:
     row.update(overrides)
     with sqlite3.connect(str(db_path)) as db:
         db.execute(
-            f"INSERT INTO magnet_items ({', '.join(row)}) "
-            f"VALUES ({', '.join('?' for _ in row)})",
+            f"INSERT INTO magnet_items ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})",
             list(row.values()),
         )
         db.commit()
@@ -194,7 +193,9 @@ async def test_ingest_job_started_and_finished_are_utc(tmp_path):
         classification=ClassificationTransitions(store=store, bus=bus),
     )
 
-    result = await service.ingest_url("https://example.com/torrents/search/4/sexart", auto_start=False)
+    result = await service.ingest_url(
+        "https://example.com/torrents/search/4/sexart", auto_start=False
+    )
     assert result["status"] == "accepted"
     job_id = result["job_id"]
     await service._run_job(job_id)  # 直接跑一遍，不依赖后台调度时序

@@ -190,10 +190,13 @@ async def test_first_seen_hash_without_state_triggers_one_full_refetch():
     responses = [
         _full(1, {"AAA": {"state": "downloading", "progress": 0.1}}),
         _delta(2, {"BBB": {"progress": 0.2}}),
-        _full(3, {
-            "AAA": {"state": "downloading", "progress": 0.2},
-            "BBB": {"state": "metaDL", "progress": 0.2},
-        }),
+        _full(
+            3,
+            {
+                "AAA": {"state": "downloading", "progress": 0.2},
+                "BBB": {"state": "metaDL", "progress": 0.2},
+            },
+        ),
     ]
 
     async def fetch(rid: int) -> dict:
