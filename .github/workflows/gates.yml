@@ -29,6 +29,9 @@ jobs:
           # requirements.txt holds runtime deps only; the gate tools live in the pyproject dev extra.
           pip install ruff==0.15.21 pytest pytest-asyncio
 
+      - name: Install Playwright browser
+        run: python -m playwright install --with-deps chromium
+
       - name: ruff check
         run: ruff check magnet_harvester tests
 
