@@ -90,6 +90,9 @@ class CrawlJob:
 
     @property
     def reason_label(self) -> str:
+        """任务没有 reason（成功）时为空；有 reason 才翻译，避免成功任务挂着失败文案。"""
+        if not self.reason:
+            return ""
         message = self.errors[-1]["msg"] if self.errors else ""
         return reason_label(self.reason, message)
 

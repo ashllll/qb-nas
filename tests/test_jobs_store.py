@@ -38,6 +38,17 @@ def test_job_roundtrip_keeps_counters_and_errors(tmp_path):
     assert done.summary == "从 1 个网址收到 2 条（1 条库里已有）"
 
 
+def test_reason_label_is_empty_for_successful_job_with_page_errors():
+    done = _job(
+        status=JobStatus.done,
+        added=1,
+        reason="",
+        errors=[{"msg": "HTTP 403，阻断重试已耗尽", "url": "https://x/d/1", "reason": "blocked"}],
+    )
+    assert done.reason_label == ""
+    assert done.summary == "从 1 个网址收到 1 条"
+
+
 def test_summary_explains_empty_result_and_failure():
     """原因代码翻成人话给用户看，代码本身仍留在 reason 里给机器判读。"""
     done_empty = _job(status=JobStatus.done, reason="no_magnet")
