@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-from uvicorn.logging import AccessFormatter
+from uvicorn.logging import AccessFormatter, DefaultFormatter
 
 
 # ── uvicorn access log 脱敏 ─────────────────────────
@@ -25,6 +25,18 @@ _API_KEY_RE = re.compile(r"(api_key=)[^&\s]*")
 
 class RedactingAccessFormatter(AccessFormatter):
     """uvicorn access formatter：将 request line 中的 api_key 值脱敏。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _API_KEY_RE.sub(r"\1***", super().format(record))
+
+
+class RedactingDefaultFormatter(DefaultFormatter):
+    """uvicorn default formatter：WebSocket 握手等 message 里的 api_key 也脱敏。
+
+    WebSocket 无法带自定义请求头，浏览器把 Key 放查询参数；uvicorn 会把整条
+    URL 写进 `uvicorn.error`（"WebSocket /ws?api_key=... [accepted]"），
+    这里统一打码，避免 Key 落进 docker logs。
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         return _API_KEY_RE.sub(r"\1***", super().format(record))
@@ -40,6 +52,11 @@ def uvicorn_log_config() -> dict:
         access = dict(access)
         access["()"] = "magnet_harvester.logger.RedactingAccessFormatter"
         config["formatters"]["access"] = access
+    default = config["formatters"].get("default")
+    if default:
+        default = dict(default)
+        default["()"] = "magnet_harvester.logger.RedactingDefaultFormatter"
+        config["formatters"]["default"] = default
     return config
 
 

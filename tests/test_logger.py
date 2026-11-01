@@ -118,3 +118,24 @@ def test_redacting_access_formatter_masks_api_key():
     out = fmt.format(record)
     assert "SECRET123" not in out
     assert "api_key=***" in out
+
+
+def test_redacting_default_formatter_masks_api_key_in_websocket_log():
+    """WebSocket 握手日志（uvicorn.error）里的 api_key 也必须脱敏。"""
+    import logging
+
+    from magnet_harvester.logger import RedactingDefaultFormatter
+
+    fmt = RedactingDefaultFormatter("%(message)s")
+    record = logging.LogRecord(
+        name="uvicorn.error",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='127.0.0.1:1234 - "WebSocket /ws?api_key=SECRET123&x=1" [accepted]',
+        args=(),
+        exc_info=None,
+    )
+    out = fmt.format(record)
+    assert "SECRET123" not in out
+    assert "api_key=***" in out
