@@ -37,6 +37,7 @@ class ItemQueryExecutor:
         status: str = "all",
         limit: int = 100,
         offset: int = 0,
+        order: str = "name",
     ) -> dict:
         limit = max(0, min(limit, 500))
         offset = max(0, min(offset, 10000))  # 硬上限，防止大 offset 导致内存 DoS
@@ -45,11 +46,13 @@ class ItemQueryExecutor:
             status=status,
             limit=limit,
             offset=offset,
+            order=order,
         )
         return {
             "total": total,
             "limit": limit,
             "offset": offset,
+            "order": order,
             "items": [item_payload(item) for item in items],
         }
 

@@ -83,16 +83,27 @@
             <span class="dot checking" id="dotQbit"></span
             ><span class="status-label" id="qbitStatus">检测中</span>
           </div>
-          <button
-            class="status-chip"
-            id="clipButton"
-            type="button"
-            onclick="toggleClipboard()"
-            title="切换剪贴板监控"
-          >
-            <span class="dot offline" id="dotClip"></span
-            ><span class="status-label" id="clipStatus">剪贴板</span>
-          </button>
+          <div class="mac-status" id="macStatus">
+            <button
+              class="status-chip"
+              id="macChip"
+              type="button"
+              onclick="toggleMacPanel()"
+              aria-expanded="false"
+              aria-controls="macPanel"
+              title="Mac 上报：最近一次收到的时间"
+            >
+              <span class="dot idle" id="dotMac"></span
+              ><span class="status-label" id="macLabel">Mac 上报</span>
+            </button>
+            <div class="mac-popover" id="macPanel" hidden>
+              <div class="mac-popover-head">
+                <span class="mac-popover-title">最近的 Mac 上报</span>
+                <span class="mac-popover-sub" id="macPanelSub">等待上报</span>
+              </div>
+              <div class="mac-events" id="macEvents"></div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -113,21 +124,18 @@
                 />
               </div>
               <div>
-                <label class="field-label" for="depthSelect">爬取深度</label>
+                <label class="field-label" for="depthSelect">采集深度</label>
                 <select class="select" id="depthSelect">
                   <option value="1">1 · 当前页面</option>
                   <option value="2">2 · 跟随子链接</option>
                   <option value="3">3 · 递归爬取</option>
                 </select>
               </div>
-              <div class="option-row">
+              <div class="option-row subtle">
                 <div class="option-copy">
-                  <strong>自动下载</strong><span>分类完成后发送到 qB</span>
+                  <strong>只入库，不下载</strong
+                  ><span>抓到的磁力先进资源库，点选后才进 qB</span>
                 </div>
-                <label class="switch">
-                  <input id="autoToggle" type="checkbox" />
-                  <span class="switch-track"></span>
-                </label>
               </div>
               <button
                 class="button primary full"
@@ -135,7 +143,7 @@
                 type="button"
                 onclick="startCrawl()"
               >
-                <i data-lucide="play"></i><span>开始爬取</span>
+                <i data-lucide="play"></i><span>开始采集</span>
               </button>
             </div>
           </section>
@@ -319,6 +327,55 @@
             其他
           </button>
         </nav>
+        <div class="batch-bar" id="batchBar" role="status" hidden>
+          <span class="batch-dot idle" id="batchDot"></span>
+          <div class="batch-text" id="batchText">还没有抓取任务</div>
+          <span class="batch-meta" id="batchMeta"></span>
+          <div class="batch-actions">
+            <button
+              class="button tiny"
+              id="batchRetry"
+              type="button"
+              onclick="retryLatestJob()"
+              hidden
+            >
+              <i data-lucide="refresh-cw"></i><span>重试</span>
+            </button>
+            <button
+              class="button tiny"
+              id="batchJobsBtn"
+              type="button"
+              onclick="openJobsPanel()"
+            >
+              查看任务
+            </button>
+            <button
+              class="button icon-only tiny"
+              type="button"
+              onclick="dismissBatch()"
+              title="关闭提示"
+              aria-label="关闭提示"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        <section class="jobs-panel" id="jobsPanel" data-open="false">
+          <button
+            class="jobs-head"
+            type="button"
+            onclick="toggleJobsPanel()"
+            aria-expanded="false"
+            aria-controls="jobsBody"
+          >
+            <i data-lucide="radar"></i>
+            <span class="jobs-heading">抓取任务</span>
+            <span class="jobs-count" id="jobsCount">0</span>
+            <span class="jobs-summary" id="jobsSummary">还没有抓取任务</span>
+            <span class="jobs-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="jobs-body" id="jobsBody"></div>
+        </section>
         <div class="table-shell">
           <table>
             <thead>
@@ -333,10 +390,10 @@
                   />
                 </th>
                 <th>资源名称</th>
-                <th style="width: 88px">分类</th>
-                <th style="width: 70px">大小</th>
-                <th style="width: 118px">状态</th>
-                <th style="width: 150px">来源</th>
+                <th style="width: 84px">分类</th>
+                <th style="width: 72px">大小</th>
+                <th style="width: 22%">结果 · 原因</th>
+                <th style="width: 25%">来源</th>
               </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -346,7 +403,7 @@
               <div class="empty-icon"><i data-lucide="inbox"></i></div>
               <div class="empty-title" id="emptyTitle">资源库为空</div>
               <div class="empty-copy" id="emptyCopy">
-                从左侧创建采集任务，或开启剪贴板监控。
+                在 Mac 上复制磁力或网址，或从左侧提交网址采集。
               </div>
             </div>
           </div>
@@ -434,9 +491,9 @@
               </div>
               <div class="option-row">
                 <span class="option-copy"
-                  ><strong>剪贴板</strong
-                  ><span id="clipDetail">已关闭</span></span
-                ><span class="dot offline" id="clipDetailDot"></span>
+                  ><strong>采集服务</strong
+                  ><span id="crawlerDetail">正在检测</span></span
+                ><span class="dot checking" id="crawlerDetailDot"></span>
               </div>
             </div>
           </section>

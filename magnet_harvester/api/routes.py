@@ -88,6 +88,7 @@ async def get_items(
     status: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    order: str = Query("name", pattern="^(name|newest)$"),
     ctx: AppContext = Depends(get_context),
 ):
     if not status:
@@ -103,15 +104,19 @@ async def get_items(
                 detail=f"Invalid status: {status}. Valid values: {[v.value for v in TaskStatus]}",
             )
     if category is not None and category not in VALID_CATEGORIES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid category: {category}. Valid values: {sorted(VALID_CATEGORIES)}",
-        )
+        # StudioRule 会产生开放分类（厂牌名，如 SexArt）；库里真实存在的分类也要能筛。
+        in_use = (await ctx.core.store.stats()).by_category
+        if category not in in_use:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid category: {category}. Valid values: {sorted(VALID_CATEGORIES)}",
+            )
     result = await _item_queries(ctx).page_items(
         category=category,
         status=status,
         limit=limit,
         offset=offset,
+        order=order,
     )
     if ctx.runtime.stats is not None:
         ctx.runtime.stats.record_api_call()
@@ -134,6 +139,30 @@ async def search_items(
 async def start_crawl(
     req: CrawlRequest, _=Depends(require_api_key), ctx: AppContext = Depends(get_context)
 ):
+    """页面上的「采集」入口。
+
+    配了采集服务时，网址走和 Mac 上报同一条路径（建任务、边抓边入库、结果与原因可查），
+    避免页面和 Mac 两条链路行为分叉；没配（老装配/测试）时退回原有 pipeline 路径。
+    """
+    ingest = getattr(ctx.app_services, "ingest", None)
+    if ingest is not None:
+        outcome = await ingest.ingest_url(
+            req.url,
+            source="ui",
+            depth=req.depth,
+        )
+        if not outcome.get("ok"):
+            raise HTTPException(status_code=422, detail=outcome.get("reason") or "网址不可用")
+        if ctx.runtime.stats is not None:
+            ctx.runtime.stats.record_crawl()
+        return {
+            "status": "started",
+            "url": req.url,
+            "depth": req.depth,
+            "job_id": outcome.get("job_id"),
+            "task_id": outcome.get("job_id"),
+            "reason": outcome.get("reason") or "",
+        }
     try:
         result = await _actions(ctx).start_crawl(
             req.url, depth=req.depth, auto_download=req.auto_download
@@ -291,39 +320,11 @@ async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_
 
 
 @router.get("/api/categories")
-async def get_categories():
-    return {"categories": sorted(VALID_CATEGORIES)}
-
-
-@router.get("/api/clipboard")
-async def clipboard_status(ctx: AppContext = Depends(get_context)):
-    monitor = ctx.app_services.clipboard_monitor
-    if monitor is None:
-        return {"running": False, "magnet_count": 0}
-    return {"running": monitor.is_running, "magnet_count": monitor.magnet_count}
-
-
-@router.post("/api/clipboard/start")
-async def clipboard_start(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    monitor = ctx.app_services.clipboard_monitor
-    if monitor is None:
-        raise HTTPException(status_code=501, detail="Clipboard monitor not available")
+async def get_categories(ctx: AppContext = Depends(get_context)):
+    """固定分类 + 库里实际出现的分类（厂牌等开放分类）。"""
     try:
-        await monitor.start()
+        in_use = (await ctx.core.store.stats()).by_category
     except Exception:
-        log.exception("剪贴板监听启动失败")
-        raise HTTPException(status_code=503, detail="剪贴板监听启动失败")
-    return {"running": True}
-
-
-@router.post("/api/clipboard/stop")
-async def clipboard_stop(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
-    monitor = ctx.app_services.clipboard_monitor
-    if monitor is None:
-        raise HTTPException(status_code=501, detail="Clipboard monitor not available")
-    try:
-        await monitor.stop()
-    except Exception:
-        log.exception("剪贴板监听停止失败")
-        raise HTTPException(status_code=503, detail="剪贴板监听停止失败")
-    return {"running": False}
+        in_use = {}
+    extra = {name for name in in_use if name and name != "未分类"}
+    return {"categories": sorted(VALID_CATEGORIES | extra)}

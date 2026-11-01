@@ -91,13 +91,6 @@ class DiscoveryTransitions(_TransitionBase):
             log.warning("MAGNET_FOUND emit 失败，item 已持久化 hash=%s", item.hash, exc_info=True)
         return True
 
-    async def clipboard_found(self, item: MagnetItem) -> bool:
-        """found + emit_item_changed（剪贴板入口专用）"""
-        if not await self.found(item):
-            return False
-        await self._emit_item_changed(item.hash)
-        return True
-
     async def cleared(self) -> int:
         """Clear all Magnet items and publish the collection change."""
         count = await self._store.clear()
@@ -357,9 +350,6 @@ class MagnetItemTransitions:
 
     async def found(self, item: MagnetItem) -> bool:
         return await self._discovery.found(item)
-
-    async def clipboard_found(self, item: MagnetItem) -> bool:
-        return await self._discovery.clipboard_found(item)
 
     async def classification_started(self, hash_key: str):
         await self._classification.started(hash_key)

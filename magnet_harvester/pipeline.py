@@ -18,6 +18,7 @@ from magnet_harvester.transitions import (
 )
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
+from magnet_harvester.utils.infohash import normalize_infohash
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,9 @@ class PipelineProtocol(Protocol):
     async def start_crawl(
         self, url: str, *, depth: int = 1, auto_download: bool = False
     ) -> dict: ...
+    async def ingest(
+        self, items: List[MagnetItem], *, auto_download: bool = False
+    ) -> List[str]: ...
     async def execute(self, url: str, depth: int = 1, auto_download: bool = False): ...
     async def admit_crawl_target(self, url: str) -> str: ...
     async def download(self, hashes: list[str]): ...
@@ -97,6 +101,67 @@ class HarvestPipeline:
                 )
         return task
 
+    @staticmethod
+    def _item_from_event(raw: dict, *, root_url: str) -> MagnetItem | None:
+        """把取页事件里的一条磁力转成资源库条目。
+
+        - infohash 归一化（hex 大小写、base32 都归到同一键）：同一磁力换写法也只留一条。
+        - ``source_url`` 记用户提交的根 URL，``detail_url`` 记磁力真正所在的详情页，
+          这样资源库能看出「来自哪个网址」，也留得下更细的出处。
+        取页解析可能给出额外字段（如 reason/metrics），这里只取资源库认识的字段。
+        """
+        normalized = normalize_infohash(raw.get("hash"))
+        if not normalized:
+            # 无法归一（例如测试夹具/历史数据里的短哈希）：保留原值大小写归一，
+            # 宁可入库也不丢条目；能做到跨写法去重时上面的 normalize 已生效。
+            fallback = str(raw.get("hash") or "").strip().upper()
+            if not fallback:
+                log.warning("跳过缺少 infohash 的条目: %s", str(raw)[:200])
+                return None
+            log.warning("infohash 无法归一，按原值入库: %s", fallback[:64])
+            normalized = fallback
+        page_url = str(raw.get("source_url") or "").strip()
+        detail_url = str(raw.get("detail_url") or "").strip()
+        if not detail_url and page_url and page_url != root_url:
+            detail_url = page_url
+        return MagnetItem(
+            hash=normalized,
+            name=str(raw.get("name") or f"Unknown_{normalized[:8]}"),
+            magnet=str(raw.get("magnet") or f"magnet:?xt=urn:btih:{normalized}"),
+            size=raw.get("size"),
+            source_url=root_url,
+            detail_url=detail_url or None,
+            batch_id=raw.get("batch_id"),
+            source_kind=str(raw.get("source_kind") or "crawl"),
+        )
+
+    async def ingest(
+        self,
+        items: List[MagnetItem],
+        *,
+        auto_download: bool = False,
+    ) -> List[str]:
+        """外部来源（Mac 上报等）已解析好的条目：入库 → 分类，默认不下载。"""
+        new_hashes: List[str] = []
+        for item in items:
+            normalized = normalize_infohash(item.hash)
+            if not normalized:
+                log.warning("跳过无法识别的 infohash: %s", item.hash)
+                continue
+            candidate = (
+                item if normalized == item.hash else item.model_copy(update={"hash": normalized})
+            )
+            if await self._discovery.found(candidate):
+                new_hashes.append(candidate.hash)
+        if not new_hashes:
+            return []
+        stored = await asyncio.gather(*(self._store.get(h) for h in new_hashes))
+        stored_items = [i for i in stored if i is not None]
+        await self._stream_classify(stored_items)
+        if auto_download:
+            await self._download_items(new_hashes)
+        return new_hashes
+
     async def start_crawl(
         self,
         url: str,
@@ -139,7 +204,9 @@ class HarvestPipeline:
                 t = msg["type"]
                 if t == "found":
                     try:
-                        item = MagnetItem(**msg["item"])
+                        item = self._item_from_event(msg.get("item") or {}, root_url=url)
+                        if item is None:
+                            continue
                         if await self._discovery.found(item):
                             new_hashes.append(item.hash)
                     except Exception:

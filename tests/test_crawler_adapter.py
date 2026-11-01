@@ -51,4 +51,4 @@ def test_crawler_falls_back_to_settings_when_no_config_given():
     assert crawler._config.timeout == reference.timeout
     assert crawler._config.max_depth == reference.max_depth
     assert crawler._config.concurrency == reference.concurrency
-    assert crawler._config.allowed_resolutions == ("2160p", "4k")
+    assert crawler._config.allowed_resolutions == ()

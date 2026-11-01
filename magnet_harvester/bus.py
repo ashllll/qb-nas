@@ -33,7 +33,9 @@ class EventType(str, Enum):
     ERROR = "error"
     STORE_CHANGED = "store_changed"
     ITEMS_CLEARED = "items_cleared"
-    CLIPBOARD_STATUS = "clipboard_status"
+    # 采集中心：Mac 上报到达 / 抓取任务状态变化（含批次提示与失败原因）
+    INGEST_RECEIVED = "ingest_received"
+    JOB_UPDATED = "job_updated"
 
 
 @dataclass

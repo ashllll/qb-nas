@@ -16,10 +16,12 @@ def test_crawler_allowed_resolutions_parse_csv():
     assert cfg.crawler.allowed_resolutions == ("1080p", "2160p", "4k")
 
 
-def test_crawler_allowed_resolutions_falls_back_when_empty():
+def test_crawler_allowed_resolutions_empty_disables_filtering():
+    """空值 = 不过滤分辨率：详情页 1080p/720p 也要收（采集中心约定）。"""
     cfg = Settings(CRAWLER_ALLOWED_RESOLUTIONS="")
 
-    assert cfg.crawler.allowed_resolutions == ("2160p", "4k")
+    assert cfg.crawler.allowed_resolutions == ()
+    assert Settings().crawler.allowed_resolutions == ()
 
 
 def test_default_crawler_concurrency_is_tuned_for_detail_pages():
@@ -148,7 +150,7 @@ def test_allow_fake_ip_config_wires_to_crawler():
 
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
-    test_crawler_allowed_resolutions_falls_back_when_empty()
+    test_crawler_allowed_resolutions_empty_disables_filtering()
     test_default_crawler_concurrency_is_tuned_for_detail_pages()
     test_default_crawler_detail_link_limit_keeps_large_result_sets()
     import tempfile

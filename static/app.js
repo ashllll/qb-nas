@@ -16,6 +16,7 @@ const ICON_SYMBOLS = {
   "circle-alert": "!",
   "circle-check": "✓",
   info: "i",
+  "refresh-cw": "⟳",
 };
 
 const itemState = new MagnetItemState();
@@ -25,8 +26,18 @@ const apiClient = new MagnetApiClient({
 });
 let ws = null;
 let reconnectTimer = null;
-let clipRunning = false;
-let clipCount = 0;
+
+/* ---- 采集中心状态（任务 / 上报事件） ----
+   任务与上报事件来自两条通道：/api/v1/status 首屏快照 + ws 的 job_updated /
+   ingest_received 增量。两条通道都写进同一份本地状态，渲染只读这里的值。 */
+const ingest = {
+  jobs: new Map(), // job_id -> job
+  events: [], // 最近的 Mac 上报事件（新→旧）
+  lastEventAt: "", // 最近一次上报时间（ISO 字符串）
+  batchJobId: "", // 批次提示条正在展示的任务
+  batchDismissed: false,
+};
+let itemsRefreshTimer = null;
 
 function initIcons() {
   document.querySelectorAll("i[data-lucide]").forEach((icon) => {
@@ -262,9 +273,11 @@ function handleMsg(msg) {
       addLog(msg.msg || msg.message || "发生未知错误", "error");
       toast(msg.msg || msg.message || "发生未知错误", "error");
       break;
-    case "clipboard_status":
-      clipCount = msg.magnet_count || clipCount;
-      updateClipUI(Boolean(msg.running));
+    case "job_updated":
+      applyJobUpdate(msg);
+      break;
+    case "ingest_received":
+      receiveIngestEvent(msg);
       break;
   }
 }
@@ -343,19 +356,25 @@ async function startCrawl() {
   }
   setCrawling(true);
   try {
-    await apiClient.fetch("/api/crawl", {
+    // 采集任务只负责提交网址：抓到的东西先入资源库，下载由用户点选后触发。
+    const data = await apiClient.fetch("/api/crawl", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url,
         depth: Number(document.getElementById("depthSelect").value),
-        auto_download: document.getElementById("autoToggle").checked,
       }),
     });
+    addLog(`采集任务已排队 · ${shortUrl(url)}`, "info");
+    if (data && data.reason) addLog(`任务提示：${data.reason}`, "warn");
+    document.getElementById("urlInput").value = "";
+    // 进度与结果通过 job_updated 实时回推，按钮在这里即可复位。
+    checkStatus();
   } catch (error) {
-    setCrawling(false);
     addLog(error.message, "error");
     toast(error.message, "error");
+  } finally {
+    setCrawling(false);
   }
 }
 
@@ -437,31 +456,88 @@ const statusLabels = {
   queued: "队列中",
   downloading: "下载中",
   success: "完成",
-  error: "异常",
+  error: "失败",
   skipped: "已跳过",
 };
 
+/* 条目状态 → 徽章色（等待=中性、进行中=青、完成=绿、失败=红、跳过=灰） */
+function statusTone(status) {
+  if (status === "success") return "done";
+  if (status === "error") return "failed";
+  if (status === "skipped") return "muted";
+  if (status === "pending" || !status) return "idle";
+  return "running";
+}
+
+/* 「结果 · 原因」列的一句话：人能看懂现在到哪一步了 */
+function resultSentence(item) {
+  const status = item.status || "pending";
+  const category = item.category || "";
+  if (status === "pending") return category ? `已分类到「${category}」` : "待你点选";
+  if (status === "classifying") return "正在分类";
+  if (status === "adding") return "正在提交 qB";
+  if (status === "queued") return "已提交 qB，排队中";
+  if (status === "downloading") {
+    const progress = Number(item.progress || 0);
+    const percent = progress > 0 ? ` ${Math.round(progress)}%` : "";
+    return `下载中${percent}`;
+  }
+  if (status === "success") return "已完成";
+  if (status === "error")
+    return item.error_msg ? `失败：${item.error_msg}` : "失败，原因未记录";
+  if (status === "skipped") return "已跳过";
+  return statusLabels[status] || status;
+}
+
+const SOURCE_KIND_LABELS = {
+  mac_magnet: "Mac 磁力",
+  mac_url: "Mac 网址",
+  ui_magnet: "页面采集",
+  ui_url: "页面采集",
+  crawl: "页面采集",
+};
+
+function sourceKindLabel(kind) {
+  return SOURCE_KIND_LABELS[kind] || "未知来源";
+}
+
+function sourceKindClass(kind) {
+  if (!kind) return "unknown";
+  return kind.startsWith("mac") ? "mac" : "crawl";
+}
+
 function visibleItems() {
-  return itemState.visible();
+  const rows = itemState.visible();
+  // 列表按入库时间倒序（order=newest）：Mac 复制后新条目立刻出现在最上面。
+  return rows.slice().sort((a, b) => {
+    const diff = itemTime(b) - itemTime(a);
+    return Number.isFinite(diff) ? diff : 0;
+  });
+}
+
+function itemTime(item) {
+  const stamp = item && (item.created_at || item.updated_at);
+  const time = stamp ? Date.parse(stamp) : NaN;
+  return Number.isFinite(time) ? time : -Infinity;
 }
 
 function rowHtml(item) {
-  const progress = Number(item.progress || 0);
   const status = item.status || "pending";
-  const statusText =
-    status === "downloading" && progress
-      ? `${Math.round(progress)}%`
-      : statusLabels[status] || status;
-  const statusTitle =
-    item.error_msg ||
-    `${statusLabels[status] || status}${item.torrent_state ? ` · ${item.torrent_state}` : ""}`;
+  const statusText = statusLabels[status] || status;
+  const sentence = resultSentence(item);
+  const resultTitle = `${statusLabels[status] || status} · ${sentence}`;
+  const sourceUrl = item.source_url || "";
+  const detailUrl = item.detail_url || "";
+  const detailLink = detailUrl
+    ? `<a class="detail-link" href="${esc(detailUrl)}" target="_blank" rel="noopener" title="打开磁力所在详情页">详情</a>`
+    : "";
   return `<tr id="row-${esc(item.hash)}" class="${selected.has(item.hash) ? "selected" : ""}">
     <td><input class="checkbox row-checkbox" type="checkbox" ${selected.has(item.hash) ? "checked" : ""} onchange="toggleRow('${esc(item.hash)}', this.checked)" aria-label="选择 ${esc(item.name)}"></td>
     <td class="name-cell"><div class="item-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="item-meta">${esc(item.hash.slice(0, 16))}…</div></td>
     <td><span class="chip cat-${esc(item.category || "pending")}">${esc(item.category || "待分类")}</span></td>
-    <td>${esc(item.size || "—")}</td>
-    <td class="status-cell status-${esc(status)}" title="${esc(statusTitle)}"><span class="status-wrap"><span class="status-dot"></span>${esc(statusText)}</span></td>
-    <td class="source-cell" title="${esc(item.source_url || "")}">${esc(shortUrl(item.source_url))}</td>
+    <td class="size-cell">${esc(item.size || "—")}</td>
+    <td class="result-cell" title="${esc(resultTitle)}"><span class="badge badge-${statusTone(status)}">${esc(statusText)}</span><span class="result-text">${esc(sentence)}</span></td>
+    <td class="source-cell" title="${esc(sourceUrl || "来源未记录")}"><div class="source-line"><span class="tag tag-${sourceKindClass(item.source_kind)}">${esc(sourceKindLabel(item.source_kind))}</span><span class="source-url">${esc(sourceUrl ? shortUrl(sourceUrl, 30) : "")}</span>${detailLink}</div></td>
   </tr>`;
 }
 
@@ -475,7 +551,7 @@ function renderTable() {
     : "资源库为空";
   document.getElementById("emptyCopy").textContent = items.size
     ? "调整搜索词或分类筛选后重试。"
-    : "从左侧创建采集任务，或开启剪贴板监控。";
+    : "在 Mac 上复制磁力或网址，或从左侧提交网址采集。";
   updateCounts();
   initIcons();
 }
@@ -538,7 +614,8 @@ function updateCounts() {
 }
 
 function esc(value) {
-  return String(value || "")
+  // 0 是有意义的计数，不能被当成空字符串吞掉
+  return String(value === 0 ? "0" : value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -546,14 +623,68 @@ function esc(value) {
     .replace(/'/g, "&#39;");
 }
 
-function shortUrl(value) {
+/* 省略中段：保留主机与路径两头，中间用 …（title 里仍放完整网址） */
+function midTruncate(value, limit = 34) {
+  const text = String(value || "");
+  if (!limit || text.length <= limit) return text;
+  const head = Math.ceil((limit - 1) / 2);
+  const tail = Math.floor((limit - 1) / 2);
+  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+}
+
+function shortUrl(value, limit = 34) {
   if (!value) return "—";
+  const raw = String(value);
+  let text = "";
   try {
-    const url = new URL(value);
-    return `${url.hostname}${url.pathname === "/" ? "" : url.pathname.slice(0, 18)}`;
+    const url = new URL(raw);
+    if (url.hostname)
+      text = `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
   } catch {
-    return String(value).slice(0, 28);
+    /* 磁力链接等非标准地址按原文截断 */
   }
+  // magnet: 没有 hostname，退回收到的原文（比空白更有信息量）
+  return midTruncate(text || raw, limit);
+}
+
+/* 后端时间戳是不带时区的本地时间 ISO 字符串，Date.parse 会按本地时间解释 */
+function timeOf(value) {
+  const time = value ? Date.parse(value) : NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function formatRelative(value) {
+  const time = timeOf(value);
+  if (!time) return "";
+  const diff = Date.now() - time;
+  if (diff < 10 * 1000) return "刚刚";
+  if (diff < 60 * 1000) return `${Math.floor(diff / 1000)} 秒前`;
+  if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)} 分钟前`;
+  if (diff < 24 * 60 * 60 * 1000)
+    return `${Math.floor(diff / 3600000)} 小时前`;
+  return `${Math.floor(diff / 86400000)} 天前`;
+}
+
+function formatClock(value) {
+  const time = timeOf(value);
+  if (!time) return "";
+  return new Date(time).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function formatDuration(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) return "—";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const seconds = value / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}m${String(whole % 60).padStart(2, "0")}s`;
 }
 
 const LOG_DEDUPE_WINDOW_MS = 8000;
@@ -615,7 +746,7 @@ function setButtonBusy(button, busy, label = "") {
 
 function setCrawling(active) {
   const button = document.getElementById("crawlBtn");
-  setButtonBusy(button, active, "爬取中");
+  setButtonBusy(button, active, "提交中");
 }
 
 function setProgress(percent) {
@@ -623,60 +754,415 @@ function setProgress(percent) {
 }
 
 async function checkStatus() {
-  const dot = document.getElementById("dotQbit");
+  let snapshot = null;
+  let online = false;
   try {
-    const data = await apiClient.fetch("/api/status");
-    const online = data.qbittorrent === "online";
-    dot.className = `dot ${online ? "online" : "offline"}`;
-    document.getElementById("qbitStatus").textContent = online
-      ? "qB 在线"
-      : "qB 离线";
-    document.getElementById("configDot").className =
-      `dot ${online ? "online" : "offline"}`;
+    // 首屏数据：任务、最近上报、qB / 采集服务可用性一次拿全
+    snapshot = await apiClient.fetch("/api/v1/status?jobs=20");
+    online = Boolean(snapshot && snapshot.qbit && snapshot.qbit.ok);
   } catch {
-    dot.className = "dot offline";
-    document.getElementById("qbitStatus").textContent = "qB 离线";
+    // 老装配 / 未配 key 时退回旧接口，只取 qB 状态
+    try {
+      const legacy = await apiClient.fetch("/api/status");
+      online = legacy.qbittorrent === "online";
+    } catch {
+      online = false;
+    }
   }
+  setQbitState(online);
+  if (snapshot) applyStatusSnapshot(snapshot);
 }
 
-async function toggleClipboard() {
-  const button = document.getElementById("clipButton");
-  button.disabled = true;
+function setQbitState(online) {
+  document.getElementById("dotQbit").className = `dot ${online ? "online" : "offline"}`;
+  document.getElementById("qbitStatus").textContent = online
+    ? "qB 在线"
+    : "qB 离线";
+  document.getElementById("configDot").className =
+    `dot ${online ? "online" : "offline"}`;
+}
+
+/* ---- 采集中心：任务面板 / 批次提示条 / Mac 上报 ---- */
+
+const JOB_STATUS = {
+  queued: { label: "等待", tone: "queued" },
+  running: { label: "进行中", tone: "running" },
+  done: { label: "完成", tone: "done" },
+  failed: { label: "失败", tone: "failed" },
+};
+
+const INGEST_STATUS = {
+  accepted: { label: "已入库", tone: "done" },
+  duplicate: { label: "重复", tone: "muted" },
+  rejected: { label: "被拒", tone: "failed" },
+};
+
+function jobTone(status) {
+  return (JOB_STATUS[status] || JOB_STATUS.queued).tone;
+}
+
+function jobLabel(status) {
+  return (JOB_STATUS[status] || JOB_STATUS.queued).label;
+}
+
+function jobTime(job) {
+  return timeOf(job && (job.created_at || job.updated_at));
+}
+
+function sortedJobs() {
+  // 新任务在前；同一毫秒创建的任务保持接入顺序
+  return [...ingest.jobs.values()].sort((a, b) => jobTime(b) - jobTime(a));
+}
+
+function latestJob() {
+  return sortedJobs()[0] || null;
+}
+
+function jobUrl(job) {
+  return (job && job.url) || "";
+}
+
+/* 一句话结果优先用后端给的 summary：「从 1 个网址收到 8 条」 */
+function batchSentence(job) {
+  const summary = String((job && job.summary) || "").trim();
+  const status = job && job.status;
+  if (summary) {
+    if (status === "running" && !summary.includes("…")) return `${summary}…`;
+    return summary;
+  }
+  const added = Number((job && job.added) || 0);
+  if (status === "running")
+    return added ? `正在找磁力 · 已收到 ${added} 条…` : "正在找磁力…";
+  if (status === "queued") return "任务排队中";
+  if (status === "failed")
+    return job && job.reason ? `抓取失败：${job.reason}` : "抓取失败";
+  return added ? `已收到 ${added} 条` : "没有找到磁力";
+}
+
+function canRetryJob(job) {
+  if (!job || !job.job_id) return false;
+  if (job.status === "failed") return true;
+  // 完成但一条都没入库时允许重抓（页面可能临时抽风）
+  return job.status === "done" && !Number(job.added || 0);
+}
+
+function renderBatchBar() {
+  const bar = document.getElementById("batchBar");
+  const job = latestJob();
+  if (!job || ingest.batchDismissed) {
+    bar.hidden = true;
+    return;
+  }
+  const status = job.status || "queued";
+  bar.hidden = false;
+  bar.dataset.status = status;
+  document.getElementById("batchDot").className = `batch-dot ${jobTone(status)}`;
+  const text = document.getElementById("batchText");
+  text.textContent = batchSentence(job);
+  text.title = job.summary || "";
+  const meta = document.getElementById("batchMeta");
+  meta.textContent = jobUrl(job) ? shortUrl(jobUrl(job), 32) : "";
+  meta.title = jobUrl(job);
+  document.getElementById("batchRetry").hidden = !canRetryJob(job);
+}
+
+/* 任务那一行的「原因」：失败说清为什么；完成但没条目也说明白；有页面级失败时给个数 */
+function jobNote(job) {
+  const errors = Array.isArray(job.errors) ? job.errors.length : 0;
+  if (job.status === "failed") return job.summary || job.message || "抓取失败";
+  if (job.status === "queued") return "排队中";
+  if (job.status === "running") return errors ? `${errors} 处页面失败` : "";
+  const added = Number(job.added || 0);
+  if (!added) return job.summary || "没有找到磁力";
+  if (errors) return `${errors} 处页面失败`;
+  return Number(job.duplicates || 0) ? `${job.duplicates} 条库里已有` : "";
+}
+
+function jobRowHtml(job) {
+  const status = job.status || "queued";
+  const note = jobNote(job);
+  const retry = canRetryJob(job)
+    ? `<button class="button tiny" type="button" onclick="retryJob('${esc(job.job_id)}')">重试</button>`
+    : "";
+  return `<div class="job-row" data-status="${esc(status)}">
+    <span class="job-url" title="${esc(jobUrl(job))}">${esc(shortUrl(jobUrl(job), 36))}</span>
+    <span class="badge badge-${jobTone(status)}">${esc(jobLabel(status))}</span>
+    <span class="job-counts">入库 ${esc(job.added || 0)} · 找到 ${esc(job.found || 0)} · 重复 ${esc(job.duplicates || 0)}</span>
+    <span class="job-time">${esc(formatDuration(job.elapsed_ms))}</span>
+    <span class="job-note" title="${esc(note)}">${esc(note)}</span>
+    <span class="job-action">${retry}</span>
+  </div>`;
+}
+
+function renderJobs() {
+  const jobs = sortedJobs();
+  document.getElementById("jobsCount").textContent = String(jobs.length);
+  const active = jobs.filter((job) =>
+    ["queued", "running"].includes(job.status)
+  ).length;
+  document.getElementById("jobsSummary").textContent = jobs.length
+    ? active
+      ? `${active} 个进行中`
+      : "最近任务都结束了"
+    : "还没有抓取任务";
+  document.getElementById("jobsBody").innerHTML = jobs.length
+    ? jobs.map(jobRowHtml).join("")
+    : `<div class="jobs-empty">还没有抓取任务</div>`;
+}
+
+async function retryJob(jobId) {
+  if (!jobId) return;
   try {
     const data = await apiClient.fetch(
-      clipRunning ? "/api/clipboard/stop" : "/api/clipboard/start",
+      `/api/v1/jobs/${encodeURIComponent(jobId)}/retry`,
       { method: "POST" }
     );
-    updateClipUI(Boolean(data.running));
-    toast(data.running ? "剪贴板监控已开启" : "剪贴板监控已关闭", "success");
+    if (data && data.ok === false) {
+      const reason = data.reason || "未知原因";
+      addLog(`重试未被接受：${reason}`, "warn");
+      toast(`重试未被接受：${reason}`, "error");
+      return;
+    }
+    const job = ingest.jobs.get(jobId) || {};
+    addLog(`任务已重新排队 · ${shortUrl(job.url)}`, "info");
+    toast("任务已重新排队", "success");
+    checkStatus();
   } catch (error) {
+    addLog(`重试失败：${error.message}`, "error");
     toast(error.message, "error");
-  } finally {
-    button.disabled = false;
   }
 }
 
-function updateClipUI(running) {
-  clipRunning = running;
-  const state = running ? "online" : "offline";
-  document.getElementById("dotClip").className = `dot ${state}`;
-  document.getElementById("clipDetailDot").className = `dot ${state}`;
-  document.getElementById("clipStatus").textContent = running
-    ? `剪贴板 ${clipCount}`
-    : "剪贴板";
-  document.getElementById("clipDetail").textContent = running
-    ? `已开启 · 捕获 ${clipCount} 个`
-    : "已关闭";
+function retryLatestJob() {
+  const job = latestJob();
+  if (job) retryJob(job.job_id);
 }
 
-async function initClipStatus() {
+function dismissBatch() {
+  ingest.batchDismissed = true;
+  renderBatchBar();
+}
+
+function setJobsOpen(open) {
+  const panel = document.getElementById("jobsPanel");
+  panel.dataset.open = open ? "true" : "false";
+  const head = panel.querySelector(".jobs-head");
+  if (head) head.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function toggleJobsPanel() {
+  const panel = document.getElementById("jobsPanel");
+  setJobsOpen(panel.dataset.open !== "true");
+}
+
+function openJobsPanel() {
+  setJobsOpen(true);
+  renderJobs();
+  const panel = document.getElementById("jobsPanel");
+  if (panel.scrollIntoView)
+    panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  panel.classList.add("flash");
+  setTimeout(() => panel.classList.remove("flash"), 900);
+}
+
+/* ---- Mac 上报状态灯 ---- */
+function ingestStatusMeta(status) {
+  return INGEST_STATUS[status] || { label: status || "未知", tone: "muted" };
+}
+
+function ingestKindLabel(kind) {
+  return kind === "magnet" ? "磁力" : kind === "url" ? "网址" : "上报";
+}
+
+function macEventHtml(event) {
+  const meta = ingestStatusMeta(event.status);
+  const reason = event.reason || event.device || "";
+  return `<div class="mac-event">
+    <span class="mac-kind">${esc(ingestKindLabel(event.kind))}</span>
+    <span class="badge badge-${meta.tone}">${esc(meta.label)}</span>
+    <span class="mac-reason" title="${esc(reason)}">${esc(reason)}</span>
+    <span class="mac-time" title="${esc(formatClock(event.created_at))}">${esc(formatRelative(event.created_at) || "刚刚")}</span>
+  </div>`;
+}
+
+function renderMacStatus() {
+  const chip = document.getElementById("macChip");
+  const label = document.getElementById("macLabel");
+  const dot = document.getElementById("dotMac");
+  const relative = formatRelative(ingest.lastEventAt);
+  if (relative) {
+    // 30 分钟没动静就退回中性色，避免灯一直亮着像在正常工作
+    const stale = Date.now() - timeOf(ingest.lastEventAt) > 30 * 60 * 1000;
+    dot.className = `dot ${stale ? "idle" : "online"}`;
+    label.textContent = `Mac · ${relative}`;
+    chip.title = `Mac 最近一次上报：${relative}（${formatClock(ingest.lastEventAt)}）`;
+  } else {
+    dot.className = "dot idle";
+    label.textContent = "Mac 上报";
+    chip.title = "还没有收到 Mac 上报";
+  }
+  document.getElementById("macPanelSub").textContent = relative || "等待上报";
+  const events = ingest.events.slice(0, 5);
+  document.getElementById("macEvents").innerHTML = events.length
+    ? events.map(macEventHtml).join("")
+    : `<div class="mac-empty">还没有收到上报。在 Mac 上复制磁力或网址即可。</div>`;
+}
+
+function toggleMacPanel() {
+  const panel = document.getElementById("macPanel");
+  const chip = document.getElementById("macChip");
+  const open = panel.hidden;
+  panel.hidden = !open;
+  chip.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function closeMacPanel() {
+  const panel = document.getElementById("macPanel");
+  if (panel.hidden) return;
+  panel.hidden = true;
+  document.getElementById("macChip").setAttribute("aria-expanded", "false");
+}
+
+/* ---- 任务 / 上报事件的状态合流 ---- */
+function applyJobUpdate(job) {
+  if (!job || !job.job_id) return;
+  const isNew = !ingest.jobs.has(job.job_id);
+  ingest.jobs.set(job.job_id, job);
+  trimJobs();
+  if (job.job_id !== ingest.batchJobId) {
+    ingest.batchJobId = job.job_id;
+    ingest.batchDismissed = false;
+  }
+  if (isNew) fieldPulse(0.5);
+  renderJobs();
+  renderBatchBar();
+  if (job.status === "done" || job.status === "failed") {
+    addLog(
+      `${jobLabel(job.status)} · ${job.summary || shortUrl(job.url)}`,
+      job.status === "failed" ? "error" : "found"
+    );
+    // 抓取结束意味着可能有新条目入库，刷新一次列表（按 newest 排序）
+    scheduleItemsRefresh(400);
+  }
+}
+
+function receiveIngestEvent(msg) {
+  const event = {
+    event_id: msg.event_id || `ws-${Date.now()}`,
+    kind: msg.kind || "",
+    status: msg.status || "",
+    reason: msg.reason || "",
+    device: msg.device || "",
+    item_id: msg.item_id || "",
+    job_id: msg.job_id || "",
+    created_at: msg.created_at || new Date().toISOString(),
+  };
+  ingest.events = [
+    event,
+    ...ingest.events.filter((item) => item.event_id !== event.event_id),
+  ].slice(0, 12);
+  if (!ingest.lastEventAt || timeOf(event.created_at) >= timeOf(ingest.lastEventAt))
+    ingest.lastEventAt = event.created_at;
+  fieldPulse(0.35);
+  renderMacStatus();
+  const meta = ingestStatusMeta(event.status);
+  addLog(
+    `Mac 上报 · ${ingestKindLabel(event.kind)} · ${meta.label}`,
+    event.status === "rejected" ? "warn" : "info"
+  );
+  if (event.status === "accepted") scheduleItemsRefresh(300);
+}
+
+function trimJobs(limit = 30) {
+  if (ingest.jobs.size <= limit) return;
+  const stale = sortedJobs().slice(limit);
+  stale.forEach((job) => ingest.jobs.delete(job.job_id));
+}
+
+function applyStatusSnapshot(data) {
+  if (!data || typeof data !== "object") return;
+  const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+  jobs.forEach((job) => {
+    if (job && job.job_id) ingest.jobs.set(job.job_id, job);
+  });
+  trimJobs();
+  // 轮询也能发现新任务：新任务出现时重新露出提示条
+  const newest = latestJob();
+  if (newest && newest.job_id !== ingest.batchJobId) {
+    ingest.batchJobId = newest.job_id;
+    ingest.batchDismissed = false;
+  }
+  if (Array.isArray(data.recent_events)) {
+    // 快照与 ws 增量按 event_id 合并，快照里的 created_at / reason 更完整
+    const merged = new Map();
+    ingest.events.forEach((event) => {
+      if (event && event.event_id) merged.set(event.event_id, event);
+    });
+    data.recent_events.forEach((event) => {
+      if (!event || !event.event_id) return;
+      const previous = merged.get(event.event_id) || {};
+      merged.set(event.event_id, {
+        ...previous,
+        ...event,
+        created_at: event.created_at || previous.created_at || "",
+      });
+    });
+    ingest.events = [...merged.values()]
+      .sort((a, b) => timeOf(b.created_at) - timeOf(a.created_at))
+      .slice(0, 12);
+  }
+  const lastEventAt =
+    data.last_event_at ||
+    (ingest.events.length ? ingest.events[0].created_at : "");
+  if (lastEventAt) ingest.lastEventAt = lastEventAt;
+  if (data.crawler && typeof data.crawler === "object") {
+    const ok = Boolean(data.crawler.ok);
+    document.getElementById("crawlerDetailDot").className =
+      `dot ${ok ? "online" : "offline"}`;
+    document.getElementById("crawlerDetail").textContent = ok
+      ? "可用 · 边抓边入库"
+      : "不可用";
+  }
+  renderJobs();
+  renderBatchBar();
+  renderMacStatus();
+}
+
+/* ---- 资源列表刷新（order=newest） ---- */
+function scheduleItemsRefresh(delay = 600) {
+  clearTimeout(itemsRefreshTimer);
+  itemsRefreshTimer = setTimeout(() => {
+    loadItems();
+  }, delay);
+}
+
+async function loadItems() {
   try {
-    const data = await apiClient.fetch("/api/clipboard");
-    clipCount = data.magnet_count || 0;
-    updateClipUI(Boolean(data.running));
-  } catch {
-    updateClipUI(false);
+    // order=newest：新入库的条目排在最前，Mac 复制后立刻能在表头看到
+    const data = await apiClient.fetch("/api/items?order=newest&limit=500");
+    const list = Array.isArray(data.items) ? data.items : null;
+    if (!list) return;
+    if (items.size > list.length) {
+      // ws init 已经推了更全的快照时只做增量合并，别把老条目挤掉
+      itemState.upsertMany(list);
+    } else {
+      const keep = new Set(selected);
+      itemState.reset(list);
+      // 后台刷新不应打断用户已经勾选的行
+      keep.forEach((hash) => {
+        if (items.has(hash)) itemState.selected.add(hash);
+      });
+    }
+    renderTable();
+  } catch (error) {
+    addLog(`资源库刷新失败：${error.message}`, "error");
   }
+}
+
+/* 相对时间每 10 秒重算一次（Mac 上报灯、任务提示） */
+function refreshRelativeLabels() {
+  renderBatchBar();
+  renderMacStatus();
 }
 
 function setMobileView(view) {
@@ -732,15 +1218,26 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     document.getElementById("searchInput").focus();
   }
-  if (event.key === "Escape" && document.getElementById("clearDialog").open)
-    closeClearDialog();
+  if (event.key === "Escape") {
+    if (document.getElementById("clearDialog").open) closeClearDialog();
+    closeMacPanel();
+  }
+});
+// 点空白处收起 Mac 上报浮层
+document.addEventListener("click", (event) => {
+  if (!event.target.closest || !event.target.closest(".mac-status"))
+    closeMacPanel();
 });
 
 initIcons();
 connectWS();
 loadConfig();
 checkStatus();
-initClipStatus();
+renderJobs();
+renderBatchBar();
+renderMacStatus();
+loadItems();
 renderTable();
 addLog("工作台已就绪", "info");
 setInterval(checkStatus, 30000);
+setInterval(refreshRelativeLabels, 10000);

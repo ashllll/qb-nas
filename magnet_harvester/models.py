@@ -28,7 +28,14 @@ class MagnetItem(BaseModel):
     name: str
     magnet: str
     size: Optional[str] = None
+    # 来源可追溯：source_url = 用户复制/提交的入口地址（根 URL、magnet://… 或手动输入），
+    # detail_url = 真正出现该磁力的详情页（抓取时才有）。
     source_url: str = ""
+    detail_url: Optional[str] = None
+    # 批次：一次上报/一次抓取任务的标识，UI 用它显示「从 1 个网址收到 8 条」。
+    batch_id: Optional[str] = None
+    # 来源类型：mac_magnet / mac_url / ui_magnet / ui_url / crawl（历史条目为空）
+    source_kind: str = ""
     category: Optional[str] = None
     save_path: Optional[str] = None
     status: TaskStatus = TaskStatus.pending
@@ -82,6 +89,46 @@ class QBitConfigUpdate(BaseModel):
     qbit_host: Optional[str] = None
     qbit_username: Optional[str] = None
     qbit_password: Optional[str] = None
+
+
+# ── Mac → NAS 入库（采集中心入口） ──────────────────────
+
+
+class IngestKind(str, Enum):
+    """上报类型：磁力链接或网页地址。"""
+
+    magnet = "magnet"
+    url = "url"
+
+
+class IngestRequest(BaseModel):
+    """Mac 代理上报的一条事件。
+
+    幂等键是 ``event_id``（客户端生成，重发返回 duplicate）；磁力另按归一化
+    infohash 去重，所以同一条磁力用不同 event_id 重发也不会重复入库。
+    """
+
+    event_id: Optional[str] = Field(default=None, max_length=128)
+    kind: IngestKind
+    value: str = Field(min_length=1, max_length=8192)
+    captured_at: Optional[datetime] = None
+    device: Optional[str] = Field(default=None, max_length=64)
+
+    @field_validator("value")
+    @classmethod
+    def strip_value(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("value 不能为空")
+        return v
+
+    @field_validator("event_id")
+    @classmethod
+    def strip_event_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
 
 # ── Metrics 接口 — 统一指标快照 ──────────────────────────

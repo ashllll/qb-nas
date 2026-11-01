@@ -26,7 +26,7 @@ class CrawlerConfig:
     http_first: bool = True
     disable_resources: bool = True
     block_ads: bool = True
-    allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
+    allowed_resolutions: tuple[str, ...] = ()
     wait_until: str = "load"
     delay_before_return_html: float = 1.0
     scan_full_page: bool = True
@@ -90,7 +90,8 @@ class Settings(BaseSettings):
     CRAWLER_HTTP_FIRST: bool = True
     CRAWLER_DISABLE_RESOURCES: bool = True
     CRAWLER_BLOCK_ADS: bool = True
-    CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
+    # 空 = 不过滤分辨率（详情页 1080p/720p 也要收）
+    CRAWLER_ALLOWED_RESOLUTIONS: str = ""
     CRAWLER_WAIT_UNTIL: str = "load"
     CRAWLER_DELAY_BEFORE_HTML: float = 1.0
     CRAWLER_SCAN_FULL_PAGE: bool = True
@@ -114,8 +115,13 @@ class Settings(BaseSettings):
     LOG_FILE: str = ""  # 留空仅控制台输出；填写路径则同时输出到滚动文件
 
     # ── 存储 ──
-    STORE_BACKEND: str = "memory"  # "memory" 或 "sqlite"
+    # 采集中心默认持久化：重启后资源库、抓取任务、上报幂等记录都还在
+    STORE_BACKEND: str = "sqlite"  # "memory" 或 "sqlite"
     STORE_DB_PATH: str = "data/magnet_items.db"
+
+    # 采集任务：同时最多跑几个网址、被打断后最多自动重试几次
+    INGEST_JOB_CONCURRENCY: int = 2
+    INGEST_JOB_MAX_ATTEMPTS: int = 2
 
     API_KEY: str = ""  # 为空则禁用 API Key 认证（向后兼容）
     ALLOW_INSECURE_WRITE_API: bool = False
@@ -158,7 +164,9 @@ class Settings(BaseSettings):
                 http_first=self.CRAWLER_HTTP_FIRST,
                 disable_resources=self.CRAWLER_DISABLE_RESOURCES,
                 block_ads=self.CRAWLER_BLOCK_ADS,
-                allowed_resolutions=self._parse_csv_tuple(self.CRAWLER_ALLOWED_RESOLUTIONS),
+                allowed_resolutions=self._parse_csv_tuple(
+                    self.CRAWLER_ALLOWED_RESOLUTIONS, default=()
+                ),
                 wait_until=self.CRAWLER_WAIT_UNTIL,
                 delay_before_return_html=self.CRAWLER_DELAY_BEFORE_HTML,
                 scan_full_page=self.CRAWLER_SCAN_FULL_PAGE,
@@ -271,9 +279,11 @@ class Settings(BaseSettings):
         }
 
     @staticmethod
-    def _parse_csv_tuple(value: str) -> tuple[str, ...]:
+    def _parse_csv_tuple(
+        value: str, *, default: tuple[str, ...] = ("2160p", "4k")
+    ) -> tuple[str, ...]:
         values = tuple(item.strip() for item in value.split(",") if item.strip())
-        return values or ("2160p", "4k")
+        return values or default
 
     @staticmethod
     def _bytes_to_gb(value: int) -> float:
