@@ -350,6 +350,18 @@ class IngestService:
         return {"ok": True, "status": "accepted", "job_id": job_id, "reason": "已重新排队"}
 
     async def _run_job(self, job_id: str) -> None:
+        """跑一个抓取任务。
+
+        ``_running`` 的清理放在最外层 finally：中途任何一步（读库/写库/发事件）抛错，
+        都不能在 ``_running`` 里留下一个「看起来还在跑」的僵尸任务——否则这个 job_id
+        再也不会被重新启动，只能等重启。
+        """
+        try:
+            await self._run_job_inner(job_id)
+        finally:
+            self._running.pop(job_id, None)
+
+    async def _run_job_inner(self, job_id: str) -> None:
         job = self._jobs.get(job_id)
         if job is None:
             return
@@ -480,7 +492,6 @@ class IngestService:
                 )
             if final is not None:
                 await self._emit_job(final)
-            self._running.pop(job_id, None)
 
     async def _handle_found(self, job: CrawlJob, raw: dict) -> str:
         """处理一条 found 事件：归一化、去重、入库、立即分类。返回 added/duplicate。"""
