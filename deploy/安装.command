@@ -3,7 +3,7 @@
 # 双击安装：把 qb-nas 中心服务装到 NAS 上（Docker 容器，数据和镜像都在存储空间 3）
 #
 #   Mac 上只需要自带 ssh；需要 NAS 上 llll 能用 docker（见文末提示）。
-#   调试时可用 QB_NAS_SRC=/本机/代码目录 改用本机代码；默认取 NAS 仓库里的 ref。
+#   代码从当前这份工作副本 rsync 到 NAS（不再依赖 NAS 上的 git 仓库）。
 # ============================================================================
 set -uo pipefail
 DIR=$(cd "$(dirname "$0")" && pwd)
@@ -11,9 +11,7 @@ cd "$DIR" || exit 1
 pause() { if [ -t 0 ]; then printf '\n按回车关闭窗口…'; read -r _; fi; }
 NAS_USER=${QB_NAS_USER:-llll}
 NAS_HOST=${QB_NAS_HOST:-192.168.20.193}
-REPO=${QB_NAS_REPO:-/vol1/1000/github/qb-nas}
 PREFIX=${QB_NAS_PREFIX:-/vol3/1000/qb-nas}
-REF=${QB_NAS_REF:-stage/resident}
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8 "$NAS_USER@$NAS_HOST")
 banner() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 fail() { printf '\n\033[31m✗ %s\033[0m\n' "$*" >&2; pause; exit 1; }
@@ -42,43 +40,15 @@ if [ "$DOCKER_OK" != "yes" ]; then
 fi
 printf '  docker 可用\n'
 
-if [ -n "${QB_NAS_SRC:-}" ]; then
-  printf '  用本机代码：%s\n' "$QB_NAS_SRC"
-  "${SSH[@]}" "mkdir -p /vol3/1000/qb-nas-bootstrap/src" || fail "NAS 上建临时目录失败"
-  RSYNC=(rsync -a --delete --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude 'tests/' --exclude 'docs/' --exclude 'doc/' --exclude '.env' --exclude '.env.*')
-  "${RSYNC[@]}" "$QB_NAS_SRC/" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/" || fail "传代码失败"
-  rsync -a "./" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/deploy/" || fail "传安装脚本失败"
-  "${SSH[@]}" "bash /vol3/1000/qb-nas-bootstrap/src/deploy/install.sh --source /vol3/1000/qb-nas-bootstrap/src --prefix '$PREFIX'" 2>&1
-  rc=$?
-else
-  # 代码从 NAS 仓库取：优先 stage/resident，退到本次分支，再退到当前分支
-  BOOT=/vol3/1000/qb-nas-bootstrap/deploy
-  if [ -f "$DIR/deploy/install.sh" ]; then
-    printf '  用随包的安装脚本：%s/deploy\n' "$DIR"
-    "${SSH[@]}" "mkdir -p $(dirname "$BOOT")" || fail "NAS 上建临时目录失败"
-    rsync -a --delete "$DIR/deploy/" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/deploy/" || fail "传安装脚本失败"
-    REMOTE_SH="bash $BOOT/install.sh"
-  else
-    REMOTE_SH=''
-  fi
-  "${SSH[@]}" "set -e
-    ref='$REF'
-    if ! git -C '$REPO' rev-parse --verify --quiet \"\$ref^{commit}\" >/dev/null; then
-      for cand in evox/bug-c7d3fb9b main; do
-        if git -C '$REPO' rev-parse --verify --quiet \"\$cand^{commit}\" >/dev/null; then ref=\$cand; break; fi
-      done
-      echo '  $REF 还没有，改用 '\"\$ref\"
-    fi
-    if [ -n '$REMOTE_SH' ]; then
-      $REMOTE_SH --git-ref \"\$ref\" --git-repo '$REPO' --prefix '$PREFIX'
-    else
-      tmp=\$(mktemp -d /vol3/1000/qb-nas-bootstrap.XXXXXX)
-      git -C '$REPO' archive \"\$ref\" deploy | tar -x -C \"\$tmp\"
-      bash \"\$tmp/deploy/install.sh\" --git-ref \"\$ref\" --git-repo '$REPO' --prefix '$PREFIX'
-    fi
-  " 2>&1
-  rc=$?
-fi
+SRC=${QB_NAS_SRC:-$(git -C "$DIR/.." rev-parse --show-toplevel 2>/dev/null || echo "$DIR/..")}
+COMMIT=$(git -C "$SRC" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+printf '  源码：%s\n  构建标记：%s\n' "$SRC" "$COMMIT"
+"${SSH[@]}" "mkdir -p /vol3/1000/qb-nas-bootstrap/src" || fail "NAS 上建临时目录失败"
+RSYNC=(rsync -a --delete --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '.ruff_cache/' --exclude 'tests/' --exclude 'docs/' --exclude '.env' --exclude '.env.*')
+"${RSYNC[@]}" "$SRC/" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/" || fail "传代码失败"
+rsync -a "./" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/deploy/" || fail "传安装脚本失败"
+"${SSH[@]}" "bash /vol3/1000/qb-nas-bootstrap/src/deploy/install.sh --source /vol3/1000/qb-nas-bootstrap/src --commit '$COMMIT' --prefix '$PREFIX'" 2>&1
+rc=$?
 [ "${rc:-1}" -eq 0 ] || fail "安装没成功，上面是要排查的输出（NAS 上：docker logs $PREFIX 对应容器名；构建日志 $PREFIX/run/build.log）"
 
 "${SSH[@]}" "rm -rf /vol3/1000/qb-nas-bootstrap" >/dev/null 2>&1 || true
