@@ -94,6 +94,9 @@ async def test_submitter_succeeds_on_ok_response():
     assert kwargs["data"]["urls"] == "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
     assert kwargs["data"]["category"] == "电影"
     assert kwargs["data"]["autoTMM"] == "true"
+    # 加入 qB 即停止：入库不自动下载（qB v4 用 paused，v5 用 stopped，两个都发）
+    assert kwargs["data"]["paused"] == "true"
+    assert kwargs["data"]["stopped"] == "true"
     assert "savepath" not in kwargs["data"]
     assert recorder.attempts == 1
     assert recorder.successes == 1

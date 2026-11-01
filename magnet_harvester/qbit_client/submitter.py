@@ -140,6 +140,11 @@ class MagnetSubmitter:
                     "urls": magnet,
                     "category": category,
                     "autoTMM": "true",
+                    # 入库不等于开始下载：加入 qB 时即停在「已停止」，
+                    # 由用户在 qB 里手动恢复。qB v4 认 paused，v5 认 stopped，
+                    # 两个都发，另一版本会忽略不认识的参数。
+                    "paused": "true",
+                    "stopped": "true",
                 },
             )
 

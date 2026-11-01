@@ -76,6 +76,11 @@ def test_walker_receives_root_url_and_depth():
     assert walker.root_url == "https://site.test/list"
     assert walker.depth == 2
 
+
+def test_crawler_falls_back_to_settings_when_no_config_given():
+    crawler = MagnetCrawler()
+    reference = CrawlerConfig()
+
     assert crawler._config.timeout == reference.timeout
     assert crawler._config.max_depth == reference.max_depth
     assert crawler._config.concurrency == reference.concurrency
