@@ -49,6 +49,10 @@ async def _qbit_status(ctx: AppContext) -> dict:
         except Exception:
             reason = ""
         reason = reason.strip()[:200]
+    if not reason:
+        # 客户端没留下原因（例如它的 ping 被别的 ping 挡在锁上、直接取消），
+        # 用探针自己的观察兜底：至少要说清「这次没问到 qB」，而不是一片空白。
+        reason = str(getattr(_qbit_probe, "last_reason", "") or "")
     return {
         "ok": ok,
         "reason": reason or None,

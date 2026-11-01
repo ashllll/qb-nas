@@ -22,10 +22,17 @@ class CachedProbe:
         self._value = False
         self._checked_at = 0.0
         self._lock = asyncio.Lock()
+        # 这次探测为什么没成（超时/异常）。给「客户端自己没留下原因」的场景兜底，
+        # 免得 /api/v1/health 回一个 reason: null，界面只能说「离线」。
+        self._reason: str | None = None
 
     @property
     def last_value(self) -> bool:
         return self._value
+
+    @property
+    def last_reason(self) -> str | None:
+        return None if self._value else self._reason
 
     async def read(self, probe: Callable[[], Awaitable[bool]]) -> bool:
         if self._fresh():
@@ -35,8 +42,17 @@ class CachedProbe:
                 return self._value
             try:
                 value = await asyncio.wait_for(probe(), timeout=self._timeout)
-            except (asyncio.TimeoutError, Exception):
+            except asyncio.TimeoutError:
                 value = False
+                self._reason = (
+                    f"探测在 {self._timeout:g} 秒内没拿到回答"
+                    "（qB 可能离线、地址/端口不通，或上一次探测还没返回）"
+                )
+            except Exception:
+                value = False
+                self._reason = "探测失败（原因见 NAS 日志）"
+            else:
+                self._reason = None
             self._value = bool(value)
             self._checked_at = time.monotonic()
             return self._value

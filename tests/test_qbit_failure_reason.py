@@ -146,3 +146,28 @@ async def test_banned_ip_is_named_as_banned():
     finally:
         await client.close()
         await fake.aclose()
+
+
+def test_health_reason_falls_back_to_the_probe(tmp_path):
+    """客户端自己没留原因时（例如被别的 ping 挡在锁上），探针也要给出原因。"""
+    from magnet_harvester.api import ingest_routes
+    from tests._client import asgi_client
+    from tests.test_ingest_api import make_app
+
+    class SilentQbit:
+        last_error = None
+
+        async def ping(self):
+            await asyncio.sleep(30)
+            return False
+
+    app, ctx = make_app(tmp_path)
+    ctx.core.qbit = SilentQbit()
+    ingest_routes._qbit_probe = CachedProbe(ttl=10.0, timeout=0.2)
+
+    with asgi_client(app) as api:
+        payload = api.get("/api/v1/health").json()
+
+    assert payload["qbit"]["ok"] is False
+    assert payload["qbit"]["reason"], "没有客户端原因时不能让 reason 变回 null"
+    assert "没拿到回答" in payload["qbit"]["reason"] or "探测" in payload["qbit"]["reason"]

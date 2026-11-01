@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import time
 
-from magnet_harvester.classifier import limits as classifier_limits
 from magnet_harvester.classifier.local_classifier import LocalClassificationEngine
 from magnet_harvester.classifier.studio_recognizer import extract_studio
 
 # 改前没有这个上限（用 1e9 兜底，让改前的红灯落在耗时上而不是 ImportError 上）
-MAX_CLASSIFY_CHARS = getattr(classifier_limits, "MAX_CLASSIFY_CHARS", 10**9)
+try:  # pragma: no cover - 只在改前的代码上报 ImportError
+    from magnet_harvester.classifier.limits import MAX_CLASSIFY_CHARS
+except ImportError:  # pragma: no cover
+    MAX_CLASSIFY_CHARS = 10**9
 
 
 def _elapsed_ms(func, *args) -> tuple[float, object]:
