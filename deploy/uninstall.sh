@@ -68,7 +68,7 @@ step "4/4 结果"
 if [ "$PURGE" = "1" ]; then
   [ -n "$PREFIX" ] && [ "$PREFIX" != "/" ] || die "拒绝删除 $PREFIX"
   rm -rf "$PREFIX"
-  info "已删除整个 $PREFIX（含容器数据目录）"
+  info "已删除整个 ${PREFIX}（含容器数据目录）"
 else
   cat <<EOF
   已卸载，留下的东西：

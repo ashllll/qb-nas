@@ -18,7 +18,7 @@ SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8 "$NAS_USER@$NAS_HOST")
 banner() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 fail() { printf '\n\033[31m✗ %s\033[0m\n' "$*" >&2; pause; exit 1; }
 
-banner "1/3 连 NAS（$NAS_USER@$NAS_HOST）"
+banner "1/3 连 NAS（$NAS_USER@${NAS_HOST}）"
 if ! "${SSH[@]}" true 2>/dev/null; then
   cat <<EOF
 连不上 NAS。常见原因：

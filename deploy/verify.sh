@@ -25,7 +25,7 @@ ok()   { printf '  \033[32mPASS\033[0m %s\n' "$*"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAIL=$((FAIL+1)); }
 note() { printf '       %s\n' "$*"; }
 
-echo "== qb-nas 自检：$PREFIX（容器 $CONTAINER，端口 $HOST_PORT）=="
+echo "== qb-nas 自检：${PREFIX}（容器 ${CONTAINER}，端口 ${HOST_PORT}）=="
 
 # 1. docker 权限
 if docker info >/dev/null 2>&1; then ok "docker 可用（$(docker info --format '{{.ServerVersion}}')）"; else bad "docker 不可用，后面的检查没有意义"; exit 1; fi
@@ -38,7 +38,7 @@ policy=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/
 
 # 3. 健康
 hc=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || echo none)
-[ "$hc" = "healthy" ] && ok "docker healthcheck=healthy" || note "healthcheck=$hc（刚起时 starting 属正常）"
+[ "$hc" = "healthy" ] && ok "docker healthcheck=healthy" || note "healthcheck=${hc}（刚起时 starting 属正常）"
 body=$(curl -fsS --max-time 6 "http://127.0.0.1:$HOST_PORT/api/health" 2>/dev/null || true)
 [ -n "$body" ] && ok "HTTP /api/health 200：$body" || bad "HTTP /api/health 无响应"
 
@@ -50,7 +50,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 "http://127.0.0.1:$HO
 if [ -n "$KEY" ]; then
   c1=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$HOST_PORT/api/items" 2>/dev/null)
   c2=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H "X-API-Key: $KEY" "http://127.0.0.1:$HOST_PORT/api/items" 2>/dev/null)
-  [ "$c1" = "401" ] && ok "无 Key 访问被挡（401）" || note "无 Key 访问返回 $c1（若该接口不校验可忽略）"
+  [ "$c1" = "401" ] && ok "无 Key 访问被挡（401）" || note "无 Key 访问返回 ${c1}（若该接口不校验可忽略）"
   [ "$c2" = "200" ] && ok "带 Key 访问正常（200）" || bad "带 Key 访问返回 $c2"
 else
   bad "读不到 $ENV_FILE 里的 API_KEY"
@@ -60,10 +60,10 @@ fi
 mounts=$(docker inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' "$CONTAINER" 2>/dev/null)
 echo "$mounts" | grep -q '^/vol3/' && ok "挂载都在 /vol3：$(echo "$mounts" | tr '\n' ' ')" || bad "有挂载不在 /vol3：$mounts"
 root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)
-case "$root" in /vol3/*) ok "docker 根在 $root（镜像/容器层在存储空间 3）" ;; *) bad "docker 根在 $root" ;; esac
+case "$root" in /vol3/*) ok "docker 根在 ${root}（镜像/容器层在存储空间 3）" ;; *) bad "docker 根在 $root" ;; esac
 echo "$mounts" | grep -qE '^/vol[124]/' && bad "发现挂载指向 /vol1|/vol4" || true
 db="$PREFIX/data/magnet_items.db"
-if [ -f "$db" ]; then ok "SQLite 存在：$db（$(du -h "$db" | cut -f1)）"; else note "还没有 $db（还没收到第一条数据时属正常）"; fi
+if [ -f "$db" ]; then ok "SQLite 存在：${db}（$(du -h "$db" | cut -f1)）"; else note "还没有 ${db}（还没收到第一条数据时属正常）"; fi
 
 # 7. 日志
 n=$(docker logs --tail 5 "$CONTAINER" 2>&1 | wc -l)

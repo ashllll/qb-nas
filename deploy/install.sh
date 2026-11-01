@@ -118,8 +118,8 @@ ENV_FILE="$PREFIX/.env"
 COMPOSE="$PREFIX/compose.yaml"
 URL_HOST=127.0.0.1
 
-printf '%s\n' "${c_dim}qb-nas 中心服务 · 容器化安装（$MODE_NAME）${c_0}"
-dim "根目录 $PREFIX（数据只在 /vol3）"
+printf '%s\n' "${c_dim}qb-nas 中心服务 · 容器化安装（${MODE_NAME}）${c_0}"
+dim "根目录 ${PREFIX}（数据只在 /vol3）"
 dim "端口   $HOST_PORT → 容器 8899"
 dim "项目   $PROJECT · 容器 $CONTAINER · 镜像 $IMAGE"
 
@@ -154,7 +154,7 @@ ROOT_DIR=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "")
 case "$ROOT_DIR" in
   /vol3/*) : ;;
   "") warn "读不到 docker 根目录" ;;
-  *) warn "docker 根在 $ROOT_DIR（不在 /vol3），镜像层可能落在别的存储空间" ;;
+  *) warn "docker 根在 ${ROOT_DIR}（不在 /vol3），镜像层可能落在别的存储空间" ;;
 esac
 
 # 端口占用（同端口被别的容器/进程占了先停）
@@ -179,7 +179,7 @@ if [ -n "$GIT_REF" ]; then
     || die "仓库 $GIT_REPO 里没有这个 ref：$GIT_REF"
   COMMIT=$(git -C "$GIT_REPO" rev-parse --short "$GIT_REF")
   tar -C "$STAGE" -xf <(git -C "$GIT_REPO" archive "$GIT_REF")
-  info "来源：$GIT_REPO @ $GIT_REF（$COMMIT）"
+  info "来源：$GIT_REPO @ ${GIT_REF}（${COMMIT}）"
 else
   if [ -z "$SOURCE" ]; then
     if [ -f "$SELF_DIR/../magnet_harvester/main.py" ]; then SOURCE=$(cd "$SELF_DIR/.." && pwd)
@@ -212,7 +212,7 @@ for helper in uninstall.sh verify.sh; do
 done
 rsync -a --delete --exclude 'Dockerfile' --exclude '.dockerignore' \
   --exclude 'data/' --exclude 'logs/' --exclude '.env' "$STAGE/" "$APP/"
-info "构建上下文 $APP（$COMMIT）"
+info "构建上下文 ${APP}（${COMMIT}）"
 
 # ── 3. 配置 .env（600）───────────────────────────────────────────────────────
 step "3/8 写 .env（600）"
@@ -246,13 +246,13 @@ fi
 ls -1t "$PREFIX/backup"/env-*.bak 2>/dev/null | tail -n +4 | xargs -r rm -f || true
 umask 077
 cat > "$ENV_FILE" <<ENV
-# qb-nas 中心服务 · 容器运行配置（$MODE_NAME）· 由 deploy/install.sh 生成
+# qb-nas 中心服务 · 容器运行配置（${MODE_NAME}）· 由 deploy/install.sh 生成
 # 权限 600；不要进仓库。改完执行：docker compose -f $COMPOSE --project-name $PROJECT up -d --force-recreate
 SERVICE_HOST=0.0.0.0
 SERVICE_PORT=8899
 API_KEY=$API_KEY
 
-# 存储：容器内 /data ← $DATA（/vol3，持久）
+# 存储：容器内 /data ← ${DATA}（/vol3，持久）
 STORE_BACKEND=sqlite
 STORE_DB_PATH=/data/magnet_items.db
 
@@ -303,7 +303,7 @@ chmod 640 "$COMPOSE"
 sed -e "s|/vol3/1000/qb-nas/|$PREFIX/|g" "$SELF_DIR/docker/compose.nobuild.yaml" > "$PREFIX/compose.nobuild.yaml"
 chmod 640 "$PREFIX/compose.nobuild.yaml"
 docker compose -f "$COMPOSE" --project-name "$PROJECT" config >/dev/null \
-  || die "生成的 compose.yaml 不合法（$COMPOSE）"
+  || die "生成的 compose.yaml 不合法（${COMPOSE}）"
 info "$COMPOSE"
 
 # ── 5. 构建 + 启动 ──────────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ if [ "$START" = "1" ] && [ "$DOCKER_OK" = "1" ]; then
   if [ "$ok" != "1" ]; then
     printf '\n%s✗ 容器没起来。最近日志：%s\n' "$c_err" "$c_0" >&2
     docker logs --tail 80 "$CONTAINER" 2>&1 | sed 's/^/  /' >&2 || true
-    die "排查：docker logs $CONTAINER；构建日志 $RUN/build.log"
+    die "排查：docker logs ${CONTAINER}；构建日志 $RUN/build.log"
   fi
   info "健康检查通过：$HEALTH_URL"
   HC=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo unknown)
@@ -363,12 +363,12 @@ qb-nas 中心服务 · 部署信息（$MODE_NAME · $(date '+%Y-%m-%d %H:%M:%S')
 Web UI    http://$LAN:$HOST_PORT/
 健康      http://$LAN:$HOST_PORT/api/health
 API Key   见 $PREFIX/api-key.txt（600），Mac 代理第一次配置时粘贴
-根目录    $PREFIX（存储空间 3 /vol3）
-代码      $APP（$COMMIT）
+根目录    ${PREFIX}（存储空间 3 /vol3）
+代码      ${APP}（${COMMIT}）
 数据      $DATA/magnet_items.db（容器内 /data）
-镜像      $IMAGE（层在 /vol3/docker）
-容器      $CONTAINER（restart=$RESTART_POLICY）
-日志      docker logs -f $CONTAINER（20MB×5 轮转）
+镜像      ${IMAGE}（层在 /vol3/docker）
+容器      ${CONTAINER}（restart=${RESTART_POLICY}）
+日志      docker logs -f ${CONTAINER}（20MB×5 轮转）
 compose   $COMPOSE
 
 常用命令（在 NAS 上）：
@@ -391,7 +391,7 @@ fi
 printf '%s│%s 地址    http://%s:%s/\n' "$c_ok" "$c_0" "$LAN" "$HOST_PORT"
 printf '%s│%s 健康    %s\n' "$c_ok" "$c_0" "$HEALTH_URL"
 printf '%s│%s 容器    %s（status=%s · restart=%s）\n' "$c_ok" "$c_0" "$CONTAINER" "$IS_LIVE" "$RESTART_POLICY"
-printf '%s│%s 数据    %s/magnet_items.db%s\n' "$c_ok" "$c_0" "$DATA" "${DB_SIZE:+（$DB_SIZE）}"
+printf '%s│%s 数据    %s/magnet_items.db%s\n' "$c_ok" "$c_0" "$DATA" "${DB_SIZE:+（${DB_SIZE}）}"
 printf '%s│%s 日志    docker logs -f %s\n' "$c_ok" "$c_0" "$CONTAINER"
 printf '%s│%s Key     %s/api-key.txt（600）\n' "$c_ok" "$c_0" "$PREFIX"
 printf '%s└────────────────────────────────────────────────────────────┘%s\n' "$c_ok" "$c_0"
@@ -409,7 +409,7 @@ if [ "$DOCKER_OK" != "1" ]; then
   B. 不动权限，去 fnOS 的 Docker 界面导入：
        · 项目/Compose 新建，粘贴 $PREFIX/compose.yaml（能构建时直接构建）
        · 界面不能构建时，改用 $PREFIX/compose.nobuild.yaml（官方 python 镜像 + 首次启动装依赖）
-       · 数据目录 $DATA，端口 $HOST_PORT:8899，重启策略 unless-stopped
+       · 数据目录 ${DATA}，端口 $HOST_PORT:8899，重启策略 unless-stopped
        · API Key 在 $PREFIX/api-key.txt
 EOF
   exit 3
