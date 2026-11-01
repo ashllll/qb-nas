@@ -57,14 +57,15 @@ SMOKE_SUBMIT=1 SMOKE_QBIT_... python scripts/smoke_production.py
 注意：smoke 使用的 magnet 是占位 hash（仅验证提交与轮询机制，无真实对等体）。
 如需真实下载验证，替换脚本中 `_PLACEHOLDER_MAGNET` 为有效 magnet 后再运行。
 
-## 3. WebSocket API Key 的已知权衡
+## 3. WebSocket API Key 的传递
 
-- `/ws` 的 API Key 通过查询参数传递（浏览器 WebSocket 无法自定义请求头）。
-  后果：**反代/Uvicorn 访问日志会记录完整请求行（含 key）**。
-  缓解：非本机部署时，在反代层重写/脱敏 access log 的查询串；
-  或将 key 视为短期凭据并定期轮换。
-- 认证在 `ws.accept()` 之前完成，失败连接（4401）不进入广播器；
-  比较使用 `secrets.compare_digest`（恒定时间），拒绝日志不含 key 内容。
+- `/ws` 的 API Key 只接受握手后的第一帧 `{"type":"auth","api_key":"..."}`；
+  查询串里的 `api_key` 一律不读（即使值正确也按「没带」拒绝，close 4401）。
+  这样 key 不会进入 URL、反代/Uvicorn 访问日志或浏览器历史。
+- 必须先 `ws.accept()` 再收第一帧，否则浏览器只能看到 1006/403，
+  界面分不清「没带 key」「key 不对」「服务端没配 key」。
+- 认证失败（4401）不进入广播器；比较使用 `secrets.compare_digest`（恒定时间），
+  日志只记 `api_key_missing`/`api_key_invalid`，不含 key 内容。
 - 未配置 `API_KEY` 时 `/ws` 保持开放（本地回环默认部署兼容模式）；
   非本机部署必须配置 `API_KEY`，否则资源名称/来源/下载状态可被未授权订阅。
 

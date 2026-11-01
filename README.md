@@ -108,7 +108,7 @@ cp .env.example .env
 | `QBIT_SYNC_INTERVAL`              | qB 状态轮询间隔（秒）                                               | `2.0`                           |
 | `SERVICE_HOST`                    | 服务监听地址                                                        | `127.0.0.1`                     |
 | `SERVICE_PORT`                    | 服务端口                                                            | `8899`                          |
-| `API_KEY`                         | 写操作与 `/ws` 的 `X-API-Key`/查询参数                              | 空（仅 loopback）               |
+| `API_KEY`                         | 写操作的 `X-API-Key`；`/ws` 握手后第一帧（不进 URL）                | 空（仅 loopback）               |
 | `ALLOW_INSECURE_WRITE_API`        | 允许非 loopback 无认证                                              | `false`                         |
 | `SITE_COOKIES`                    | 站点 Cookie 注入                                                    | `{}`                            |
 | `CRAWLER_TIMEOUT`                 | 抓取超时秒                                                          | `30`                            |

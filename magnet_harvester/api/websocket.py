@@ -364,24 +364,19 @@ async def websocket_endpoint(ws: WebSocket):
 
     # ── API Key 认证（与写接口一致的策略） ──────────────────
     # API_KEY 为空时保持向后兼容（本地回环部署默认不校验）。
-    # 非空时两种凭据都接受：
-    #   1) 旧客户端：?api_key=... 查询参数（仍兼容，但会进 URL/代理日志）；
-    #   2) 新客户端：握手后的第一帧 {"type":"auth","api_key":"..."}，
-    #      Key 不进 URL、不进访问日志（见 static/app.js）。
+    # 非空时只接受握手后的第一帧 {"type":"auth","api_key":"..."}：
+    # key 不进 URL、不进代理/访问日志（见 static/app.js）。
+    # 查询串里的 api_key 一律不读——进了 URL 就已经泄露，服务端接受它
+    # 等于奖励这种写法；旧通道随本轮移除（约定第 3 条）。
     expected = (getattr(getattr(ctx, "runtime", None), "api_key", "") or "").strip()
     # 必须先 accept：握手阶段直接 close 会被浏览器当成 1006/403，
     # 界面就分不清「没带 key」「key 不对」「服务端没配 key」。
     await ws.accept()
     if expected:
-        supplied = (ws.query_params.get("api_key") or "").strip()
+        frame_key, _frame_type = await _first_frame_api_key(ws)
         # 是否"带过 key"决定原因是 api_key_invalid 还是 api_key_missing
-        supplied_any = bool(supplied)
-        authorized = _key_matches(supplied, expected)
-        if not authorized and not supplied_any:
-            # 旧客户端把 key 放在 URL；带了但不对就不必再等帧，直接说 key 不对
-            frame_key, _frame_type = await _first_frame_api_key(ws)
-            supplied_any = supplied_any or bool(frame_key)
-            authorized = _key_matches(frame_key, expected)
+        supplied_any = bool(frame_key)
+        authorized = _key_matches(frame_key, expected)
         if not authorized:
             reason = "api_key_invalid" if supplied_any else "api_key_missing"
             # 只记原因，绝不记 key
