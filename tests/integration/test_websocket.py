@@ -63,6 +63,8 @@ def test_websocket_connect_receives_init_message(app_ctx):
 
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
+        # 握手第一帧是 hello（告诉客户端服务端是否启用鉴权），其后才是 init
+        assert json.loads(ws.receive_text())["type"] == "hello"
         raw = ws.receive_text()
         data = json.loads(raw)
         assert data["type"] == "init"
@@ -77,6 +79,7 @@ def test_websocket_init_empty_when_no_items(app_ctx):
 
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
+        assert json.loads(ws.receive_text())["type"] == "hello"
         raw = ws.receive_text()
         data = json.loads(raw)
         assert data["type"] == "init"
@@ -92,6 +95,7 @@ def test_websocket_ping_pong(app_ctx):
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
         # Consume the complete initial snapshot protocol.
+        assert json.loads(ws.receive_text())["type"] == "hello"
         assert json.loads(ws.receive_text())["type"] == "init"
         assert json.loads(ws.receive_text())["type"] == "init_done"
 
@@ -109,6 +113,7 @@ def test_websocket_json_ping_pong(app_ctx):
     client = TestClient(app)
     with client.websocket_connect("/ws") as ws:
         # Consume the complete initial snapshot protocol.
+        assert json.loads(ws.receive_text())["type"] == "hello"
         assert json.loads(ws.receive_text())["type"] == "init"
         assert json.loads(ws.receive_text())["type"] == "init_done"
 
