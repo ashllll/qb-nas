@@ -55,6 +55,7 @@ const ingest = {
   lastEventAt: "", // 最近一次上报时间（ISO 字符串）
   batchJobId: "", // 批次提示条正在展示的任务
   batchDismissed: false,
+  crawlActive: false, // 进度条是否正在跟随采集任务
 };
 let itemsRefreshTimer = null;
 
@@ -296,6 +297,7 @@ function handleMsg(msg) {
       break;
     case "crawl_start":
       fieldPulse(0.6);
+      ingest.crawlActive = true;
       setProgress(10);
       setCrawling(true);
       addLog(`开始爬取 ${shortUrl(msg.url)}`, "info");
@@ -346,6 +348,7 @@ function handleMsg(msg) {
       break;
     case "crawl_done":
       fieldPulse(1);
+      ingest.crawlActive = false;
       setProgress(100);
       setTimeout(() => setProgress(0), 900);
       setCrawling(false);
@@ -387,6 +390,7 @@ function handleMsg(msg) {
       break;
     case "crawl_error": {
       setCrawling(false);
+      ingest.crawlActive = false;
       setProgress(0);
       // found_handler_failed 等变体将原始 dict 放入 msg（嵌套），取其中的字符串字段
       const crawlErr =
@@ -1050,6 +1054,32 @@ function setProgress(percent) {
   document.getElementById("progressBar").style.width = `${percent}%`;
 }
 
+/* 采集（页面 /api/crawl 与 Mac 上报）只发 job_updated，不发 crawl_done；
+   进度条必须由任务状态收尾，否则会停在 magnet_found 抬到的位置走不完。 */
+function syncCrawlProgress() {
+  const jobs = [...ingest.jobs.values()];
+  const running = jobs.some(
+    (job) => job.status === "queued" || job.status === "running"
+  );
+  if (running) {
+    if (ingest.crawlActive) return;
+    ingest.crawlActive = true;
+    setProgress(10);
+    return;
+  }
+  if (!ingest.crawlActive) return;
+  ingest.crawlActive = false;
+  const failed = jobs.some(
+    (job) => job.status === "failed" || job.status === "error"
+  );
+  if (failed) {
+    setProgress(0);
+    return;
+  }
+  setProgress(100);
+  setTimeout(() => setProgress(0), 900);
+}
+
 /* 首屏/轮询状态。三件事必须分清，不许互相冒充：
    1) 鉴权失败 → 说 API Key；2) 服务端接口失败 → 说接口；3) 网络不通 → 说连不上 NAS。
    只有服务端亲口说 qbit.ok=false，界面才写「qB 离线」，并带上它给的原因。 */
@@ -1440,6 +1470,7 @@ function applyJobUpdate(job) {
     // 抓取结束意味着可能有新条目入库，刷新一次列表（按 newest 排序）
     scheduleItemsRefresh(400);
   }
+  syncCrawlProgress();
 }
 
 function receiveIngestEvent(msg) {
@@ -1522,6 +1553,7 @@ function applyStatusSnapshot(data) {
   renderJobs();
   renderBatchBar();
   renderMacStatus();
+  syncCrawlProgress();
 }
 
 /* ---- 资源列表刷新（order=newest） ---- */
