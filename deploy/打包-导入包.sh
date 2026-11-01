@@ -59,10 +59,14 @@ CRAWLER_ALLOWED_RESOLUTIONS=
 CRAWLER_MAX_DEPTH=2
 CRAWLER_TIMEOUT=30
 CRAWLER_CONCURRENCY=4
+# 局域网 DNS 走 mihomo/Clash fake-IP（域名→198.18.x.x）时必须为 1，
+# 否则所有公开网址都会被判「不安全」。没有 fake-IP 就填 0。
+CRAWLER_ALLOW_FAKE_IP=1
 LOG_FILE=
 LOG_LEVEL=INFO
-QBIT_HOST=
-QBIT_USERNAME=
+# qBittorrent：只影响页面上的「下载」按钮，不影响入库；密码只写在这个文件里
+QBIT_HOST=http://192.168.20.193:8085
+QBIT_USERNAME=admin
 QBIT_PASSWORD=
 ENVT
 
@@ -71,7 +75,8 @@ cat > "$B/导入说明.md" <<'DOC'
 
 1. 把这个目录整个放到 NAS 的 **存储空间 3**：
    `/vol3/1000/qb-nas/`（`app/`、`data/`、`logs/`、`compose.yaml`、`.env` 都在这一层）。
-2. 复制 `.env.template` 为 `.env`，把 `API_KEY=` 填成一个随机串（24 位以上）。
+2. 复制 `.env.template` 为 `.env`，把 `API_KEY=` 填成一个随机串（24 位以上），
+   `QBIT_PASSWORD=` 填 qB 的密码。**如果 `/vol3/1000/qb-nas/.env` 已经存在（本机已 prepare），直接用现有的 `.env`，不要覆盖。**
 3. 打开 fnOS 的 Docker 管理界面：
    - 有 `qb-nas-center-*.tar`：先在「镜像 → 导入」里导入它；
    - 「项目 / Compose」→ 新建项目，名称 `qb-nas`，粘贴 `compose.yaml` 内容；
