@@ -13,7 +13,7 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `install.sh` | 在 **NAS 上**跑：取代码 → 幂等合并 `config/.env` → 生成 `compose.yaml` → `docker compose build` → 起容器 → 健康检查 |
+| `install.sh` | 在 **NAS 上**跑：用同步过去的源码 → 幂等合并 `config/.env` → 生成 `compose.yaml` → `docker compose build` → 起容器 → 健康检查 |
 | `uninstall.sh` | 在 **NAS 上**跑：停容器、删镜像与程序；默认留数据，`--purge --yes` 连数据删 |
 | `compose.yaml.tpl` | 生成到 `/vol3/1000/qb-nas/compose.yaml` 的模板（也可直接给 Docker 界面导入） |
 | `verify.sh` | 装完自检：容器/健康/Key/挂载/配置事实源/无环境注入/只监听局域网/kill -9 自愈 |
@@ -53,12 +53,15 @@
 
 ## 装（推荐：Mac 上双击）
 
-双击 `安装.command`。它 ssh 到 `llll@192.168.20.193`，用 NAS 仓库里 `stage/resident` 的代码跑 `install.sh`，完成后把地址和 API Key 打出来。
+双击 `安装.command`。它 ssh 到 `llll@192.168.20.193`，把当前这份工作副本 rsync 到 NAS 的临时目录，用 `install.sh --source` 构建，完成后把地址和 API Key 打出来。
 
 等价的单条命令（在 Mac 上）：
 
 ```bash
-ssh llll@192.168.20.193 'set -e; tmp=$(mktemp -d); git -C /vol1/1000/github/qb-nas archive stage/resident deploy | tar -x -C "$tmp"; bash "$tmp/deploy/install.sh" --git-ref stage/resident'
+rsync -a --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' \
+  ./ llll@192.168.20.193:/tmp/qbnas-src/
+ssh llll@192.168.20.193 \
+  'cd /tmp/qbnas-src && bash deploy/install.sh --source /tmp/qbnas-src --commit <short-sha>'
 ```
 
 只摆文件、不要求 docker 权限（会生成 `config/.env`/API Key/compose，容器等权限或界面导入）：
@@ -119,5 +122,5 @@ docker logs --tail 50 qb-nas-center
 - **更新代码**：重跑 `install.sh`（幂等：保留 API Key、界面改过的配置、数据），会重新构建镜像并替换容器。
 - **重建/重启不丢配置**：配置在 `/vol3/.../config/.env`，容器层只读；`docker compose up -d --build --force-recreate`
   之后值不变。旧部署的 `/vol3/1000/qb-nas/.env` 会在第一次跑新版 install.sh 时自动迁到 `config/.env` 并归档旧文件。
-- **回滚**：`--git-ref <旧 ref>` 重跑即可；数据是同一份 SQLite，向前兼容。
+- **回滚**：把工作副本切到旧提交（`git checkout <旧 sha>`）再重跑安装；数据是同一份 SQLite，向前兼容。
 - **测试/正式隔离**：测试档用独立项目名、容器名、镜像名、端口、目录；收口用 `--test --purge --yes` 清干净。
