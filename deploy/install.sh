@@ -42,7 +42,6 @@ QBIT_USER=""
 QBIT_PASS=""
 ALLOW_ANY_DISK=0
 ALLOW_FAKE_IP=""
-PREPARE=0
 LOG_LEVEL=INFO
 BIND_IP=""       # 空=自动探测局域网地址；--bind-ip 可覆盖
 
@@ -108,7 +107,7 @@ while [ $# -gt 0 ]; do
     --test) PREFIX=/vol3/1000/qb-nas-test; HOST_PORT=18999; PROJECT=qb-nas-test; \
             CONTAINER=qb-nas-center-test; IMAGE=qb-nas-center:test; MODE_NAME=test; shift ;;
     --no-start) START=0; shift ;;
-    --prepare) PREPARE=1; START=0; shift ;;   # 只摆文件，不构建/不起容器
+    --prepare) START=0; shift ;;   # 只摆文件，不构建/不起容器
     -h|--help) usage; exit 0 ;;
     *) die "不认识的参数：$1（--help 看用法）" ;;
   esac
@@ -162,7 +161,6 @@ info "存储空间 3 剩余 ${FREE_GB}GB · $(df -Pk "$PREFIX" | awk 'NR==2{prin
 DOCKER_OK=1
 if ! docker info >/dev/null 2>&1; then
   DOCKER_OK=0
-  PREPARE=1
   printf '\n%s! 当前用户 llll 用不了 docker（socket 属 root:docker，660）%s\n' "$c_warn" "$c_0" >&2
   printf '  先把代码/配置/compose 摆到 %s，容器这一步等权限或界面导入。\n' "$PREFIX" >&2
 fi
