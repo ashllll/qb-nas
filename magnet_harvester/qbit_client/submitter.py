@@ -62,6 +62,27 @@ def _resolve_relative_save_path(base: str, relative_path: str) -> str:
     return candidate
 
 
+def _add_response_succeeded(response) -> bool:
+    """qB v4 返回纯文本 "Ok."，v5 返回 JSON（success_count/failure_count/added_torrent_ids）。"""
+    text = response.text.strip()
+    if text.lower() == "ok.":
+        return True
+    if text.lower() == "fails.":
+        return False
+    try:
+        payload = response.json()
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if "failure_count" in payload:
+        failures = int(payload.get("failure_count") or 0)
+        added = payload.get("added_torrent_ids") or []
+        success = int(payload.get("success_count") or 0)
+        return failures == 0 and (success > 0 or bool(added))
+    return False
+
+
 class MagnetSubmitter:
     """Encapsulates adding a single magnet link to qBittorrent.
 
@@ -148,7 +169,7 @@ class MagnetSubmitter:
                 },
             )
 
-            ok = r.text.strip() == "Ok."
+            ok = _add_response_succeeded(r)
 
             if ok:
                 self._recorder.succeeded()

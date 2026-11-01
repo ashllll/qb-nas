@@ -119,7 +119,13 @@ class QBitTransport:
                     if r.status_code >= 500:
                         raise IOError(f"qBittorrent 服务暂时不可用 (HTTP {r.status_code})")
 
-                    if r.text.strip().lower() == "ok.":
+                    # qB v4：200 + "Ok."；qB v5：204 + 空 body（SID 在 Set-Cookie 里）。
+                    # 只要没有 401/403、会话 cookie 已下发，就当登录成功。
+                    body = r.text.strip().lower()
+                    session_cookie = any("SID" in name for name in r.cookies.keys())
+                    if r.status_code in (200, 204) and body in ("", "ok.", "ok") and (
+                        session_cookie or body in ("ok.", "ok")
+                    ):
                         client.cookies.update(r.cookies)
                         self._authenticated = True
                         self._record_success()
@@ -127,7 +133,11 @@ class QBitTransport:
                         return True
 
                     # 认证凭据错误 — 不重试，立即失败
-                    log.error("qBittorrent 登录失败: %s", r.text[:100])
+                    log.error(
+                        "qBittorrent 登录失败: HTTP %s %s",
+                        r.status_code,
+                        r.text[:100],
+                    )
                     self._record_failure()
                     return False
 

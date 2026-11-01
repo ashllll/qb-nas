@@ -239,3 +239,26 @@ async def test_submitter_rejects_relative_save_path_escape():
     request.assert_not_awaited()
     assert recorder.failures == 1
     assert recorder.errors and "保存路径" in recorder.errors[-1]
+
+
+@pytest.mark.asyncio
+async def test_submitter_accepts_qbittorrent_v5_json_add_response():
+    """qB v5 /torrents/add 返回 JSON（而非 v4 的 "Ok."）。"""
+    response = httpx.Response(
+        200,
+        json={
+            "added_torrent_ids": ["0123456789abcdef0123456789abcdef01234567"],
+            "failure_count": 0,
+            "pending_count": 0,
+            "success_count": 1,
+        },
+        request=httpx.Request("POST", "http://qbit.test/api/v2/torrents/add"),
+    )
+    request = AsyncMock(return_value=response)
+    recorder = FakeSubmissionRecorder()
+    submitter = _make_submitter(request=request, recorder=recorder)
+
+    assert await submitter.add_magnet(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567", "电影", ""
+    )
+    assert recorder.successes == 1
