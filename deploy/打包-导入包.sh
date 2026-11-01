@@ -16,7 +16,7 @@ STAMP=$(date +%Y%m%d-%H%M)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/qb-nas-import.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 B="$WORK/qb-nas"
-mkdir -p "$B/app" "$B/data" "$B/logs" "$B/backup"
+mkdir -p "$B/app" "$B/config" "$B/data" "$B/logs" "$B/backup"
 
 echo "▶ 收代码"
 rsync -a --exclude '.git/' --exclude '.venv' --exclude 'node_modules/' --exclude '__pycache__/' \
@@ -34,7 +34,9 @@ sed -e 's|@@PROJECT@@|qb-nas|g' \
     -e 's|@@APP@@|/vol3/1000/qb-nas/app|g' \
     -e 's|@@IMAGE@@|qb-nas-center:local|g' \
     -e 's|@@CONTAINER@@|qb-nas-center|g' \
-    -e 's|@@ENV_FILE@@|/vol3/1000/qb-nas/.env|g' \
+    -e 's|@@CONFIG_DIR@@|/vol3/1000/qb-nas/config|g' \
+    -e 's|@@PREFIX@@|/vol3/1000/qb-nas|g' \
+    -e 's|@@BIND_IP@@|0.0.0.0|g' \
     -e 's|@@HOST_PORT@@|8899|g' \
     -e 's|@@DATA_DIR@@|/vol3/1000/qb-nas/data|g' \
     -e 's|@@LOG_DIR@@|/vol3/1000/qb-nas/logs|g' \
@@ -46,14 +48,22 @@ sed -e 's|@@PROJECT@@|qb-nas|g' \
       !skip {print}
     ' > "$B/compose.yaml"
 
-cp "$SELF_DIR/docker/compose.nobuild.yaml" "$B/compose.nobuild.yaml"
+sed -e 's|@@PREFIX@@|/vol3/1000/qb-nas|g' \
+    -e 's|@@APP@@|/vol3/1000/qb-nas/app|g' \
+    -e 's|@@CONFIG_DIR@@|/vol3/1000/qb-nas/config|g' \
+    -e 's|@@DATA_DIR@@|/vol3/1000/qb-nas/data|g' \
+    -e 's|@@LOG_DIR@@|/vol3/1000/qb-nas/logs|g' \
+    -e 's|@@BIND_IP@@|0.0.0.0|g' \
+    -e 's|@@HOST_PORT@@|8899|g' \
+    -e 's|@@PROJECT@@|qb-nas|g' \
+    -e 's|@@CONTAINER@@|qb-nas-center|g' \
+    "$SELF_DIR/docker/compose.nobuild.yaml" > "$B/compose.nobuild.yaml"
 
-cat > "$B/.env.template" <<'ENVT'
-SERVICE_HOST=0.0.0.0
-SERVICE_PORT=8899
+cat > "$B/config/.env.template" <<'ENVT'
+# 配置唯一事实源：/vol3/1000/qb-nas/config/.env（600）
+# 界面写它、容器读它；SERVICE_HOST/SERVICE_PORT/STORE_DB_PATH 由 compose 钉死，不在这里。
 API_KEY=在这里填一个随机串（至少 24 位，例如 openssl rand -hex 24 的结果）
 STORE_BACKEND=sqlite
-STORE_DB_PATH=/data/magnet_items.db
 CRAWLER_HTTP_FIRST=true
 CRAWLER_ALLOWED_RESOLUTIONS=
 CRAWLER_MAX_DEPTH=2
@@ -74,18 +84,21 @@ cat > "$B/导入说明.md" <<'DOC'
 # 在 NAS 的 Docker 界面导入（无 SSH/docker 权限时）
 
 1. 把这个目录整个放到 NAS 的 **存储空间 3**：
-   `/vol3/1000/qb-nas/`（`app/`、`data/`、`logs/`、`compose.yaml`、`.env` 都在这一层）。
-2. 复制 `.env.template` 为 `.env`，把 `API_KEY=` 填成一个随机串（24 位以上），
-   `QBIT_PASSWORD=` 填 qB 的密码。**如果 `/vol3/1000/qb-nas/.env` 已经存在（本机已 prepare），直接用现有的 `.env`，不要覆盖。**
+   `/vol3/1000/qb-nas/`（`app/`、`config/`、`data/`、`logs/`、`compose.yaml` 都在这一层）。
+2. 复制 `config/.env.template` 为 `config/.env`，`chmod 600`，属主 llll(1000:1001)；
+   把 `API_KEY=` 填成一个随机串（24 位以上），`QBIT_PASSWORD=` 填 qB 的密码。
+   **如果 `/vol3/1000/qb-nas/config/.env` 已经存在，直接用现有的，不要覆盖。**
+   旧部署的 `/vol3/1000/qb-nas/.env` 请搬到 `config/.env`（install.sh 会自动迁移并归档）。
 3. 打开 fnOS 的 Docker 管理界面：
    - 有 `qb-nas-center-*.tar`：先在「镜像 → 导入」里导入它；
    - 「项目 / Compose」→ 新建项目，名称 `qb-nas`，粘贴 `compose.yaml` 内容；
    - 若界面不支持 `build`：确认 `image:` 指向已导入的镜像，删掉 `build:` 段；
    - 若只能用官方 python 镜像：先 `mkdir -p /vol3/1000/qb-nas/venv`（属主 llll），
      再用 `compose.nobuild.yaml`（首次启动在 /venv 装依赖，2–4 分钟，只一次）；
-   - 端口 `8899:8899`，重启策略 `unless-stopped`，数据目录 `/vol3/1000/qb-nas/data`。
+   - 端口 `8899:8899`（只绑局域网时用 `192.168.20.193:8899:8899`），
+     重启策略 `unless-stopped`，配置目录 `config/`、数据目录 `data/`。
 4. 启动后访问 `http://<NAS>:8899/api/health`，返回 `{"ok":true,...}` 就成。
-5. API Key 在 `.env` 里；Mac 代理第一次配置时填 `http://<NAS>:8899` + 这串 Key。
+5. API Key 在 `config/.env` 里；Mac 代理第一次配置时填 `http://<NAS>:8899` + 这串 Key。
 DOC
 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then

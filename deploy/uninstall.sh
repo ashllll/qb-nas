@@ -74,7 +74,7 @@ else
   已卸载，留下的东西：
     数据    $PREFIX/data/magnet_items.db
     日志    $PREFIX/logs（容器日志在 docker logs，重建后用同名容器继续看）
-    配置    $PREFIX/.env（600）· $PREFIX/api-key.txt
+    配置    $PREFIX/config/.env（600）· $PREFIX/api-key.txt
   重装会继续用同一个 API Key 和同一份资源库。
   要彻底删干净：bash $PREFIX/uninstall.sh --purge --yes
 EOF

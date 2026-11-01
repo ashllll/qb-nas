@@ -4,9 +4,10 @@
 #
 #   在 NAS 上以 llll 运行（需要能用 docker；见下面「没有 docker 权限怎么办」）。
 #   · 代码 → <prefix>/app（构建上下文）
+#   · 配置 → <prefix>/config/.env（600）——唯一事实源：界面写它、本脚本写它、容器读它
 #   · 数据 → <prefix>/data，日志走 docker logs；两者都在 /vol3（存储空间 3）
 #   · 容器 restart=unless-stopped：NAS 重启自己回来，崩了 docker 拉起
-#   · 生成 <prefix>/.env（600，含随机 API Key）与 <prefix>/compose.yaml
+#   · 生成 <prefix>/config/.env（600，含随机 API Key）与 <prefix>/compose.yaml
 #
 #   仓库里直接跑：bash deploy/install.sh            （源码 = 本仓库）
 #   测试档：      bash deploy/install.sh --test     （/vol3/1000/qb-nas-test + 18999）
@@ -41,8 +42,8 @@ QBIT_USER=""
 QBIT_PASS=""
 ALLOW_ANY_DISK=0
 ALLOW_FAKE_IP=""
-PREPARE=0
 LOG_LEVEL=INFO
+BIND_IP=""       # 空=自动探测局域网地址；--bind-ip 可覆盖
 
 c_ok=$'\033[32m'; c_warn=$'\033[33m'; c_err=$'\033[31m'; c_dim=$'\033[2m'; c_0=$'\033[0m'
 if [ ! -t 1 ]; then c_ok=""; c_warn=""; c_err=""; c_dim=""; c_0=""; fi
@@ -62,6 +63,7 @@ usage() {
 参数：
   --prefix DIR        安装根目录（默认 /vol3/1000/qb-nas；必须在 /vol3 下）
   --port N            对外端口（默认 8899，容器内固定 8899）
+  --bind-ip ADDR      只在这个局域网地址上监听（默认自动探测，如 192.168.20.193）
   --project NAME      compose 项目名（默认 qb-nas）
   --container NAME    容器名（默认 qb-nas-center）
   --image TAG         镜像标签（默认 qb-nas-center:local）
@@ -86,6 +88,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --prefix) PREFIX=${2:?}; shift 2 ;;
     --port) HOST_PORT=${2:?}; shift 2 ;;
+    --bind-ip) BIND_IP=${2:?}; shift 2 ;;
     --project) PROJECT=${2:?}; shift 2 ;;
     --container) CONTAINER=${2:?}; shift 2 ;;
     --image) IMAGE=${2:?}; shift 2 ;;
@@ -104,7 +107,7 @@ while [ $# -gt 0 ]; do
     --test) PREFIX=/vol3/1000/qb-nas-test; HOST_PORT=18999; PROJECT=qb-nas-test; \
             CONTAINER=qb-nas-center-test; IMAGE=qb-nas-center:test; MODE_NAME=test; shift ;;
     --no-start) START=0; shift ;;
-    --prepare) PREPARE=1; shift ;;
+    --prepare) START=0; shift ;;   # 只摆文件，不构建/不起容器
     -h|--help) usage; exit 0 ;;
     *) die "不认识的参数：$1（--help 看用法）" ;;
   esac
@@ -114,13 +117,29 @@ APP="$PREFIX/app"
 DATA="$PREFIX/data"
 LOGS="$PREFIX/logs"
 RUN="$PREFIX/run"
-ENV_FILE="$PREFIX/.env"
+CONFIG_DIR="$PREFIX/config"
+ENV_FILE="$CONFIG_DIR/.env"
 COMPOSE="$PREFIX/compose.yaml"
-URL_HOST=127.0.0.1
+CONTAINER_UID=1000   # 与 Dockerfile 的 USER 1000:1001 一致
+CONTAINER_GID=1001
+
+if [ -z "$BIND_IP" ]; then BIND_IP=$(lan_ip || true); fi
+if [ -z "$BIND_IP" ]; then
+  BIND_IP=0.0.0.0
+  warn "没探测到局域网 IP，退回 0.0.0.0（所有网卡）；可用 --bind-ip 指定"
+fi
+case "$BIND_IP" in
+  *[!0-9.]*) die "非法的 --bind-ip：$BIND_IP（要 IPv4 字面量，如 192.168.20.193）" ;;
+esac
+# 端口只绑在局域网地址上（verify.sh 会检查），所以主机侧探活也必须走这个地址，
+# 不能用 127.0.0.1（那样自检会假失败）。
+URL_HOST=$BIND_IP
+[ "$URL_HOST" = "0.0.0.0" ] && URL_HOST=127.0.0.1
 
 printf '%s\n' "${c_dim}qb-nas 中心服务 · 容器化安装（${MODE_NAME}）${c_0}"
 dim "根目录 ${PREFIX}（数据只在 /vol3）"
-dim "端口   $HOST_PORT → 容器 8899"
+dim "配置   ${ENV_FILE}（唯一事实源，600）"
+dim "端口   ${BIND_IP}:${HOST_PORT} → 容器 8899（只绑局域网）"
 dim "项目   $PROJECT · 容器 $CONTAINER · 镜像 $IMAGE"
 
 # ── 0. 现场检查 ──────────────────────────────────────────────────────────────
@@ -142,7 +161,6 @@ info "存储空间 3 剩余 ${FREE_GB}GB · $(df -Pk "$PREFIX" | awk 'NR==2{prin
 DOCKER_OK=1
 if ! docker info >/dev/null 2>&1; then
   DOCKER_OK=0
-  PREPARE=1
   printf '\n%s! 当前用户 llll 用不了 docker（socket 属 root:docker，660）%s\n' "$c_warn" "$c_0" >&2
   printf '  先把代码/配置/compose 摆到 %s，容器这一步等权限或界面导入。\n' "$PREFIX" >&2
 fi
@@ -168,7 +186,11 @@ fi
 
 # ── 1. 取代码（先落临时目录，验完再换）──────────────────────────────────────
 step "1/8 取代码"
-STAGE=$(mktemp -d "${TMPDIR:-/tmp}/qb-nas-stage.XXXXXX")
+mkdir -p "$RUN"   # 这一步就要用 run/（临时目录必须落 /vol3）
+# 临时目录放在 /vol3 的 run/ 下：这台 NAS（fnOS）的 /tmp 对普通用户不可用
+# （mktemp 建得出来，但 rsync 往里写会 Permission denied），run/ 是 700 且同盘，
+# 构建上下文也不跨文件系统。
+STAGE=$(mktemp -d "$RUN/qb-nas-stage.XXXXXX")
 cleanup() { rm -rf "$STAGE"; }
 trap cleanup EXIT
 COMMIT=local
@@ -195,14 +217,24 @@ else
     --exclude '.codebase-memory/' --exclude '.DS_Store' "$SRC_RO/" "$STAGE/"
   info "来源：本地目录 $SRC_RO"
 fi
+# 这台 NAS（fnOS/btrfs）新建文件默认 700，从 tar 解出来的甚至会是 000：
+# 这样的构建上下文 COPY 进镜像后，容器里的 uid1000 读不了 → 容器崩溃循环
+# （实测：PermissionError: '/app/magnet_harvester/__init__.py'）。
+# 构建上下文统一归一化成「目录 755 / 文件 644 / 脚本 755」。
+find "$STAGE" -type d -exec chmod 755 {} +
+find "$STAGE" -type f -exec chmod 644 {} +
+find "$STAGE" -type f -name '*.sh' -exec chmod 755 {} +
+
 [ -f "$STAGE/magnet_harvester/main.py" ] || die "代码里没有 magnet_harvester/main.py"
 [ -f "$STAGE/requirements.txt" ] || die "代码里没有 requirements.txt"
 
 # ── 2. 落地目录与代码 ────────────────────────────────────────────────────────
 step "2/8 落地代码与目录"
-mkdir -p "$APP" "$DATA" "$LOGS" "$RUN" "$PREFIX/backup" "$PREFIX/venv"
-# fnOS 上有些目录 stat 出来是 000（实际可写）；给容器 uid1000 一个明确的 700
-chmod 700 "$PREFIX" "$PREFIX/venv" "$PREFIX/data" "$PREFIX/logs" "$PREFIX/run" 2>/dev/null || true
+# fnOS 上有些目录 stat 出来是 000（实际可写）：先把根目录放开，再往下建
+chmod 700 "$PREFIX" 2>/dev/null || true
+mkdir -p "$APP" "$CONFIG_DIR" "$DATA" "$LOGS" "$RUN" "$PREFIX/backup" "$PREFIX/venv"
+# 给容器 uid1000 一个明确的 700（配置目录必须：界面保存要在里面建临时文件）
+chmod 700 "$PREFIX" "$PREFIX/venv" "$CONFIG_DIR" "$PREFIX/data" "$PREFIX/logs" "$PREFIX/run" 2>/dev/null || true
 chmod 700 "$DATA" "$RUN"; chmod 750 "$LOGS"
 cp -p "$SELF_DIR/docker/Dockerfile" "$APP/Dockerfile"
 cp -p "$SELF_DIR/docker/dockerignore" "$APP/.dockerignore"
@@ -216,21 +248,59 @@ rsync -a --delete --exclude 'Dockerfile' --exclude '.dockerignore' \
   --exclude 'data/' --exclude 'logs/' --exclude '.env' "$STAGE/" "$APP/"
 info "构建上下文 ${APP}（${COMMIT}）"
 
-# ── 3. 配置 .env（600）───────────────────────────────────────────────────────
-step "3/8 写 .env（600）"
-OLD_KEY=""
-[ -f "$ENV_FILE" ] && OLD_KEY=$(grep -E '^API_KEY=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
+# ── 3. 配置：唯一事实源 <prefix>/config/.env（600）───────────────────────────
+step "3/8 写配置（唯一事实源 ${ENV_FILE}，600）"
+mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+
+# 旧部署有两处 .env（现实为准，两处都要收进来）：
+#   · $PREFIX/.env     —— install.sh 写的，被 compose 的 env_file 注入进程环境
+#   · $DATA/.env       —— 上一版 compose 的 ENV_FILE=/data/.env，界面「保存并测试」写这里
+# 于是「界面写一份、进程读另一份」，重启就被盖回。迁移时三处按优先级合并：
+#   已在 config/.env 的 > 界面写过的 /data/.env > install.sh 写的 $PREFIX/.env
+# 最后把两处旧文件归档，避免再出现第二个事实源。
+LEGACY_ENV="$PREFIX/.env"
+LEGACY_DATA_ENV="$DATA/.env"
+OLD_ENV="$CONFIG_DIR/.env.old.$$"
+{
+  [ -f "$ENV_FILE" ] && cat "$ENV_FILE"
+  [ -f "$LEGACY_DATA_ENV" ] && cat "$LEGACY_DATA_ENV"
+  [ -f "$LEGACY_ENV" ] && cat "$LEGACY_ENV"
+} > "$OLD_ENV" || true
+chmod 600 "$OLD_ENV"
+[ -s "$OLD_ENV" ] || : > "$OLD_ENV"
+if [ -f "$LEGACY_DATA_ENV" ] || [ -f "$LEGACY_ENV" ]; then
+  info "迁移旧配置：$([ -f "$LEGACY_DATA_ENV" ] && echo "$LEGACY_DATA_ENV ") $([ -f "$LEGACY_ENV" ] && echo "$LEGACY_ENV ")→ $ENV_FILE（值原样保留）"
+fi
+[ -f "$ENV_FILE" ] || : > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+# 老值一律「原样保留整行」：不解析、不改引号/转义。旧实现用模板整份重写，
+# 会把界面上改过的、手改过的键一起冲掉——那正是「一重装就回解放前」。
+old_line() { grep -E "^$1=" "$OLD_ENV" 2>/dev/null | head -1 || true; }
+# 取第一个「非空」值：迁移时遇到 API_KEY= 这类空行，绝不能因此生成新 Key（不轮换）
+old_value() { grep -E "^$1=" "$OLD_ENV" 2>/dev/null | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' | grep -v '^$' | head -1 || true; }
+keep_or() { # $1=键 $2=文件里没有时的默认行
+  local line
+  line=$(old_line "$1")
+  if [ -n "$line" ]; then printf '%s\n' "$line"; else printf '%s\n' "$2"; fi
+}
+managed_or() { # $1=键 $2=显式值（空=沿用旧值）$3=默认行
+  if [ -n "$2" ]; then printf '%s=%s\n' "$1" "$2"; else keep_or "$1" "$3"; fi
+}
+
+# API Key：显式给了才换；只有 --rotate-key 才重新生成（重装绝不轮换）
+OLD_KEY=$(old_value API_KEY)
 [ -n "$API_KEY" ] || API_KEY="$OLD_KEY"
 if [ -z "$API_KEY" ] || [ "$ROTATE_KEY" = "1" ]; then
   API_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(24))')
   [ "$ROTATE_KEY" = "1" ] && info "已按要求重新生成 API Key"
 fi
 [ ${#API_KEY} -ge 24 ] || die "API Key 太短（至少 24 字符）"
-# fake-IP（mihomo/Clash）环境：域名会解析到 198.18.0.0/15，SSRF 校验必须放行这一段，
-# 否则所有公开网址都会被判「不安全」。没显式给就沿用旧 .env，再没有就现场探测一次。
-if [ -z "$ALLOW_FAKE_IP" ] && [ -f "$ENV_FILE" ]; then
-  ALLOW_FAKE_IP=$(grep -E '^CRAWLER_ALLOW_FAKE_IP=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
-fi
+
+# fake-IP（mihomo/Clash）：域名解析到 198.18.0.0/15，SSRF 校验必须放行这一段，
+# 否则所有公开网址都会被判「不安全」。显式 > 旧值 > 现场探测。
+if [ -z "$ALLOW_FAKE_IP" ]; then ALLOW_FAKE_IP=$(old_value CRAWLER_ALLOW_FAKE_IP); fi
 if [ -z "$ALLOW_FAKE_IP" ]; then
   if getent hosts example.com 2>/dev/null | grep -qE '^198\.18\.'; then
     ALLOW_FAKE_IP=1
@@ -239,61 +309,118 @@ if [ -z "$ALLOW_FAKE_IP" ]; then
     ALLOW_FAKE_IP=0
   fi
 fi
-if [ -z "$QBIT_HOST" ] && [ -f "$ENV_FILE" ]; then
-  QBIT_HOST=$(grep -E '^QBIT_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
-  QBIT_USER=$(grep -E '^QBIT_USERNAME=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
-  QBIT_PASS=$(grep -E '^QBIT_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
-fi
-[ -f "$ENV_FILE" ] && cp -p "$ENV_FILE" "$PREFIX/backup/env-$(date +%Y%m%d-%H%M%S).bak" && chmod 600 "$PREFIX/backup"/env-*.bak 2>/dev/null || true
-ls -1t "$PREFIX/backup"/env-*.bak 2>/dev/null | tail -n +4 | xargs -r rm -f || true
+
+NEW_ENV="$CONFIG_DIR/.env.new.$$"
 umask 077
-cat > "$ENV_FILE" <<ENV
-# qb-nas 中心服务 · 容器运行配置（${MODE_NAME}）· 由 deploy/install.sh 生成
-# 权限 600；不要进仓库。改完执行：docker compose -f $COMPOSE --project-name $PROJECT up -d --force-recreate
-SERVICE_HOST=0.0.0.0
-SERVICE_PORT=8899
-API_KEY=$API_KEY
+{
+  cat <<ENV_HEAD
+# qb-nas 中心服务 · 配置唯一事实源（${MODE_NAME}）
+#
+# 位置    ${ENV_FILE}（600；容器内 /config/.env）
+# 谁写    Web UI「保存并测试」；deploy/install.sh（幂等合并：只补缺，不改已有值）
+# 谁读    容器启动（ENV_FILE=/config/.env；compose 把 config/ 目录挂到 /config）
+# 优先级  本文件 > 进程环境 > 内置默认
+#         例外：SERVICE_HOST / SERVICE_PORT / STORE_DB_PATH 由 compose 钉死（部署键）
+# 别用 compose 的 env_file / -e 注入这里的键：那会让启动值盖回界面写入（重启回滚）。
+# 改完生效：docker compose -f ${COMPOSE} --project-name ${PROJECT} up -d
+ENV_HEAD
+  printf '\n# 鉴权（Mac 代理用；不轮换）\n'
+  printf 'API_KEY=%s\n' "$API_KEY"
+  printf '\n# 存储：容器内 /data ← %s（/vol3，持久）\n' "$DATA"
+  keep_or STORE_BACKEND 'STORE_BACKEND=sqlite'
+  printf '\n# 取页：公开页 HTTP 优先；1080p/720p 也收\n'
+  keep_or CRAWLER_HTTP_FIRST 'CRAWLER_HTTP_FIRST=true'
+  keep_or CRAWLER_ALLOWED_RESOLUTIONS 'CRAWLER_ALLOWED_RESOLUTIONS='
+  printf 'CRAWLER_ALLOW_FAKE_IP=%s\n' "$ALLOW_FAKE_IP"
+  keep_or CRAWLER_MAX_DEPTH 'CRAWLER_MAX_DEPTH=2'
+  keep_or CRAWLER_TIMEOUT 'CRAWLER_TIMEOUT=30'
+  keep_or CRAWLER_CONCURRENCY 'CRAWLER_CONCURRENCY=4'
+  printf '\n# 日志：统一 stdout → docker logs（compose 里 20MB×5 轮转）\n'
+  keep_or LOG_FILE 'LOG_FILE='
+  keep_or LOG_LEVEL "LOG_LEVEL=${LOG_LEVEL}"
+  printf '\n# qBittorrent（可空：只影响「下载」按钮，不影响入库）\n'
+  managed_or QBIT_HOST "$QBIT_HOST" 'QBIT_HOST='
+  managed_or QBIT_USERNAME "$QBIT_USER" 'QBIT_USERNAME='
+  managed_or QBIT_PASSWORD "$QBIT_PASS" 'QBIT_PASSWORD='
 
-# 存储：容器内 /data ← ${DATA}（/vol3，持久）
-STORE_BACKEND=sqlite
-STORE_DB_PATH=/data/magnet_items.db
-
-# 取页：公开页 HTTP 优先；1080p/720p 也收
-CRAWLER_HTTP_FIRST=true
-CRAWLER_ALLOWED_RESOLUTIONS=
-CRAWLER_ALLOW_FAKE_IP=$ALLOW_FAKE_IP
-CRAWLER_MAX_DEPTH=2
-CRAWLER_TIMEOUT=30
-CRAWLER_CONCURRENCY=4
-
-# 日志：统一 stdout → docker logs（compose 里 20MB×5 轮转）
-LOG_FILE=
-LOG_LEVEL=$LOG_LEVEL
-
-# qBittorrent（可空：只影响“下载”按钮，不影响入库）
-QBIT_HOST=$QBIT_HOST
-QBIT_USERNAME=$QBIT_USER
-QBIT_PASSWORD=$QBIT_PASS
-ENV
+  # 模板之外的键：原样保留（用户手加的实验开关不该被重装吃掉）
+  EXTRA_KEYS=""
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    case " API_KEY STORE_BACKEND CRAWLER_HTTP_FIRST CRAWLER_ALLOWED_RESOLUTIONS CRAWLER_ALLOW_FAKE_IP CRAWLER_MAX_DEPTH CRAWLER_TIMEOUT CRAWLER_CONCURRENCY LOG_FILE LOG_LEVEL QBIT_HOST QBIT_USERNAME QBIT_PASSWORD SERVICE_HOST SERVICE_PORT STORE_DB_PATH ENV_FILE " in
+      *" $key "*) continue ;;
+    esac
+    [ -z "$EXTRA_KEYS" ] && printf '\n# 以下键不在模板里：安装脚本原样保留\n'
+    EXTRA_KEYS=1
+    old_line "$key"
+  done < <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$OLD_ENV" 2>/dev/null | tr -d '=')
+} > "$NEW_ENV"
 umask 022
-chmod 600 "$ENV_FILE"
+chmod 600 "$NEW_ENV"
+
+if cmp -s "$NEW_ENV" "$ENV_FILE"; then
+  info "配置未变：$ENV_FILE"
+  rm -f "$NEW_ENV"
+else
+  cp -p "$ENV_FILE" "$PREFIX/backup/env-$(date +%Y%m%d-%H%M%S).bak" 2>/dev/null || true
+  chmod 600 "$PREFIX/backup"/env-*.bak 2>/dev/null || true
+  ls -1t "$PREFIX/backup"/env-*.bak 2>/dev/null | tail -n +4 | xargs -r rm -f || true
+  # 与界面保存同一套落盘方式：同目录临时文件 + rename（单文件 bind mount 会 EBUSY，
+  # 所以挂的是目录）。这一步同时证明这块盘上这套机制可行。
+  mv -f "$NEW_ENV" "$ENV_FILE"
+  info "配置已更新：$ENV_FILE"
+fi
+rm -f "$OLD_ENV"
+
+# 落盘自检：用容器运行用户的身份，在这块盘上做一次 tmp + rename
+PROBE="$CONFIG_DIR/.write-probe.$$"
+if : > "$PROBE" 2>/dev/null && mv -f "$PROBE" "$CONFIG_DIR/.write-probe.done" 2>/dev/null; then
+  rm -f "$CONFIG_DIR/.write-probe.done"
+  info "落盘自检：config/ 可写（同目录临时文件 + rename；界面保存走同一条路）"
+else
+  rm -f "$PROBE" "$CONFIG_DIR/.write-probe.done"
+  die "config/ 目录不可写，界面保存会失败：$(ls -ldn "$CONFIG_DIR" 2>/dev/null)"
+fi
+
 printf '%s\n' "$API_KEY" > "$PREFIX/api-key.txt"; chmod 600 "$PREFIX/api-key.txt"
-info "配置 $ENV_FILE · Key 存 $PREFIX/api-key.txt"
+
+# 权限/属主：容器以 1000:1001 写这个目录，对不上就是当初那条 Permission denied
+CFG_MODE=$(stat -c %a "$ENV_FILE"); CFG_UID=$(stat -c %u "$ENV_FILE"); CFG_GID=$(stat -c %g "$ENV_FILE")
+DIR_MODE=$(stat -c %a "$CONFIG_DIR")
+[ "$CFG_MODE" = "600" ] || die "配置文件权限 $CFG_MODE，必须是 600（里面有 API Key 与 qB 凭据）"
+if [ "$CFG_UID" != "$CONTAINER_UID" ] || [ "$CFG_GID" != "$CONTAINER_GID" ]; then
+  warn "配置属主 ${CFG_UID}:${CFG_GID}，容器运行用户 ${CONTAINER_UID}:${CONTAINER_GID}：界面保存会 Permission denied"
+  warn "修：sudo chown -R ${CONTAINER_UID}:${CONTAINER_GID} ${CONFIG_DIR}"
+fi
+info "配置 ${ENV_FILE} · ${CFG_MODE} ${CFG_UID}:${CFG_GID} · 目录 ${DIR_MODE} · Key 存 $PREFIX/api-key.txt"
+
+# 两处旧文件都归档：从这一刻起只有 config/.env 一个事实源
+for legacy in "$LEGACY_ENV" "$LEGACY_DATA_ENV"; do
+  [ -f "$legacy" ] || continue
+  archive="$PREFIX/backup/env-legacy-$(basename "$(dirname "$legacy")")-$(date +%Y%m%d-%H%M%S).bak"
+  mv -f "$legacy" "$archive" 2>/dev/null || continue
+  chmod 600 "$archive" 2>/dev/null || true
+  info "旧配置已归档：$legacy → $archive（不再参与运行）"
+done
 
 # ── 4. compose.yaml ──────────────────────────────────────────────────────────
 step "4/8 生成 compose.yaml"
-[ -n "$PYPI_INDEX" ] || PYPI_INDEX=${QB_NAS_PYPI_INDEX:-}
-if [ -z "$PYPI_INDEX" ]; then
-  if curl -fsS --max-time 4 -o /dev/null https://mirrors.aliyun.com/pypi/simple/ 2>/dev/null; then
-    PYPI_INDEX=https://mirrors.aliyun.com/pypi/simple/
-  fi
+# 构建源要「粘住」：--build-arg 变化会让 RUN pip install 整层缓存失效，
+# 每次重建都重下 ~200MB（实测在这台 NAS 上多花 10–20 分钟）。
+# 优先级：显式参数 > 上次生成的 compose 里那个值 > 环境变量 > 现场探测。
+if [ -z "$PYPI_INDEX" ] && [ -f "$COMPOSE" ]; then
+  PYPI_INDEX=$(sed -n 's/^ *PYPI_INDEX: "\(.*\)"$/\1/p' "$COMPOSE" 2>/dev/null | head -1)
 fi
+# 默认用阿里云镜像：这台 NAS 在国内，直连 pypi.org 常超时；要直连就 --pypi-index ""
+[ -n "${PYPI_INDEX:-}" ] || PYPI_INDEX=${QB_NAS_PYPI_INDEX:-https://mirrors.aliyun.com/pypi/simple/}
 [ -n "$PYPI_INDEX" ] && dim "构建源 $PYPI_INDEX"
 sed -e "s|@@PROJECT@@|$PROJECT|g" \
     -e "s|@@APP@@|$APP|g" \
     -e "s|@@IMAGE@@|$IMAGE|g" \
     -e "s|@@CONTAINER@@|$CONTAINER|g" \
-    -e "s|@@ENV_FILE@@|$ENV_FILE|g" \
+    -e "s|@@CONFIG_DIR@@|$CONFIG_DIR|g" \
+    -e "s|@@PREFIX@@|$PREFIX|g" \
+    -e "s|@@BIND_IP@@|$BIND_IP|g" \
     -e "s|@@HOST_PORT@@|$HOST_PORT|g" \
     -e "s|@@DATA_DIR@@|$DATA|g" \
     -e "s|@@LOG_DIR@@|$LOGS|g" \
@@ -302,7 +429,16 @@ sed -e "s|@@PROJECT@@|$PROJECT|g" \
     "$SELF_DIR/compose.yaml.tpl" > "$COMPOSE"
 chmod 640 "$COMPOSE"
 # 备用 compose（界面不能构建时用）：官方镜像 + 首次启动装依赖
-sed -e "s|/vol3/1000/qb-nas/|$PREFIX/|g" "$SELF_DIR/docker/compose.nobuild.yaml" > "$PREFIX/compose.nobuild.yaml"
+sed -e "s|@@PREFIX@@|$PREFIX|g" \
+    -e "s|@@APP@@|$APP|g" \
+    -e "s|@@CONFIG_DIR@@|$CONFIG_DIR|g" \
+    -e "s|@@DATA_DIR@@|$DATA|g" \
+    -e "s|@@LOG_DIR@@|$LOGS|g" \
+    -e "s|@@BIND_IP@@|$BIND_IP|g" \
+    -e "s|@@HOST_PORT@@|$HOST_PORT|g" \
+    -e "s|@@PROJECT@@|$PROJECT|g" \
+    -e "s|@@CONTAINER@@|$CONTAINER|g" \
+"$SELF_DIR/docker/compose.nobuild.yaml" > "$PREFIX/compose.nobuild.yaml"
 chmod 640 "$PREFIX/compose.nobuild.yaml"
 docker compose -f "$COMPOSE" --project-name "$PROJECT" config >/dev/null \
   || die "生成的 compose.yaml 不合法（${COMPOSE}）"
@@ -366,6 +502,7 @@ Web UI    http://$LAN:$HOST_PORT/
 健康      http://$LAN:$HOST_PORT/api/health
 API Key   见 $PREFIX/api-key.txt（600），Mac 代理第一次配置时粘贴
 根目录    ${PREFIX}（存储空间 3 /vol3）
+配置      ${ENV_FILE}（600 · 唯一事实源：界面写/脚本写/容器读都是这一份）
 代码      ${APP}（${COMMIT}）
 数据      $DATA/magnet_items.db（容器内 /data）
 镜像      ${IMAGE}（层在 /vol3/docker）
@@ -393,6 +530,7 @@ fi
 printf '%s│%s 地址    http://%s:%s/\n' "$c_ok" "$c_0" "$LAN" "$HOST_PORT"
 printf '%s│%s 健康    %s\n' "$c_ok" "$c_0" "$HEALTH_URL"
 printf '%s│%s 容器    %s（status=%s · restart=%s）\n' "$c_ok" "$c_0" "$CONTAINER" "$IS_LIVE" "$RESTART_POLICY"
+printf '%s│%s 配置    %s（600，重建/重启都不丢）\n' "$c_ok" "$c_0" "$ENV_FILE"
 printf '%s│%s 数据    %s/magnet_items.db%s\n' "$c_ok" "$c_0" "$DATA" "${DB_SIZE:+（${DB_SIZE}）}"
 printf '%s│%s 日志    docker logs -f %s\n' "$c_ok" "$c_0" "$CONTAINER"
 printf '%s│%s Key     %s/api-key.txt（600）\n' "$c_ok" "$c_0" "$PREFIX"
