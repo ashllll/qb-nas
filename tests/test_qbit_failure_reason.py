@@ -21,6 +21,19 @@ from magnet_harvester.qbit_client.client import QBittorrentClient
 from magnet_harvester.services.probe import CachedProbe
 
 
+@pytest.fixture
+def short_probe():
+    """把模块级探针换成「短超时且干净」的，用完放回去（别影响别的用例）。"""
+    from magnet_harvester.api import ingest_routes
+
+    original = ingest_routes._qbit_probe
+    ingest_routes._qbit_probe = CachedProbe(ttl=10.0, timeout=0.2)
+    try:
+        yield ingest_routes._qbit_probe
+    finally:
+        ingest_routes._qbit_probe = original
+
+
 def make_client(host: str = "http://127.0.0.1:9") -> QBittorrentClient:
     return QBittorrentClient(
         QBitConfig(host=host, username="admin", password="secret", fs_base_path="")
@@ -60,9 +73,8 @@ async def test_probe_timeout_still_leaves_a_reason():
         await client.close()
 
 
-def test_health_endpoint_reports_a_reason_when_qb_is_silent(tmp_path):
+def test_health_endpoint_reports_a_reason_when_qb_is_silent(tmp_path, short_probe):
     """端到端：/api/v1/health 的 qbit.reason 不能是 null。"""
-    from magnet_harvester.api import ingest_routes
     from tests._client import asgi_client
     from tests.test_ingest_api import make_app
 
@@ -74,8 +86,6 @@ def test_health_endpoint_reports_a_reason_when_qb_is_silent(tmp_path):
     client._req = _hang
     app, ctx = make_app(tmp_path)
     ctx.core.qbit = client
-    # 探针是模块级单例：换一个干净的，避免别的用例留下的缓存/事件循环绑定
-    ingest_routes._qbit_probe = CachedProbe(ttl=10.0, timeout=0.2)
     try:
         with asgi_client(app) as api:
             response = api.get("/api/v1/health")
@@ -148,9 +158,8 @@ async def test_banned_ip_is_named_as_banned():
         await fake.aclose()
 
 
-def test_health_reason_falls_back_to_the_probe(tmp_path):
+def test_health_reason_falls_back_to_the_probe(tmp_path, short_probe):
     """客户端自己没留原因时（例如被别的 ping 挡在锁上），探针也要给出原因。"""
-    from magnet_harvester.api import ingest_routes
     from tests._client import asgi_client
     from tests.test_ingest_api import make_app
 
@@ -163,7 +172,6 @@ def test_health_reason_falls_back_to_the_probe(tmp_path):
 
     app, ctx = make_app(tmp_path)
     ctx.core.qbit = SilentQbit()
-    ingest_routes._qbit_probe = CachedProbe(ttl=10.0, timeout=0.2)
 
     with asgi_client(app) as api:
         payload = api.get("/api/v1/health").json()
