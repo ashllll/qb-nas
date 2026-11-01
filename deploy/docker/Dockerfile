@@ -3,12 +3,17 @@
 #   构建上下文 = 代码根目录；镜像内以 uid 1000 运行，数据和日志走 /vol3 的 bind mount。
 FROM python:3.11-slim
 
+# 容器 TZ 只影响日志与容器内本地钟，不参与数据语义：数据/接口时间戳一律
+# UTC-aware（约定 §1）。日志用 UTC，便于和宿主机 `date -u` 逐条对账。
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     HOME=/tmp \
     PYTHONPATH=/app \
-    TZ=Asia/Shanghai
+    TZ=UTC
+
+# 有浏览器兜底时浏览器装在镜像里，不进 /tmp（运行时 /tmp 是 tmpfs）
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # 国内 NAS 直连 pypi.org 常超时：构建时可用 --build-arg PYPI_INDEX=https://mirrors.aliyun.com/pypi/simple/
 ARG PYPI_INDEX=""
@@ -32,14 +37,14 @@ RUN set -eux; \
     fi
 
 # 应用代码（static/ 被 FastAPI 直接挂载，必须一起进镜像）
-COPY magnet_harvester ./magnet_harvester
-COPY static ./static
+# --chown 一次到位：镜像里就是运行用户的文件，不再用 RUN chown -R 复制整个 /app
+# （那会多一层、多一份体积，且掩盖「运行时到底以谁的身份写卷」这个问题）。
+COPY --chown=1000:1001 magnet_harvester ./magnet_harvester
+COPY --chown=1000:1001 static ./static
 
-# /app 归运行用户：qB 配置持久化（persist_qbit_config）默认写包目录旁的 .env，
-# 容器里再叠加 ENV_FILE=/data/.env 落到可写卷；这里顺手把 /app 交给运行用户，避免其它写路径再撞权限。
-RUN chown -R 1000:1001 /app
-
-# 容器内非 root：uid/gid 对齐 NAS 上的 llll(1000:1001)，/vol3 上落盘的文件用户能直接读写
+# 容器内非 root：uid/gid 对齐 NAS 上的 llll(1000:1001)。
+# 这一条是配置能落盘的地基：/vol3/.../config 与 /vol3/.../data 都归 1000:1001，
+# 容器以同一身份写，不需要任何 chown/chmod 的临时绕过。
 USER 1000:1001
 
 EXPOSE 8899
