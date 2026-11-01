@@ -22,6 +22,8 @@ echo "▶ 收代码"
 rsync -a --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' \
   --exclude '.pytest_cache/' --exclude 'tests/' --exclude 'docs/' --exclude 'doc/' --exclude '.env' \
   --exclude '.env.*' --exclude 'data/' --exclude 'logs/' --exclude '.DS_Store' \
+  --exclude '.husky/' --exclude '.claude/' --exclude '.codegraph/' --exclude '.context/' \
+  --exclude '.codebase-memory/' --exclude 'package.json' --exclude 'package-lock.json' \
   "$APP_ROOT/" "$B/app/"
 cp "$SELF_DIR/docker/Dockerfile" "$B/app/Dockerfile"
 cp "$SELF_DIR/docker/dockerignore" "$B/app/.dockerignore"
