@@ -862,6 +862,9 @@ tbody tr.selected {
 .toast.success {
   border-left-color: var(--success);
 }
+.toast.warn {
+  border-left-color: var(--warning);
+}
 .toast svg {
   width: 16px;
   height: 16px;
@@ -1633,8 +1636,14 @@ svg {
 .auth-state.error {
   color: var(--danger);
 }
+.auth-state.warn {
+  color: var(--warning);
+}
 .auth-state.muted {
   color: var(--text-tertiary);
+}
+#forgetKeyBtn {
+  margin-top: 8px;
 }
 
 /* ---- 危险操作弹窗：作用域、分类计数、必勾确认、失败留在原地 ---- */

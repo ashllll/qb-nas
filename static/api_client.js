@@ -13,7 +13,7 @@
     },
     401: {
       code: "api_key_missing",
-      hint: "在右侧「连接设置」填入与 NAS 上 .env 里 API_KEY 相同的值，再保存。",
+      hint: "写操作需要授权：从 Mac 菜单栏「打开 NAS 页面」进入会自动带上钥匙；也可以在本面板填入 API Key。",
     },
     403: {
       code: "forbidden",
@@ -111,18 +111,42 @@
       this.onUnauthorized = onUnauthorized;
       this.onNetworkError = onNetworkError;
       this.storageKey = "magnet-api-key";
+      this.memoryKey = ""; // 隐私模式等 localStorage 不可用时的会话内兜底
+      this.migrateLegacyKey();
       this.requestCount = 0;
       this.lastRequestAt = 0;
     }
 
+    /* 旧版本把钥匙放 sessionStorage（刷新即丢）：一次性迁到 localStorage。 */
+    migrateLegacyKey() {
+      try {
+        if (global.localStorage.getItem(this.storageKey)) return;
+        const legacy = global.sessionStorage.getItem(this.storageKey);
+        if (!legacy) return;
+        global.localStorage.setItem(this.storageKey, legacy);
+        global.sessionStorage.removeItem(this.storageKey);
+      } catch (error) {
+        /* 存储不可用：保持会话内兜底 */
+      }
+    }
+
     getKey() {
-      return global.sessionStorage.getItem(this.storageKey) || "";
+      try {
+        return global.localStorage.getItem(this.storageKey) || this.memoryKey;
+      } catch (error) {
+        return this.memoryKey;
+      }
     }
 
     setKey(value) {
       const key = String(value || "").trim();
-      if (key) global.sessionStorage.setItem(this.storageKey, key);
-      else global.sessionStorage.removeItem(this.storageKey);
+      this.memoryKey = key;
+      try {
+        if (key) global.localStorage.setItem(this.storageKey, key);
+        else global.localStorage.removeItem(this.storageKey);
+      } catch (error) {
+        /* 隐私模式：至少本次会话内可用 */
+      }
     }
 
     headers(extra = {}) {
@@ -175,17 +199,17 @@
         if (response.status === 401) {
           const hasKey = Boolean(this.getKey());
           // 旧服务端只回 "Invalid or missing API key"：这句话对用户没有信息量，
-          // 换成本地能判断的「没带」/「不对」。
+          // 换成本地能判断的「没带」/「不对」——两者都是「要授权」，不是故障。
           const legacy = !body.code && /invalid or missing api key/i.test(bodyDetail);
           if (!bodyDetail || legacy) {
-            detail = hasKey ? "API Key 不正确" : "请求没有带 API Key";
+            detail = hasKey ? "这台浏览器保存的钥匙没被 NAS 接受" : "这个操作需要授权（当前只读）";
           }
           code = body.code || (hasKey ? "api_key_invalid" : "api_key_missing");
           hint =
             body.hint ||
             (hasKey
-              ? "当前保存的 API Key 与服务端不一致。到右侧「连接设置」核对 NAS 上 .env 里的 API_KEY 后重新保存。"
-              : "在右侧「连接设置」填入 NAS 上 .env 里 API_KEY 的值，再保存。");
+              ? "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」清除后重新进入。"
+              : "从 Mac 菜单栏「打开 NAS 页面」进入会自动带上钥匙；也可以在本面板填入 API Key。");
         }
         const error = new ApiError({
           status: response.status,

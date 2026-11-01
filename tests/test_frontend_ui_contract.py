@@ -107,7 +107,7 @@ async def _open(
     *,
     api: ApiMock | None = None,
     timezone_id: str = "Asia/Shanghai",
-    session_key: str | None = None,
+    session_key: str | None = "test-key",
 ):
     browser = await playwright.chromium.launch(headless=True)
     context = await browser.new_context(timezone_id=timezone_id)
@@ -299,8 +299,8 @@ async def test_typing_api_key_does_not_reconnect_per_keystroke(static_server_url
 
 
 @pytest.mark.asyncio
-async def test_auth_failure_says_key_not_qb_offline(static_server_url):
-    """缺陷 ⑤：401 不能把原因说成「qB 离线」；多个请求同时 401 也只提示一次。"""
+async def test_auth_failure_says_readonly_not_qb_offline(static_server_url):
+    """401 不能把原因说成「qB 离线」；读接口 401 是只读，不是故障红。"""
     api = ApiMock()
     api.status_overrides = {
         "/api/config": (401, {"detail": "Invalid or missing API key"}),
@@ -312,17 +312,21 @@ async def test_auth_failure_says_key_not_qb_offline(static_server_url):
             playwright, static_server_url, api=api, session_key="stale-key"
         )
         qbit_text = await page.locator("#qbitStatus").inner_text()
+        qbit_dot = await page.locator("#dotQbit").get_attribute("class")
         toast_count = await page.locator("#toastStack .toast").count()
-        toast_text = await page.locator("#toastStack").inner_text()
+        auth_text = await page.locator("#authState").inner_text()
+        auth_class = await page.locator("#authState").get_attribute("class")
         cfg_text = await page.locator("#cfgResult").inner_text()
         await browser.close()
 
-    assert "API Key" in qbit_text
+    assert "需要授权" in qbit_text
+    assert "API Key" not in qbit_text
     assert "离线" not in qbit_text
-    assert toast_count == 1, "多个请求同时 401 只该有一条提示"
-    assert "API Key 不正确" in toast_text
-    # 错误原因与下一步留在设置面板，不靠 4 秒就消失的 toast
-    assert "API Key" in cfg_text
+    assert "offline" not in (qbit_dot or ""), "缺授权不该点红"
+    assert toast_count == 0, "页面加载时的 401 不该弹错误提示"
+    assert "钥匙没被 NAS 接受" in auth_text
+    assert "warn" in auth_class
+    assert "只读模式" in cfg_text
 
 
 @pytest.mark.asyncio
@@ -349,6 +353,7 @@ async def test_ws_key_never_in_url_and_close_reason_is_specific(static_server_ur
         )
         await page.wait_for_timeout(600)
         status_text = await page.locator("#wsStatus").inner_text()
+        status_dot = await page.locator("#dotWs").get_attribute("class")
         urls_after = await page.evaluate("() => window.__ws.urls.length")
         toast_text = await page.locator("#toastStack").inner_text()
         await browser.close()
@@ -359,9 +364,10 @@ async def test_ws_key_never_in_url_and_close_reason_is_specific(static_server_ur
         frame.get("type") == "auth" and frame.get("api_key") == "my-secret"
         for frame in auth_frames
     )
-    assert "API Key 不正确" in status_text
+    assert "只读" in status_text
+    assert "offline" not in (status_dot or ""), "钥匙被拒也只读，不点故障红"
     assert urls_after == 1, "鉴权失败后不该继续每 2 秒重连"
-    assert "实时通道" in toast_text
+    assert "钥匙没被 NAS 接受" in toast_text
 
 
 @pytest.mark.asyncio

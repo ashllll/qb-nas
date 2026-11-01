@@ -8,6 +8,42 @@
     />
     <meta name="color-scheme" content="light dark" />
     <title>Magnet Harvester</title>
+    <script>
+      /* 钥匙只从 URL 片段进入：先落地到本机存储，立刻用 replaceState 把地址栏
+         与当前历史项里的 key 清掉（片段本来就不会发给服务器）。必须是同步脚本：
+         放进 app.js 就太晚了。任何日志/错误里都不出现 key。 */
+      (function consumeKeyFragment() {
+        try {
+          var hash = window.location.hash || "";
+          if (hash.length > 1) {
+            var params = new URLSearchParams(hash.slice(1));
+            if (params.has("key")) {
+              var key = params.get("key");
+              if (key) window.localStorage.setItem("magnet-api-key", key);
+              params.delete("key");
+              var rest = params.toString();
+              window.history.replaceState(
+                null,
+                "",
+                window.location.pathname +
+                  window.location.search +
+                  (rest ? "#" + rest : "")
+              );
+            }
+          }
+          // 旧版本把钥匙放在 sessionStorage：一次性迁到 localStorage（刷新/重启仍在）
+          if (!window.localStorage.getItem("magnet-api-key")) {
+            var legacy = window.sessionStorage.getItem("magnet-api-key");
+            if (legacy) {
+              window.localStorage.setItem("magnet-api-key", legacy);
+              window.sessionStorage.removeItem("magnet-api-key");
+            }
+          }
+        } catch (error) {
+          /* 隐私模式等存储不可用时，退化为本次会话可用 */
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -469,7 +505,7 @@
                   class="input"
                   id="cfgHost"
                   type="url"
-                  placeholder="http://nas.local:8080"
+                  placeholder="http://主机:端口（如 http://192.168.20.193:8085）"
                 />
               </div>
               <div>
@@ -478,7 +514,7 @@
                   class="input"
                   id="cfgUser"
                   autocomplete="username"
-                  placeholder="admin"
+                  placeholder="qBittorrent 用户名"
                 />
               </div>
               <div>
@@ -515,10 +551,20 @@
               autocomplete="off"
               placeholder="未配置时留空"
             />
-            <p class="auth-state" id="authState">正在确认服务端鉴权状态…</p>
+            <p class="auth-state" id="authState">正在确认授权状态…</p>
             <p class="security-note connection-hint" id="authHint" hidden></p>
+            <button
+              class="button full"
+              id="forgetKeyBtn"
+              type="button"
+              onclick="forgetDeviceKey()"
+              hidden
+            >
+              <i data-lucide="trash-2"></i><span>退出本机（清除本机钥匙）</span>
+            </button>
             <p class="security-note">
-              密钥仅保存在当前浏览器会话中，用于需要授权的写操作；不会写进 URL 或日志。
+              密钥只保存在这台浏览器里（刷新、新开标签、重启浏览器后仍在），只用于写操作；
+              不会写进 URL、历史或日志。换设备或公用电脑时点「退出本机」清除。
             </p>
 
           </section>

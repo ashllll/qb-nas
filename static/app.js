@@ -22,22 +22,24 @@ const ICON_SYMBOLS = {
 const itemState = new MagnetItemState();
 const { items, selected } = itemState;
 const apiClient = new MagnetApiClient({
-  onUnauthorized: (error) => handleAuthFailure(error),
+  onUnauthorized: (error) => handleUnauthorized(error),
   onNetworkError: (error) => handleNetworkFailure(error),
 });
 let ws = null;
 let reconnectTimer = null;
 // WS 重连：指数退避；鉴权失败就停（改 Key 后再连），不在 2 秒一次的空转里刷日志。
 let wsReconnectAttempt = 0;
-let wsNeedsKey = false;
 let wsWasConnected = false;
 let wsLastMessageAt = 0;
 let wsWatchdog = null;
 let wsHello = null;
-// 服务端是否启用了鉴权：null=未知（还没问到）
-let authRequired = null;
-let authProbeFailed = false;
-let authProblem = null;
+/* ---- 授权状态：这一页唯一的事实源 ----------------------------------
+   服务端 /api/auth 直接回答两件事：要不要钥匙、这份请求的钥匙算不算数
+   （missing/invalid/valid/not_required）。所有徽章、圆点、按钮、保存并测试
+   都从这里取值：没钥匙 = 只读（不是故障），钥匙被拒 = 只读 + 告知重取，
+   接口/网络失败才是真正的红。 */
+let auth = { probe: "idle", required: null, keyState: "unknown" };
+let statusSnapshotOk = null; // null=还没读过；false=这次没读到（≠没有上报）
 let lastAuthCode = "";
 let keyChangeTimer = null;
 let itemsRequestSeq = 0;
@@ -162,8 +164,10 @@ function sendWsAuth(sock) {
 
 function connectWS() {
   clearTimeout(reconnectTimer);
-  if (wsNeedsKey) {
-    setWsState("locked", "需要 API Key");
+  const mode = authMode();
+  if (mode === "anonymous" || mode === "rejected") {
+    // 只读浏览器不发起注定 4401 的握手：不刷日志，也不把缺钥匙画成红灯。
+    setRealtimeReadOnly(mode);
     return;
   }
   setWsState("checking", "连接中");
@@ -199,16 +203,13 @@ function connectWS() {
     const reason = String(event?.reason || "");
     if (code === 4401) {
       // 鉴权失败：停止自动重连（每 2 秒重试只会刷服务端日志，用户也什么都看不到）
-      wsNeedsKey = true;
       const missing = reason === "api_key_missing" || (!reason && !apiClient.getKey());
-      setWsState("locked", missing ? "需要 API Key" : "API Key 不正确");
-      reportAuthProblem({
-        code: missing ? "api_key_missing" : "api_key_invalid",
-        detail: missing ? "实时通道需要 API Key" : "实时通道的 API Key 不正确",
-        hint: missing
-          ? "在右侧「连接设置」填入 NAS 上 .env 里 API_KEY 的值后保存。"
-          : "当前保存的 API Key 与服务端不一致；到右侧「连接设置」核对后保存。",
-      });
+      auth.required = true;
+      auth.probe = "ok";
+      auth.keyState = missing ? "missing" : "invalid";
+      renderAuthState();
+      setRealtimeReadOnly(authMode());
+      notifyAuthBlocked("实时事件");
       return;
     }
     const delay = nextReconnectDelay();
@@ -253,7 +254,8 @@ function handleMsg(msg) {
     case "hello":
       // 握手完成：服务端告诉界面它是否启用了鉴权（不含任何凭据）
       wsHello = msg;
-      authRequired = Boolean(msg.auth_required);
+      auth.required = Boolean(msg.auth_required);
+      if (!auth.required) auth.keyState = "not_required";
       wsReconnectAttempt = 0;
       setWsState("online", "已连接");
       renderAuthState();
@@ -415,19 +417,39 @@ async function loadConfig() {
     passwordInput.placeholder = data.qbit_password_configured
       ? "已保存密码，留空保持不变"
       : "请输入 qBittorrent 密码";
+    setConfigResult(
+      "已读取 NAS 上的当前配置；密码仅保存在服务端，不会回显",
+      ""
+    );
   } catch (error) {
-    // 401 由 handleAuthFailure 统一说明（否则同一次失败会弹两条通知）
-    if (!error || error.status !== 401) {
+    if (error && error.status === 401) {
+      // 老服务端读取配置也要钥匙：这是「没授权」，不是 qB 故障，别报红。
+      setConfigResult(
+        "只读模式：连接配置需要授权后读取",
+        "muted",
+        "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；写操作在授权前不会发送。"
+      );
+    } else {
       reportError(error, { context: "读取连接设置失败", key: "config:load" });
+      setConfigResult(error.message, "error", error.hint || "");
     }
-    // 401 的下一步写在 访问安全 区；这里只放原因，避免同一句话出现两遍
-    setConfigResult(error.message, "error", error.status === 401 ? "" : error.hint || "");
   }
   const savedKey = apiClient.getKey();
   document.getElementById("apiKeyInput").value = savedKey;
 }
 
 async function saveConfig() {
+  if (!(await ensureWriteAuth("保存连接设置"))) {
+    const mode = authMode();
+    setConfigResult(
+      "配置没有保存：这台浏览器当前只读",
+      "muted",
+      mode === "rejected"
+        ? "钥匙没被 NAS 接受。从 Mac 菜单栏「打开 NAS 页面」重新进入，或点「退出本机」后重试。"
+        : "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；也可以在上方填入 API Key。"
+    );
+    return;
+  }
   const button = document.getElementById("saveConfigBtn");
   const key = document.getElementById("apiKeyInput").value.trim();
   apiClient.setKey(key);
@@ -458,18 +480,22 @@ async function saveConfig() {
       "success"
     );
     lastAuthCode = "";
-    wsNeedsKey = false;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      wsReconnectAttempt = 0;
-      connectWS();
-    }
+    auth.keyState = auth.required ? "valid" : "not_required";
+    renderAuthState();
     toast("qBittorrent 配置已保存", "success", { key: "config:save" });
-    refreshAuthState();
+    loadAuthState();
     checkStatus({ force: true });
   } catch (error) {
     // 一次动作只通知一次；原因与下一步留在设置面板里，不靠 4 秒就消失的 toast
-    setConfigResult(error.message, "error", error.status === 401 ? "" : error.hint || "");
-    if (!error || error.status !== 401) {
+    if (error && error.status === 401) {
+      notifyAuthBlocked("保存连接设置");
+      setConfigResult(
+        "配置没有保存：钥匙没被 NAS 接受",
+        "muted",
+        "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」后重试。"
+      );
+    } else {
+      setConfigResult(error.message, "error", error.hint || "");
       reportError(error, { context: "保存连接设置失败", key: "config:save" });
     }
   } finally {
@@ -508,6 +534,7 @@ async function startCrawl() {
     document.getElementById("urlInput").focus();
     return;
   }
+  if (!(await ensureWriteAuth("提交采集任务"))) return;
   setCrawling(true);
   try {
     // 采集任务只负责提交网址：抓到的东西先入资源库，下载由用户点选后触发。
@@ -533,6 +560,7 @@ async function startCrawl() {
 
 async function downloadSelected() {
   if (!selected.size) return;
+  if (!(await ensureWriteAuth("下载"))) return;
   const button = document.getElementById("dlBtn");
   setButtonBusy(button, true, "发送中");
   try {
@@ -568,6 +596,7 @@ async function reclassifySelected() {
     ? [...selected]
     : visibleItems().map((item) => item.hash);
   if (!hashes.length) return;
+  if (!(await ensureWriteAuth("重新分类"))) return;
   const button = document.getElementById("classifyBtn");
   setButtonBusy(button, true, "分类中");
   try {
@@ -586,6 +615,11 @@ async function reclassifySelected() {
 
 /* ---- 清空资源库：危险操作，作用域必须说清且要二次确认 ---- */
 function openClearDialog() {
+  if (!canWriteNow()) {
+    // 真的只读就当场说人话；还在确认就先问一次，别让用户填完确认再撞 401。
+    ensureWriteAuth("清空资源库");
+    return;
+  }
   const counts = itemState.counts();
   const total = counts.all;
   const dialog = document.getElementById("clearDialog");
@@ -1044,7 +1078,7 @@ async function checkStatus({ force = false } = {}) {
     }
     if (seq !== statusRequestSeq) return; // 迟到的旧响应不许覆盖新状态
     lastAuthCode = "";
-    authProblem = null;
+    statusSnapshotOk = true;
     renderAuthState();
     const qbit = (snapshot && snapshot.qbit) || {};
     setQbitState(
@@ -1058,45 +1092,63 @@ async function checkStatus({ force = false } = {}) {
   return task;
 }
 
-function setCrawlerState(text) {
+function setCrawlerState(text, state = "unknown") {
+  // 只有真的读不到服务（接口失败/网络断）才点红；未授权只是「没问过」。
   const dot = document.getElementById("crawlerDetailDot");
   const label = document.getElementById("crawlerDetail");
-  if (dot) dot.className = "dot offline";
+  if (dot) {
+    dot.className =
+      `dot ${state === "online" ? "online" : state === "offline" ? "offline" : "idle"}`;
+  }
   if (label) label.textContent = text;
 }
 
 function handleStatusFailure(error) {
+  statusSnapshotOk = false;
+  // 读不到状态 ≠ 没有上报：Mac 灯立刻从「没有」改成「未知」，别让旧读数冒充现状。
+  renderMacStatus();
   if (error && error.status === 401) {
-    // 鉴权问题已经由 onUnauthorized 统一说明；这里只保证不说"qB 离线"
-    setQbitState("unknown", "API Key 未通过");
-    setCrawlerState("状态未知 · API Key 未通过");
+    // 老服务端把只读接口也锁着：这是「没授权」，不是 qB/采集服务的故障。
+    auth.required = true;
+    auth.keyState = hasStoredKey() ? "invalid" : "missing";
+    renderAuthState();
+    setQbitState("readonly", "需要授权后查询");
+    setCrawlerState("只读 · 未授权", "unknown");
     return;
   }
   if (error && error.status) {
     setQbitState("unknown", `状态接口失败（${error.status}）`);
-    setCrawlerState(`状态未知 · 接口失败（${error.status}）`);
+    setCrawlerState(`状态未知 · 接口失败（${error.status}）`, "offline");
     reportError(error, { context: "读取运行状态失败", key: "status:failed" });
     return;
   }
   setQbitState("unknown", "连不上 NAS");
-  setCrawlerState("状态未知 · 连不上 NAS");
+  setCrawlerState("状态未知 · 连不上 NAS", "offline");
   reportError(error, { context: "读取运行状态失败", key: "status:network" });
 }
 
 function setQbitState(state, detail = "", hint = "") {
   const online = state === "online";
+  const failed = state === "offline";
+  const readonly = state === "readonly";
   const dot = document.getElementById("dotQbit");
   const label = document.getElementById("qbitStatus");
-  const text =
-    state === "online" ? "qB 在线" : state === "offline" ? "qB 离线" : "qB 状态未知";
-  dot.className = `dot ${online ? "online" : "offline"}`;
+  const text = online
+    ? "qB 在线"
+    : failed
+      ? "qB 离线"
+      : readonly
+        ? "qB 状态 · 需要授权"
+        : "qB 状态未知";
+  // 只有「没授权所以没问过」是中性的；接口/网络失败是真实故障，照旧点红。
+  dot.className = `dot ${online ? "online" : readonly ? "idle" : "offline"}`;
   // 原因可能很长（aiohttp 原文）：标题里截断，完整值放 title，别把状态栏撑破
   const short = detail && detail.length > 42 ? `${detail.slice(0, 42)}…` : detail;
   label.textContent = short ? `${text} · ${short}` : text;
   label.title = detail || hint || text;
   const configDot = document.getElementById("configDot");
-  if (configDot && !authProblem) {
-    configDot.className = `dot ${online ? "online" : "offline"}`;
+  if (configDot) {
+    configDot.className = `dot ${online ? "online" : readonly ? "idle" : "offline"}`;
   }
 }
 
@@ -1318,6 +1370,7 @@ function renderMacStatus() {
   const chip = document.getElementById("macChip");
   const label = document.getElementById("macLabel");
   const dot = document.getElementById("dotMac");
+  const sub = document.getElementById("macPanelSub");
   const relative = formatRelative(ingest.lastEventAt);
   if (relative) {
     // 30 分钟没动静就退回中性色，避免灯一直亮着像在正常工作
@@ -1325,12 +1378,19 @@ function renderMacStatus() {
     dot.className = `dot ${stale ? "idle" : "online"}`;
     label.textContent = `Mac · ${relative}`;
     chip.title = `Mac 最近一次上报：${relative}（${formatClock(ingest.lastEventAt)}）`;
+    sub.textContent = relative;
+  } else if (statusSnapshotOk === false) {
+    // 读不到状态接口 ≠ 没有上报：数据源是「没读到」，不能写「没收到」。
+    dot.className = "dot idle";
+    label.textContent = "Mac 上报 · 未知";
+    chip.title = "暂时读不到上报记录（状态接口失败），不能据此判断有没有上报";
+    sub.textContent = "暂时读不到上报记录";
   } else {
     dot.className = "dot idle";
     label.textContent = "Mac 上报";
-    chip.title = "还没有收到 Mac 上报";
+    chip.title = statusSnapshotOk ? "还没有收到 Mac 上报" : "正在确认上报记录";
+    sub.textContent = statusSnapshotOk ? "还没有收到上报" : "等待上报";
   }
-  document.getElementById("macPanelSub").textContent = relative || "等待上报";
   const events = ingest.events.slice(0, 5);
   document.getElementById("macEvents").innerHTML = events.length
     ? events.map(macEventHtml).join("")
@@ -1604,8 +1664,11 @@ function reportError(error, { context = "", key = "" } = {}) {
   const hint = (error && error.hint) || "";
   addLog(`${context ? `${context}：` : ""}${detail}`, "error");
   const toastKey = key || `err:${(error && error.code) || ""}:${detail}`;
-  // 401 已经由 handleAuthFailure 统一提示过：同一次失败不再弹第二条
-  if (error && error.status === 401) return toastKey;
+  // 401 是授权问题不是操作故障：说人话（只读/钥匙被拒），别弹「请求缺少 API Key」
+  if (error && error.status === 401) {
+    notifyAuthBlocked(context);
+    return toastKey;
+  }
   toast(context || "操作失败", "error", {
     key: toastKey,
     hint: hint || detail,
@@ -1620,86 +1683,221 @@ function handleNetworkFailure(error) {
   setQbitState("unknown", "连不上 NAS");
 }
 
-/* 鉴权失败：说清是"没带 key"还是"key 不对"，并把人带到设置面板 */
-function reportAuthProblem(problem) {
-  if (!problem) return;
-  authProblem = problem;
-  renderAuthState();
-  const hasKey = Boolean(apiClient.getKey());
-  const signature = `${problem.code}:${hasKey ? "hasKey" : "noKey"}`;
-  if (signature !== lastAuthCode) {
-    lastAuthCode = signature;
-    addLog(`${problem.detail}。${problem.hint || ""}`.trim(), "error");
-    toast(problem.detail, "error", {
-      key: `auth:${signature}`,
-      hint: problem.hint || "",
-    });
-  }
-  setMobileView("config");
+/* ---- 授权状态机 ------------------------------------------------
+   四种状态由服务端 /api/auth 一次说清，页面不再用「某个接口 401」反推：
+   - open       服务端没配 key（本机/局域网部署），可写
+   - authorized 钥匙有效，可写
+   - anonymous  本浏览器没钥匙：只读，不红
+   - rejected   本浏览器钥匙被拒：只读 + 告知重取（不是 qB/采集故障）
+   - checking / unknown：还在问或问不到，只读浏览照常
+   ---------------------------------------------------------------- */
+const AUTH_COPY = {
+  authorized: {
+    text: "已授权 · 这台浏览器可以做写操作",
+    cls: "ok",
+    hint: "",
+  },
+  anonymous: {
+    text: "只读浏览 · 这台浏览器没有钥匙",
+    cls: "muted",
+    hint:
+      "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；也可以在本面板填入 API Key。手机/别人的电脑保持只读。",
+  },
+  rejected: {
+    text: "⚠ 这台浏览器的钥匙没被 NAS 接受 · 当前只读",
+    cls: "warn",
+    hint:
+      "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」清除后重新进入。",
+  },
+  open: {
+    text: "服务端未启用 API Key（本机/局域网部署）",
+    cls: "muted",
+    hint: "",
+  },
+  unknown: {
+    text: "无法确认授权状态（服务端没有提供 /api/auth）",
+    cls: "muted",
+    hint: "只读信息照常显示；写操作会先尝试，失败时说明原因。",
+  },
+  checking: {
+    text: "正在确认授权状态…",
+    cls: "muted",
+    hint: "",
+  },
+};
+
+function hasStoredKey() {
+  return Boolean(apiClient.getKey());
 }
 
-function handleAuthFailure(error) {
-  const payload = error && error.status === 401 ? error : null;
-  reportAuthProblem(
-    payload
-      ? { code: payload.code, detail: payload.message, hint: payload.hint }
-      : {
-          code: "api_key_invalid",
-          detail: "API Key 未通过校验",
-          hint: "到右侧「连接设置」核对 NAS 上 .env 里的 API_KEY 后保存。",
-        }
-  );
+function authMode() {
+  if (auth.required === false) return "open";
+  if (auth.required === null) {
+    return auth.probe === "failed" ? "unknown" : "checking";
+  }
+  if (auth.keyState === "valid") return "authorized";
+  if (auth.keyState === "invalid") return "rejected";
+  if (auth.keyState === "missing") return "anonymous";
+  // 老服务端只说「要钥匙」不说钥匙状态：先按可用处理，写操作 401 后再转 rejected。
+  return hasStoredKey() ? "authorized" : "anonymous";
+}
+
+function canWriteNow() {
+  const mode = authMode();
+  return mode === "authorized" || mode === "open";
 }
 
 function renderAuthState() {
   const state = document.getElementById("authState");
   const hint = document.getElementById("authHint");
+  const forget = document.getElementById("forgetKeyBtn");
   if (!state) return;
-  if (authProblem) {
-    state.textContent = `⚠ ${authProblem.detail}`;
-    state.className = "auth-state error";
-    // 下一步要留在面板里（toast 会消失，面板不会）
-    if (hint) {
-      hint.textContent = authProblem.hint || "";
-      hint.hidden = !authProblem.hint;
+  const mode = authMode();
+  const copy = AUTH_COPY[mode] || AUTH_COPY.checking;
+  state.textContent = copy.text;
+  state.className = `auth-state ${copy.cls}`;
+  if (hint) {
+    hint.textContent = copy.hint || "";
+    hint.hidden = !copy.hint;
+  }
+  if (forget) forget.hidden = !hasStoredKey();
+}
+
+function setRealtimeReadOnly(mode) {
+  const rejected = mode === "rejected";
+  const label = rejected ? "只读 · 实时事件需重新授权" : "只读 · 未订阅实时事件";
+  const detail = rejected ? "钥匙没被接受，实时事件停用" : "未授权，靠 30 秒轮询刷新";
+  document.getElementById("dotWs").className = "dot idle";
+  document.getElementById("wsDetailDot").className = "dot idle";
+  document.getElementById("wsStatus").textContent = label;
+  document.getElementById("wsDetail").textContent = detail;
+  const chip = document.getElementById("wsChip");
+  if (chip) chip.title = `${label}：${detail}`;
+}
+
+function syncRealtimeChannel() {
+  const mode = authMode();
+  const allowed = mode === "authorized" || mode === "open" || mode === "unknown";
+  if (allowed) {
+    if (!ws) {
+      wsReconnectAttempt = 0;
+      connectWS();
     }
     return;
   }
-  if (authRequired === null) {
-    state.textContent = authProbeFailed
-      ? "无法确认服务端鉴权状态（服务端没有提供 /api/auth）"
-      : "正在确认服务端鉴权状态…";
-    state.className = "auth-state muted";
-  } else if (authRequired) {
-    state.textContent = "服务端已启用 API Key 校验";
-    state.className = "auth-state ok";
-  } else {
-    state.textContent = "服务端未启用 API Key（本机/局域网部署）";
-    state.className = "auth-state muted";
+  clearTimeout(reconnectTimer);
+  if (ws) {
+    const old = ws;
+    ws = null;
+    try {
+      old.close(4001, "readonly");
+    } catch (error) {
+      /* 已断开 */
+    }
   }
-  if (hint) {
-    hint.textContent = "";
-    hint.hidden = true;
-  }
+  setRealtimeReadOnly(mode);
 }
 
+let authProbeSeq = 0;
+
 async function loadAuthState() {
+  const seq = ++authProbeSeq;
+  const hadKey = hasStoredKey();
   try {
     const data = await apiClient.fetch("/api/auth");
-    authRequired = Boolean(data && data.required);
-    authProbeFailed = false;
+    if (seq !== authProbeSeq) return authMode();
+    auth.required = Boolean(data && data.required);
+    const reported = data && typeof data.key === "string" ? data.key : "";
+    if (!auth.required) {
+      auth.keyState = "not_required";
+    } else if (["valid", "invalid", "missing"].includes(reported)) {
+      auth.keyState = reported;
+    } else {
+      // 老服务端不回答钥匙状态：有钥匙先按可用，写失败后由 401 纠正
+      auth.keyState = hadKey ? "unknown" : "missing";
+    }
+    auth.probe = "ok";
   } catch (error) {
-    // 老服务端没有 /api/auth：如实说"无法确认"，不编造
-    authProbeFailed = true;
+    if (seq !== authProbeSeq) return authMode();
+    // 网络不通/老服务端没有 /api/auth：如实说"确认不了"，不编造
+    auth.probe = "failed";
+    if (auth.required === null) auth.keyState = hadKey ? "unknown" : "missing";
   }
   renderAuthState();
+  syncRealtimeChannel();
+  return authMode();
 }
 
 function refreshAuthState() {
   lastAuthCode = "";
-  authProblem = null;
-  renderAuthState();
   loadAuthState();
+}
+
+/* 写操作被授权挡住时，只说「要授权/钥匙被拒」和下一步，绝不把缺钥匙说成故障 */
+function notifyAuthBlocked(actionLabel = "") {
+  const rejected = hasStoredKey() || auth.keyState === "invalid";
+  const signature = rejected ? "rejected" : "anonymous";
+  if (signature === lastAuthCode) return;
+  lastAuthCode = signature;
+  const title = rejected
+    ? "这台浏览器保存的钥匙没被 NAS 接受，操作没有执行"
+    : "只读模式：这个操作需要授权";
+  const hint = rejected
+    ? "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」清除后重新进入。"
+    : "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；也可以在本面板填入 API Key。";
+  addLog(`${actionLabel ? `${actionLabel}没有执行：` : ""}${title}。${hint}`, "warn");
+  toast(title, rejected ? "warn" : "info", { key: `auth:${signature}`, hint });
+  setMobileView("config");
+}
+
+async function ensureWriteAuth(actionLabel) {
+  let mode = authMode();
+  if (mode === "checking" || (hasStoredKey() && auth.keyState !== "valid")) {
+    // 用户可能刚在面板里填了钥匙：先问一次再决定，别拿旧状态误伤
+    mode = await loadAuthState();
+  }
+  if (mode === "authorized" || mode === "open") return true;
+  notifyAuthBlocked(actionLabel);
+  return false;
+}
+
+/* 任何 401 都先更新状态（静默）；真正的提示由发起动作的那一处说一次。 */
+function handleUnauthorized(error) {
+  auth.required = true;
+  auth.probe = "ok";
+  auth.keyState = hasStoredKey() ? "invalid" : "missing";
+  renderAuthState();
+  syncRealtimeChannel();
+}
+
+/* 退出本机：清掉这台浏览器保存的钥匙，回到只读；换设备/公用电脑时用 */
+function forgetDeviceKey() {
+  apiClient.setKey("");
+  document.getElementById("apiKeyInput").value = "";
+  lastAuthCode = "";
+  if (ws) {
+    const old = ws;
+    ws = null;
+    try {
+      old.close(4001, "key cleared");
+    } catch (error) {
+      /* 已断开 */
+    }
+  }
+  auth = {
+    probe: "idle",
+    required: auth.required,
+    keyState: hasStoredKey() ? "unknown" : "missing",
+  };
+  renderAuthState();
+  loadAuthState().then(() => {
+    checkStatus({ force: true });
+    loadItems();
+  });
+  toast("已退出本机：这台浏览器不再保存钥匙", "success", {
+    key: "auth:forgotten",
+    hint: "页面仍可只读浏览；需要写操作时，从 Mac 菜单栏「打开 NAS 页面」重新进入。",
+  });
 }
 
 document.getElementById("urlInput").addEventListener("keydown", (event) => {
@@ -1716,8 +1914,7 @@ document.getElementById("apiKeyInput").addEventListener("input", (event) => {
 });
 document.getElementById("apiKeyInput").addEventListener("change", () => {
   clearTimeout(keyChangeTimer);
-  keyChangeTimer = setTimeout(() => {
-    wsNeedsKey = false;
+  keyChangeTimer = setTimeout(async () => {
     if (ws) {
       const old = ws;
       ws = null;
@@ -1728,8 +1925,8 @@ document.getElementById("apiKeyInput").addEventListener("change", () => {
       }
     }
     wsReconnectAttempt = 0;
-    refreshAuthState();
-    connectWS();
+    lastAuthCode = "";
+    await loadAuthState(); // 先问清这把钥匙算不算数，再由它决定连不连实时通道
     checkStatus({ force: true });
     loadItems();
   }, 300);
@@ -1758,19 +1955,32 @@ document.addEventListener("visibilitychange", () => {
   checkStatus({ force: true });
   loadItems();
 });
+// 另一个标签页「退出本机」或换了钥匙：这边立刻跟着变，不留两套身份
+window.addEventListener("storage", (event) => {
+  if (event.key !== apiClient.storageKey) return;
+  document.getElementById("apiKeyInput").value = apiClient.getKey();
+  lastAuthCode = "";
+  loadAuthState().then(() => {
+    checkStatus({ force: true });
+    loadItems();
+  });
+});
 
-initIcons();
-connectWS();
-loadConfig();
-loadAuthState();
-checkStatus();
-renderJobs();
-renderBatchBar();
-renderMacStatus();
-loadItems();
-renderTable();
-setStatusFilter("all");
-addLog("工作台已就绪", "info");
+(async function boot() {
+  initIcons();
+  renderJobs();
+  renderBatchBar();
+  renderMacStatus();
+  renderTable();
+  setStatusFilter("all");
+  addLog("工作台已就绪", "info");
+  // 先问清「我是谁」（有没有钥匙、钥匙是否被接受），再决定要不要连实时通道。
+  // 只读浏览器不发起注定 4401 的握手，也不把缺钥匙画成故障。
+  await loadAuthState();
+  loadConfig();
+  checkStatus();
+  loadItems();
+})();
 setInterval(() => {
   if (!document.hidden) checkStatus();
 }, 30000);
