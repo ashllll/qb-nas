@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="100%" role="img" aria-label="Magnet Harvester：复制一条磁力，NAS 自动分类、入库并开始下载">
+  <title>Magnet Harvester</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#151a24"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b7cf6"/>
+      <stop offset="1" stop-color="#5ea3ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="298" rx="21" fill="none" stroke="#252c3a"/>
+
+  <!-- 左侧：磁力链 → 剪贴板 -->
+  <g transform="translate(48,58)">
+    <rect x="0" y="0" width="96" height="112" rx="14" fill="#171d29" stroke="#2c3446"/>
+    <rect x="26" y="-8" width="44" height="22" rx="8" fill="#222a3a" stroke="#39445c"/>
+    <path d="M30 40 h36 M30 58 h36 M30 76 h24" stroke="#3f4a63" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="66" cy="76" r="6" fill="#8b7cf6"/>
+  </g>
+
+  <g fill="#e8ecf5" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Display','PingFang SC','Microsoft YaHei',sans-serif">
+    <text x="180" y="112" font-size="54" font-weight="700" letter-spacing="1">Magnet Harvester</text>
+    <text x="182" y="156" font-size="22" fill="#a9b4c7">复制一条磁力，NAS 自动抓取、分类、入库并开始下载</text>
+  </g>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="17" fill="#8b96ab">
+    <rect x="180" y="190" width="118" height="34" rx="17" fill="#141a25" stroke="#2b3446"/>
+    <text x="239" y="212" text-anchor="middle">macOS 菜单栏</text>
+    <rect x="310" y="190" width="112" height="34" rx="17" fill="#141a25" stroke="#2b3446"/>
+    <text x="366" y="212" text-anchor="middle">飞牛 NAS</text>
+    <rect x="434" y="190" width="104" height="34" rx="17" fill="#141a25" stroke="#2b3446"/>
+    <text x="486" y="212" text-anchor="middle">qBittorrent</text>
+    <rect x="550" y="190" width="126" height="34" rx="17" fill="#141a25" stroke="#2b3446"/>
+    <text x="613" y="212" text-anchor="middle">WebSocket 实时</text>
+  </g>
+
+  <!-- 右侧：数据流 -->
+  <g transform="translate(842,44)" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="0" y="0" width="150" height="58" rx="12" fill="#171d29" stroke="#2c3446"/>
+    <text x="75" y="25" text-anchor="middle" font-size="16" fill="#cbd5e6" font-weight="600">剪贴板</text>
+    <text x="75" y="45" text-anchor="middle" font-size="13" fill="#7f8aa0">magnet / URL</text>
+
+    <path d="M75 58 V86" stroke="#3f4a63" stroke-width="2"/>
+    <path d="M69 80 l6 8 6 -8" fill="none" stroke="#5ea3ff" stroke-width="2"/>
+
+    <rect x="-30" y="92" width="210" height="66" rx="12" fill="#171d29" stroke="#3a4460"/>
+    <text x="75" y="118" text-anchor="middle" font-size="16" fill="#e8ecf5" font-weight="600">NAS 服务</text>
+    <text x="75" y="140" text-anchor="middle" font-size="13" fill="#7f8aa0">抓取 · 分类 · 入库 · 同步</text>
+
+    <path d="M75 158 V186" stroke="#3f4a63" stroke-width="2"/>
+    <path d="M69 180 l6 8 6 -8" fill="none" stroke="#8b7cf6" stroke-width="2"/>
+
+    <rect x="-14" y="192" width="178" height="52" rx="12" fill="#171d29" stroke="#2c3446"/>
+    <text x="75" y="215" text-anchor="middle" font-size="16" fill="#cbd5e6" font-weight="600">下载到 NAS</text>
+    <text x="75" y="235" text-anchor="middle" font-size="13" fill="#7f8aa0">/vol1/1000/download</text>
+  </g>
+
+  <rect x="1060" y="244" width="96" height="4" rx="2" fill="url(#accent)"/>
+</svg>

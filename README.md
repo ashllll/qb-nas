@@ -1,421 +1,292 @@
-# Magnet Harvester
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="Magnet Harvester：复制一条磁力，NAS 自动分类、入库并开始下载" width="100%">
+</p>
 
-通用磁力链接采集与分类服务。抓取网页中的 `magnet:` 链接，用**纯本地规则链**智能分类，并提交到 qBittorrent 下载到 NAS。附带 macOS 风格单页 Web UI、WebSocket 实时推送、系统剪贴板监控与 Agent 工具接口。
+<p align="center">
+  <b>在 Mac 上复制一条磁力或网址，NAS 自动抓取、分类、入库并开始下载。</b><br>
+  Mac 只保留一只只读剪贴板的菜单栏代理；解析、抓取、分类、入库、下载全部发生在 NAS。
+</p>
 
-## 当前能力
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi&logoColor=white">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
+  <img alt="Platform" src="https://img.shields.io/badge/NAS-fnOS%20%2F%20Docker-4B5563">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-8B5CF6">
+</p>
 
-- **Scrapling Spider 爬虫**：请求队列、并发、按域限流、深度跟进、指纹去重、重试与 `robots.txt` 均由 Scrapling 负责
-- **纯本地分类规则链**：关键词规则（KeywordRule）→ 工作室/厂牌识别（StudioRule）→ 通用回退（FallbackRule），零外部 AI 依赖
-- **分类结果 LRU 缓存**：命中/未命中统计与一键清理，规则重载自动失效
-- **站点 Cookie 注入**：`SITE_COOKIES` 支持爬取需要登录的网站
-- **系统剪贴板监控**：自动检测复制的 magnet 链接，分类后加入表格
-- **qBittorrent Web API v2 客户端**：自动建分类、403 自动重登录、路径安全解析、`ensure_category` 防并发竞态
-- **qB 配置热替换**：`QBitRuntime` 只依赖最窄替换目标，配置变更原子生效、失败自动回滚（无需重启）
-- **WebSocket 实时推送**：事件总线（MessageBus）驱动，事件携带 `updated_at` 版本号，前端按版本丢弃延迟到达的旧事件
-- **WebSocket 授权**：`/ws` 与写接口共用同一份授权判定；`API_KEY` 只走握手后第一帧，不进 URL
-- **单页 Web UI**：无构建步骤，实时进度、分类筛选、搜索、重分类与批量下载；qB 连接状态面板
-- **生产链路验证脚本**：可选真实环境 smoke test（真实 qB 登录、真实站点抓取、可选提交轮询）
+---
 
-## 架构
+## 这是什么
 
-```text
-┌─────────────┐     ┌─────────────────┐     ┌──────────────────┐
-│   Web UI    │────▶│    FastAPI      │────▶│  MagnetCrawler   │
-│ static/     │◀────│   main.py       │◀────│  Scrapling Spider│
-└─────────────┘     └───────┬─────────┘     └────────┬─────────┘
-                            │                        │
-                 ┌──────────┼────────────┬───────────┼──────────────┐
-                 ▼          ▼            ▼           ▼              ▼
-          ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌────────────┐
-          │LocalClass│ │Magnet   │ │Clipboard │ │QBitSync │ │ MessageBus │
-          │ifier 规则链│ │Parser   │ │Monitor   │ │Loop     │ │ + 事件总线  │
-          └──────────┘ └─────────┘ └──────────┘ └────┬────┘ └─────┬──────┘
-                                                     │            │
-                                      ┌──────────────┘            │
-                                      ▼                           ▼
-                               ┌─────────────┐            ┌─────────────┐
-                               │ QBittorrent │            │ WSBroadcaster│
-                               │ Client      │            │ (/ws 推送)   │
-                               └─────────────┘            └─────────────┘
-```
+Magnet Harvester（`qb-nas`）是一套**自托管的磁力采集 → 分类 → 入库 → 下载**流水线：
 
-所有组件由 `assembly.build_runtime()` 在 FastAPI lifespan 中统一装配为 `AppContext`（依赖容器），服务之间通过构造函数注入，无模块级全局可变状态。状态变更统一走 `MagnetItemTransitions`（发现/分类/下载三个生命周期域）并发布总线事件。
+- 复制一条 `magnet:` 链接，或复制一个资源页网址；
+- NAS 上的常驻服务自动抓页、提取磁力、按本地规则链分类、写入资源库；
+- 在网页里勾选后点「下载」，qBittorrent 立刻开始下载——不需要再去 qB 里手动恢复；
+- 全程实时推送到网页（任务进度、错误原因、下载百分比），不需要轮询刷新。
 
-### 数据流
+它适合：有 NAS、用 qBittorrent 下载、希望把「复制 → 找磁力 → 提交 → 手动开始」压缩成「复制」一步的人。
 
-1. 用户提交 URL（UI/API）→ `MagnetCrawler.crawl()` 提取 magnet 链接
-2. 新条目经 `DiscoveryTransitions.found()` 入库并发布 `MAGNET_FOUND` 事件
-3. `HarvestPipeline._stream_classify()` 运行本地规则链分类
-4. 用户触发下载 → `QBittorrentClient.add_magnet()`（自动分类与保存路径）
-5. `QBitSyncLoop` 每 2s 轮询 qB → 同步 torrent 状态 → 终态变化时发事件
-6. `WSBroadcaster` 订阅总线 → 推送所有事件到 WebSocket 客户端
+**设计取舍**：分类 100% 本地规则链，不调用任何外部 AI / API；Mac 代理只读剪贴板、不落全文；服务默认只监听局域网，浏览器不保存任何密钥。
 
-### 适用磁力站
+## 界面
 
-适合抓取公开页面中直接暴露 magnet 链接，或详情页可解析出 magnet 的站点，例如：
+![Magnet Harvester 工作台](docs/assets/ui-overview.png)
 
-- BT4G / BTDig / Nyaa / Sukebei / Tokyo Toshokan
-- The Pirate Bay 镜像站 / 1337x 镜像站 / RARBG 镜像索引站
-- 磁力猫等 BT/Magnet 索引类站点
+左侧是采集与活动日志，中间是资源库（分类筛选、搜索、批量操作），右侧是 qBittorrent 连接设置与运行状态；顶部实时显示 WebSocket、qB、Mac 代理三条链路是否在线。
 
-需要登录的站点可通过 `SITE_COOKIES` 注入 Cookie。请仅抓取你有权访问和下载的内容；实际可抓取范围取决于页面是否包含 `magnet:?xt=urn:btih:` 链接，以及目标站点的访问策略。
+## 工作流
 
-## 前端展示
+![Magnet Harvester 架构图](docs/assets/architecture.png)
 
-![Magnet Harvester macOS 风格工作台](docs/frontend-dashboard.png)
+- **可交互动效版**：[`docs/assets/architecture.html`](docs/assets/architecture.html)（带数据流动效，本地打开或下载后浏览器查看）
 
-Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
+一条磁力的完整路径：
 
-- 左侧：采集任务、自动下载开关、任务统计和活动日志
-- 中央：资源库表格、分类筛选、搜索、选择、重分类和批量下载
-- 右侧：qBittorrent 连接设置（显示服务端真实值、密码不回显）、运行状态（浏览器不保存任何密钥）
-- 顶部：WebSocket、qBittorrent、剪贴板监控状态
-- 移动端：底部分段导航，在"采集 / 资源库 / 设置"之间切换
+1. **Mac 代理**每秒读取剪贴板，只匹配 `magnet:` 或「整段文本恰好是一个 http(s) 网址」，去重后 `POST /api/v1/ingest`；
+2. **NAS 服务**的 ingest 层接单：网址交给站点漫游 + Scrapling 抓取，磁力直接解析 infohash；
+3. **本地规则链**分类（关键词 → 工作室/厂牌 → 正则回退），写入 SQLite 资源库；
+4. **网页**通过 WebSocket 实时收到新条目、分类结果与任务进度；
+5. 用户点「下载」→ qB Web API v2 提交并**立即开始**；
+6. **同步循环**每 2 秒读 qB 状态，下载进度与终态回推页面。
 
-前端不依赖外部字体、CDN 或打包工具；页面结构、样式、API 传输、资源状态和界面控制分别位于 `static/` 下的 HTML、CSS 与 JavaScript 模块中。
+> 采集与下载是分离的：抓取任务只负责把磁力放进资源库，是否下载由你点选决定（界面上明确标注「只入库，不下载」）。
 
 ## 快速开始
 
-### 前置条件
+### 0. 前置条件
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)（推荐，依赖锁定）或 `pip`
-- 可访问的 qBittorrent Web UI（v4.1+，推荐 v5）
-- Scrapling 浏览器（`uv run scrapling install`，自动安装 Chromium）
+| 角色 | 要求 |
+| --- | --- |
+| NAS | 飞牛 fnOS 或任意 Linux，已装 Docker 与 Docker Compose；数据盘建议 ≥ 50 GB 空闲 |
+| qBittorrent | Web UI 可访问（v4.1+，推荐 v5），建议与 NAS 部署在同一台机器 |
+| Mac（可选） | macOS 13+，装过 Xcode Command Line Tools（`xcode-select --install`），用于构建菜单栏代理 |
 
-### 安装
+### 1. 在 NAS 上部署服务
 
-```bash
-git clone https://github.com/ashllll/qb-nas.git
-cd qb-nas
+服务以单个容器运行（镜像内自带 Python 依赖与 Chromium），配置、数据库、日志都在 bind mount 上，重建不丢。
 
-uv sync --extra dev --locked
-uv run scrapling install          # 安装 Scrapling 浏览器（等价于 playwright install chromium）
-
-cp .env.example .env
-# 编辑 .env 填入 qBittorrent 连接信息
-```
-
-### 配置
-
-`.env` 常用配置项（完整模板见 `.env.example`）：
-
-| 变量                              | 说明                                                                | 默认值                          |
-| --------------------------------- | ------------------------------------------------------------------- | ------------------------------- |
-| `QBIT_HOST`                       | qBittorrent Web UI 地址                                             | `http://qbittorrent.local:8080` |
-| `QBIT_USERNAME`                   | qB 用户名                                                           | `your-username`                 |
-| `QBIT_PASSWORD`                   | qB 密码                                                             | —                               |
-| `QBIT_SYNC_INTERVAL`              | qB 状态轮询间隔（秒）                                               | `2.0`                           |
-| `SERVICE_HOST`                    | 服务监听地址                                                        | `127.0.0.1`                     |
-| `SERVICE_PORT`                    | 服务端口                                                            | `8899`                          |
-| `API_KEY`                         | 程序通道的 `X-API-Key`（Mac 代理等）；浏览器不需要、也不该保存      | 空（仅 loopback）               |
-| `AUTH_MODE`                       | `trusted`（默认，局域网内直接读写）/ `strict`（写必须带 key）       | `trusted`                       |
-| `TRUSTED_HOSTS`                   | 额外允许的 Host（逗号分隔，给域名/反向代理用；DNS rebinding 防护）  | 空                             |
-| `ALLOW_INSECURE_WRITE_API`        | 允许非 loopback 无认证                                              | `false`                         |
-| `SITE_COOKIES`                    | 站点 Cookie 注入                                                    | `{}`                            |
-| `CRAWLER_TIMEOUT`                 | 抓取超时秒                                                          | `30`                            |
-| `CRAWLER_MAX_DEPTH`               | 最大深度                                                            | `2`                             |
-| `CRAWLER_CONCURRENCY`             | 并发数                                                              | `6`                             |
-| `CRAWLER_MAX_DETAIL_LINKS`        | 单次深爬最多详情页数                                                | `200`                           |
-| `CRAWLER_ALLOWED_RESOLUTIONS`     | 爬虫必须保留的清晰度关键词                                          | `2160p,4k`                      |
-| `CRAWLER_WAIT_UNTIL`              | 页面等待阶段                                                        | `load`                          |
-| `CRAWLER_DELAY_BEFORE_HTML`       | 取 HTML 前额外等待秒                                                | `1.0`                           |
-| `CRAWLER_SCAN_FULL_PAGE`          | 抓取前滚动完整页面                                                  | `true`                          |
-| `CRAWLER_MAX_SCROLL_STEPS`        | 最大滚动步数                                                        | `8`                             |
-| `CRAWLER_PROCESS_IFRAMES`         | 合并 iframe 内容                                                    | `true`                          |
-| `CRAWLER_FLATTEN_SHADOW_DOM`      | 展开 Shadow DOM                                                     | `true`                          |
-| `CRAWLER_MAX_RETRIES`             | Scrapling 阻断/网络重试次数                                         | `1`                             |
-| `CRAWLER_CHECK_ROBOTS_TXT`        | 遵守 robots.txt                                                     | `false`                         |
-| `CRAWLER_ALLOW_FAKE_IP`           | 允许 mihomo/Clash fake-IP（198.18.0.0/15）作为爬取目标（SSRF 豁免） | `false`                         |
-| `FS_BASE_PATH`                    | 本地可写目录（可选）                                                | 空                              |
-| `MIN_DISK_SPACE_GB`               | 磁盘告警阈值                                                        | `10.0`                          |
-| `LOG_LEVEL` / `LOG_FILE`          | 日志级别 / 文件输出（自动轮转）                                     | `INFO` / 控制台                 |
-| `STORE_BACKEND` / `STORE_DB_PATH` | 存储后端（`memory`/`sqlite`）与数据库路径                           | `memory` / —                    |
-
-#### 爬取需要登录的网站
+在 Mac 的仓库目录里把源码同步到 NAS，再执行安装脚本：
 
 ```bash
-# .env 中添加
-SITE_COOKIES={"example.com": "uid=123; sid=abc; token=xyz"}
+# 1) 同步源码（排除虚拟环境与缓存）
+rsync -a --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' \
+  --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '.ruff_cache/' \
+  ./ llll@192.168.20.193:/tmp/qbnas-src/
+
+# 2) 在 NAS 上安装（幂等；已存在的配置与数据会保留）
+ssh llll@192.168.20.193 \
+  'cd /tmp/qbnas-src && bash deploy/install.sh --source /tmp/qbnas-src --commit <short-sha>'
 ```
 
-获取方式：浏览器登录目标网站 → F12 → Application → Cookies → 拼接为 `name=value; name2=value2` 格式。重启服务后自动注入到爬虫浏览器。
+`--commit` 会把本次构建对应的 commit 写进镜像标签与容器环境变量（`docker image inspect` → `org.opencontainers.image.revision`），线上镜像因此可追溯。
 
-#### 剪贴板监控
-
-点击顶部状态栏的 **"剪贴板监控"** pill 开关，开启后自动检测系统剪贴板中复制的 magnet 链接：
+安装完成后脚本会打印：
 
 ```text
-复制磁力链接 → 自动提取 btih + dn= 名称 → 本地规则分类 → 加入表格 → 可一键下载
+地址    http://<NAS-IP>:8899/
+配置    /vol3/1000/qb-nas/config/.env        # 唯一配置事实源（600）
+数据    /vol3/1000/qb-nas/data/magnet_items.db
+日志    docker logs -f qb-nas-center
+Key     /vol3/1000/qb-nas/api-key.txt        # 程序通道用，浏览器不需要
 ```
 
-无需额外配置，监控仅检测 `magnet:?xt=urn:btih:` 开头的链接。
+常用安装参数（完整列表 `bash deploy/install.sh --help`）：
 
-### 本地启动
+| 参数 | 说明 |
+| --- | --- |
+| `--prefix DIR` | 安装根目录，默认 `/vol3/1000/qb-nas`（必须在存储空间 3 下） |
+| `--port N` / `--bind-ip ADDR` | 对外端口（默认 8899）/ 只监听指定局域网地址 |
+| `--qbit-host/-user/-pass` | 顺带写入 qB 连接信息，也可以在网页「连接设置」里填 |
+| `--test` | 测试档：`/vol3/1000/qb-nas-test`、端口 18999，不碰正式目录 |
+| `--prepare` / `--no-start` | 只摆文件 / 只构建不启动 |
+| `--commit SHA` | 记录构建来源（推 GitHub 后用 `git rev-parse --short HEAD`） |
+
+安装后跑一次自检（容器、健康、Key、挂载、配置事实源、只监听局域网、kill -9 自愈）：
 
 ```bash
-python run.py
+ssh llll@192.168.20.193 'cd /vol3/1000/qb-nas && bash deploy/verify.sh --crash'
 ```
 
-访问 http://localhost:8899
+**升级**：重复上面的「同步 + install」即可，配置与数据库保留；**卸载**：`bash deploy/uninstall.sh`（默认保留数据，`--purge --yes` 连数据一起删）。
 
-## 使用流程
-
-1. 输入目标 URL，选择爬取深度（1-3）
-2. 可选开启自动下载
-3. 磁力实时出现在中央表格，按分类筛选
-4. 选择条目点击"下载"发送到 qBittorrent
-5. 右侧面板可修改 qB 连接并保存（热替换，无需重启）
-
-## 部署流程
-
-### 1. 准备运行环境
+### 2. 构建并安装 Mac 菜单栏代理（可选，但推荐）
 
 ```bash
-git clone https://github.com/ashllll/qb-nas.git
-cd qb-nas
-
-uv sync --extra dev --locked
-uv run scrapling install
+cd mac_agent
+./build.sh                       # → build/NAS 剪贴板代理.app（无需 Xcode 工程）
+open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 ```
 
-macOS / Linux 使用 `source .venv/bin/activate`，Windows PowerShell 使用：
+安装会做三件事：复制到 `~/Applications`、写入登录项 `com.qbnas.macagent`、引导保存 API Key 到钥匙串。
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+在菜单栏图标 →「设置」里填：
 
-### 2. 配置 `.env`
+| 项 | 说明 |
+| --- | --- |
+| NAS 地址 | `http://192.168.20.193:8899`（局域网地址，不要写 localhost） |
+| API Key | 从 NAS 的 `api-key.txt` 复制；只存钥匙串，不落配置文件 |
 
-```bash
-cp .env.example .env
-```
-
-至少配置：
-
-```env
-QBIT_HOST=http://你的-qb-host:8080
-QBIT_USERNAME=你的用户名
-QBIT_PASSWORD=你的密码
-SERVICE_HOST=127.0.0.1
-SERVICE_PORT=8899
-```
-
-也可以首次启动后在前端保存 qBittorrent 地址、用户名和密码；保存成功会写回本机 `.env`，服务重启后继续使用同一配置。密码不会回传到前端，配置面板只显示"已保存密码"，再次保存时密码留空即可保持不变。`.env` 已被 Git 忽略，提交代码前请确认不要手动强制加入它。
-
-默认的 `AUTH_MODE=trusted` 面向「只绑定局域网地址」的部署：浏览器不保存也不输入任何密钥，局域网内打开页面即可读、可写（下载、清空、保存配置都行；清空这类危险动作仍要勾选二次确认）。写接口的信任边界是端口绑定范围 + `Host`/`Origin`/`Sec-Fetch-Site` 校验：跨源写、DNS rebinding（Host 不是局域网 IP/主机名）、以及不在 `TRUSTED_HOSTS` 里的域名都会被 403 拒绝。读接口（资源库、`/api/v1/status`、`/api/config` 的非敏感字段、`/api/auth`、健康检查）本来就开放，配合同一套 Host 校验。
-
-`API_KEY` 只给程序用：Mac 菜单栏代理等调用方在 `X-API-Key` 头里带上它，key 不轮换、不进浏览器、不进 URL。WebSocket 只认握手后的第一帧 `{"type":"auth","api_key":...}`，查询串里的 key 一律不读。
-
-要把服务暴露到局域网之外，显式切到严格模式（这时页面变成只读，写操作必须带 key）：
-
-```env
-AUTH_MODE=strict
-SERVICE_HOST=0.0.0.0
-API_KEY=换成一串足够长的随机密钥
-TRUSTED_HOSTS=你的域名
-```
-
-密码永不回显；`GET /api/config` 只回答非敏感字段与 `qbit_password_configured`。`GET /api/auth` 会回答 `mode` / `trusted` / `write` / `required` / `key`（`not_required` / `missing` / `valid` / `invalid`）/ `reason`，页面据此区分「可写」「只读」与「真实故障」，而不是把缺钥匙显示成故障。
-
-### 3. 启动服务
-
-开发或手动运行：
-
-```bash
-python run.py
-```
-
-后台运行示例：
-
-```bash
-nohup .venv/bin/python run.py > magnet-harvester.log 2>&1 &
-```
-
-访问：
+菜单栏状态一眼可读：在线（绿）/ 离线（灰，自动退避重试）/ 暂停（暂停期间不读剪贴板）/ 无 Key（红）。运行数据在：
 
 ```text
-http://服务器地址:8899
+~/Library/Application Support/QBNASMacAgent/
+├── status.json   # 在线状态、队列长度、最近结果（无全文）
+├── state.json    # 仅匹配到的链接，权限 600
+└── agent.log     # 类型、哈希前 8 位、域名、结果
 ```
 
-### 4. systemd 部署示例（Linux NAS）
+代理的行为边界：只读剪贴板、只认磁力与单一网址、扫描上限 16 KB、网址上限 2048 字符、本地 300 秒去重、重启不重收旧剪贴板、服务端拒收不无限重试。卸载在菜单里点「卸载」，或 `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.qbnas.macagent.plist`。
 
-创建 `/etc/systemd/system/magnet-harvester.service`：
+### 3. 第一次使用
 
-```ini
-[Unit]
-Description=Magnet Harvester
-After=network-online.target
-Wants=network-online.target
+1. 浏览器打开 `http://<NAS-IP>:8899`（同一局域网内默认免密钥，页面顶部显示「已连接 / qB 在线」）；
+2. 左栏粘贴资源页网址 → 选深度 →「开始采集」；或在 Mac 上直接复制一条磁力；
+3. 任务面板显示抓取页数、耗时、新增 / 重复条数、错误原因；
+4. 资源库里按分类筛选、搜索，勾选后点「下载」——qB 立即开始，进度实时回到表格；
+5. 想清空资源库：「清空」需要二次确认，接口层强制 `?scope=all`，避免误删。
 
-[Service]
-Type=simple
-WorkingDirectory=/opt/qb-nas
-EnvironmentFile=/opt/qb-nas/.env
-ExecStart=/opt/qb-nas/.venv/bin/python /opt/qb-nas/run.py
-Restart=on-failure
-RestartSec=5
-User=nas
-Group=nas
+## 使用说明
 
-[Install]
-WantedBy=multi-user.target
+### 采集任务
+
+- 深度 1 = 只抓当前页；2–3 会跟进详情页（受 `CRAWLER_MAX_DETAIL_LINKS` 限制）。
+- 任务面板保留最近 20 条，`status` 为 `queued / running / done / failed`；失败原因会写明 `no_magnet`、`http_error`、`sslerror`、`timeout` 等，并保留触发 URL。
+- 「只入库，不下载」是默认行为：采集只写资源库，不会自动提交 qB（除非你打开自动下载开关）。
+
+### 资源库与下载
+
+- 分类页签：电影 / 电视剧 / 动漫 / 音乐 / 游戏 / 软件 / 综艺 / 纪录片 / 其他；厂牌命中的条目直接用厂牌名作为分类（开放集合）。
+- 支持搜索、重新分类、批量选择、批量下载；「来源」列可直接跳到原页面。
+- 点「下载」后种子以 `queuedDL` 进入 qB 并**立即开始**；页面显示下载百分比，终态（完成 / 失败）会推送通知。
+- 暂停不是失败：qB 里暂停的种子在页面上显示为「已暂停」，不会被误判为错误。
+
+### 连接设置
+
+- 右侧面板读的是服务端真实配置（密码不回显）；「保存并测试」会写 `config/.env` 并热替换 qB 客户端，无需重启。
+- 局域网内浏览器不需要 API Key；API Key 只给 Mac 代理这类程序通道使用，且只走请求头，不进 URL。
+
+### 实时推送
+
+`/ws` 建连后先推一份全量快照，之后推增量事件；事件带 `updated_at` 版本号，前端会丢弃延迟到达的旧事件。断线自动重连，重连后重新对齐快照。
+
+## 状态与错误说明
+
+**资源条目**（`/api/items` 的 `status`）：
+
+| 状态 | 含义 | 下一步 |
+| --- | --- | --- |
+| `pending` | 已入库，待分类 | 自动进入分类 |
+| `classified` | 分类完成 | 可下载 |
+| `queued` | 已提交 qB，排队中 | 等待 qB 调度 |
+| `downloading` | qB 正在下载 | 看百分比 |
+| `success` | 下载完成 | — |
+| `failed` | 提交或下载失败 | 看 `error` 字段与任务面板 |
+| `paused` | qB 中暂停 | 在 qB 里恢复，页面状态会同步 |
+
+**采集任务**（`/api/v1/status?jobs=N`）：`status` 四态 + `reason`（`no_magnet` 页面没有磁力、`http_error` 状态码异常、`sslerror` TLS/代理问题、`timeout` 超时、`robots` 被 robots.txt 拒绝）。
+
+**健康检查**（`/api/health`）：`healthy`（服务自身）、`qbittorrent`（qB 登录/连通）、`classifier`（规则链可加载）。
+
+**Mac 菜单栏**：在线 / 离线 / 暂停 / 无 Key / 队列 N 条 / 最近一次上报结果。
+
+## 配置参考
+
+配置文件只有一个：`/vol3/1000/qb-nas/config/.env`（600）。网页「保存并测试」写它、`install.sh` 幂等合并它、容器启动读它——**不要**在别处再维护第二份配置。优先级：文件 > 进程环境 > 内置默认；`SERVICE_HOST` / `SERVICE_PORT` / `STORE_DB_PATH` 由 compose 钉死。
+
+| 变量 | 说明 | 默认 |
+| --- | --- | --- |
+| `QBIT_HOST` / `QBIT_USERNAME` / `QBIT_PASSWORD` | qBittorrent Web UI 与凭据 | — |
+| `QBIT_SYNC_INTERVAL` | qB 状态轮询间隔（秒） | `2.0` |
+| `AUTH_MODE` | `trusted`（局域网内直接读写）/ `strict`（写必须带 API Key） | `trusted` |
+| `API_KEY` | 程序通道 `X-API-Key`（Mac 代理等）；浏览器不使用 | 空（仅 loopback） |
+| `TRUSTED_HOSTS` | 额外允许的 Host（域名/反代场景，防 DNS rebinding） | 空 |
+| `SITE_COOKIES` | 需要登录站点的 Cookie 注入，JSON `{"domain": "cookie"}` | `{}` |
+| `CRAWLER_TIMEOUT` / `CRAWLER_MAX_DEPTH` / `CRAWLER_CONCURRENCY` | 抓取超时 / 最大深度 / 并发 | `30` / `2` / `6` |
+| `CRAWLER_ALLOWED_RESOLUTIONS` | 只保留这些清晰度（逗号分隔） | `2160p,4k` |
+| `CRAWLER_ALLOW_FAKE_IP` | 允许 mihomo/Clash fake-IP 作为抓取目标（SSRF 豁免） | `false` |
+| `STORE_BACKEND` / `STORE_DB_PATH` | `memory` 或 `sqlite` 及数据库路径 | `memory` / — |
+| `MIN_DISK_SPACE_GB` | 磁盘告警阈值 | `10.0` |
+| `LOG_LEVEL` / `LOG_FILE` | 日志级别与文件输出（轮转） | `INFO` / 控制台 |
+
+> 时间约定：数据与接口时间戳一律 **UTC-aware**，`updated_at` 用 naive-local ISO 以便前端按字典序比较；不要混入 aware-UTC，否则前端版本表会失序。
+
+## 安全模型
+
+- **局域网 trusted 模式**：同一网段可直接读写，浏览器不保存任何密钥；跨源请求自动降级为只读并按 403 拒绝写操作。
+- **DNS rebinding 防护**：Host 头必须是真实地址或 `TRUSTED_HOSTS` 白名单，否则 403。
+- **程序通道**：`API_KEY` 只接受 `X-API-Key` 请求头；WebSocket 走握手后第一帧，不把 key 放进 URL。
+- **凭据**：qB 密码只存在 NAS 的 `config/.env`（600）与内存，接口不回显；Mac 的 key 只进钥匙串。
+- **网络**：容器只监听局域网地址，根文件系统只读，可写面只有 `/config`、`/data`、`/logs` 与 tmpfs。
+
+## 网络与网关（很重要）
+
+NAS 的默认出口必须是**直连**（BT/PT 绝不能走代理），但抓取海外站点时需要放行对应域名。典型配置（mihomo，规则放在 `SRC-IP-CIDR,<NAS>/32,DIRECT` **之前**，并把源 IP 绑进条件，只对 NAS 生效）：
+
+```yaml
+rules:
+  - AND,((SRC-IP-CIDR,192.168.20.193/32),(DOMAIN-SUFFIX,github.com)),GitHub Download
+  - AND,((SRC-IP-CIDR,192.168.20.193/32),(DOMAIN-SUFFIX,pypi.org)),Package Download
+  - AND,((SRC-IP-CIDR,192.168.20.193/32),(DOMAIN-SUFFIX,huggingface.co)),Model Download
+  - SRC-IP-CIDR,192.168.20.193/32,DIRECT   # NAS 其余流量（含 BT/PT）全部直连
 ```
 
-启用：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now magnet-harvester
-sudo systemctl status magnet-harvester
-```
-
-查看日志：
-
-```bash
-journalctl -u magnet-harvester -f
-```
-
-### 5. 更新部署
-
-```bash
-cd /opt/qb-nas
-git pull --ff-only
-uv sync --extra dev --locked
-uv run scrapling install
-sudo systemctl restart magnet-harvester
-```
-
-更新后建议打开 Web UI 确认顶部状态栏：
-
-- WebSocket：已连接
-- qB：在线
-- 剪贴板：按需开启
-
-## API
-
-| 方法        | 路径                     | 说明                         |
-| ----------- | ------------------------ | ---------------------------- |
-| `POST`      | `/api/crawl`             | 发起爬取                     |
-| `POST`      | `/api/download`          | 批量下载                     |
-| `POST`      | `/api/reclassify`        | 重新分类                     |
-| `GET`       | `/api/items`             | 列出条目（支持筛选/分页）    |
-| `GET`       | `/api/items/search`      | 关键字搜索                   |
-| `DELETE`    | `/api/items`             | 清空条目                     |
-| `GET`       | `/api/categories`        | 分类列表                     |
-| `GET`       | `/api/status`            | qB 状态 + 条目数             |
-| `GET`       | `/api/stats`             | 运行统计                     |
-| `GET`       | `/api/health`            | 健康检查                     |
-| `GET`       | `/api/config`            | qB 连接配置                  |
-| `PUT`       | `/api/config`            | 更新 qB 连接（热替换）       |
-| `GET`       | `/api/errors`            | 错误列表                     |
-| `POST`      | `/api/errors/clear`      | 清空已确认错误               |
-| `GET`       | `/api/tasks/{task_id}`   | 后台任务状态                 |
-| `POST`      | `/api/classifier/reload` | 重载分类关键词规则           |
-| `GET`       | `/api/clipboard`         | 剪贴板监控状态               |
-| `POST`      | `/api/clipboard/start`   | 开启剪贴板监控               |
-| `POST`      | `/api/clipboard/stop`    | 关闭剪贴板监控               |
-| `WebSocket` | `/ws`                    | 实时事件推送（API_KEY 认证） |
+判断链条：抓取报 `sslerror` / 超时 → 先在 NAS 上 `curl -v https://目标站`；再看网关日志有没有把 NAS 的流量判成 `DIRECT`；最后才怀疑服务本身。若使用 fake-IP，需要把 `CRAWLER_ALLOW_FAKE_IP=true`（或让目标域名走真实 IP）。
 
 ## 项目结构
 
 ```text
 qb-nas/
-├── run.py                          # 入口脚本
-├── pyproject.toml                  # 项目元数据 + 依赖 + ruff/pytest 配置
-├── requirements.txt                # 运行时依赖（pip 方式）
-├── uv.lock                         # uv 锁定依赖
-├── .env.example                    # 环境变量模板
-├── config/
-│   └── category_keywords.json      # 关键词分类规则
-├── static/
-│   ├── index.html                  # Web UI 页面结构
-│   ├── styles.css                  # 页面样式
-│   ├── api_client.js               # API 传输与鉴权
-│   ├── item_state.js               # 资源状态（含 seenAt 事件版本表）
-│   └── app.js                      # WebSocket 与界面控制
-├── scripts/
-│   └── smoke_production.py         # 可选真实环境 smoke 验证
-├── docs/
-│   ├── verification.md             # 验证层次与验收边界
-│   ├── adr/                        # 架构决策记录
-│   ├── agents/                     # Agent 工作流文档
-│   └── specs/                      # 规格文档
-├── magnet_harvester/               # 主 Python 包
-│   ├── main.py                     # FastAPI 应用 + lifespan（唯一装配点）
-│   ├── assembly.py                 # build_runtime() 统一装配
-│   ├── config.py                   # Pydantic 配置 (Settings + 子配置)
-│   ├── models.py                   # Pydantic 模型
-│   ├── errors.py                   # ErrorHandler 结构化错误
-│   ├── crawler.py                  # MagnetCrawler（Scrapling 事件适配）
-│   ├── scrapling_spider.py         # Scrapling Spider 调度与浏览器安全策略
-│   ├── dynamic_page.py             # 动态页面预处理（拦截遮罩/全页扫描/iframe/Shadow DOM）
-│   ├── magnet_sources.py           # 磁力链接来源提取与详情页业务筛选
-│   ├── magnet_parser.py            # magnet 正则/Base64 提取
-│   ├── logger.py                   # 日志配置（级别/滚动文件）
-│   ├── pipeline.py                 # HarvestPipeline（爬取→分类→下载）
-│   ├── transitions.py              # 状态转换域（发现/分类/下载）
-│   ├── store.py                    # ItemStore（内存/sqlite）
-│   ├── bus.py                      # MessageBus 事件总线
-│   ├── api/
-│   │   ├── routes.py               # REST API
-│   │   ├── websocket.py            # /ws 广播（含 API Key 握手认证）
-│   │   └── pages.py                # 静态页面路由
-│   ├── classifier/
-│   │   ├── local_classifier.py     # 规则链 + LRU 缓存
-│   │   ├── rule.py                 # ClassificationRule 协议与规则实现
-│   │   ├── keyword_recognizer.py   # 关键词识别
-│   │   ├── studio_recognizer.py    # 工作室/厂牌识别
-│   │   └── fallback.py             # 通用回退规则
-│   ├── qbit_client/
-│   │   ├── client.py               # QBittorrentClient 门面
-│   │   ├── _transport.py           # HTTP 传输/登录/重试
-│   │   ├── mapper.py               # qB 状态 → TaskStatus 映射
-│   │   ├── paths.py                # 保存路径推断与安全
-│   │   ├── submitter.py            # MagnetSubmitter
-│   │   ├── sync_state.py           # 增量同步状态
-│   │   └── stats.py                # QBittorrentStats
-│   ├── services/
-│   │   ├── qbit_sync.py            # QBitSyncLoop
-│   │   ├── clipboard_monitor.py    # 剪贴板监控 (pyperclip)
-│   │   ├── site_auth.py            # 站点 Cookie 注入
-│   │   ├── observability.py        # 状态/健康/统计快照
-│   │   ├── user_actions.py         # 用户动作执行器
-│   │   ├── item_queries.py         # 只读条目查询
-│   │   └── stats.py                # SystemStats
-│   ├── context/
-│   │   └── app_context.py          # AppContext + QBitRuntime + QBitReplacementTarget
-│   └── utils/
-│       ├── auth.py                 # API Key 认证依赖
-│       ├── url_validator.py        # SSRF 防护 + URL 验证
-│       ├── serializers.py          # 响应序列化
-│       └── bg_tasks.py             # BGTaskManager
-└── tests/                          # 80+ 测试文件（pytest + pytest-asyncio）
+├── magnet_harvester/          # FastAPI 服务（assembly 统一装配，无模块级可变全局）
+│   ├── main.py  assembly.py  config.py  models.py
+│   ├── crawler.py  site_walker.py  page_fetch.py  magnet_parser.py
+│   ├── services/              # ingest / qbit_sync / item_queries / observability
+│   ├── classifier/            # 关键词 → 厂牌 → 回退 规则链
+│   ├── qbit_client/           # qB Web API v2（transport / mapper / submitter / sync）
+│   ├── api/                   # REST / WebSocket / 静态页
+│   ├── context/               # AppContext 依赖容器 · qB 配置热替换
+│   └── utils/                 # SSRF 校验、鉴权、序列化、后台任务
+├── static/                    # 无构建步骤的单页 Web UI
+├── mac_agent/                 # macOS 菜单栏代理（Swift，build.sh 一键出 .app）
+├── deploy/                    # install.sh / verify.sh / uninstall.sh / Dockerfile
+├── docs/                      # 架构说明、ADR、验收记录、assets/
+├── scripts/                   # preflight.sh（本地闸门）、smoke_production.py
+├── tests/                     # 750+ 用例（pytest + pytest-asyncio）
+└── .github/workflows/gates.yml # GitHub Actions：ruff + format + pytest
 ```
 
-## 核心实现
-
-- **分类规则链**：`KeywordRule`（高置信关键词）→ `StudioRule`（工作室/厂牌识别）→ `FallbackRule`（正则回退，恒有结果）；类别：电影、电视剧、动漫、音乐、游戏、软件、综艺、纪录片、其他
-- **分类缓存**：`LocalClassificationEngine` 内置线程安全 LRU 缓存（上限 1024），`get_cache_stats()`/`clear_cache()` 真实统计，`reload_rules()` 自动失效
-- **事件版本化**：所有事件 payload 携带 `updated_at`（naive-local ISO 字符串，字典序 == 时间序）；前端 `item_state.js` 的 `seenAt` 版本表丢弃延迟到达的旧事件，防止旧事件覆盖新状态
-- **爬虫调度**：Scrapling `Spider.stream()` 负责请求队列、并发、深度跟进、指纹去重、重试与 robots.txt，结果流式回传 WebSocket
-- **浏览器网络防护**：Scrapling `page_setup` 在导航前拦截 HTTP/WebSocket 请求，阻止私网、非全局地址和 Service Worker 绕过
-- **qB 客户端**：Cookie SID 认证 + 403 自动重登录 + 重试机制；`ensure_category` 带锁防并发竞态；路径解析防目录穿越
-- **qB 热替换**：`QBitRuntime` 只依赖 `QBitReplacementTarget`（最窄依赖集），替换成功/失败均原子回写，配置持久化到 `.env`
-- **状态同步**：`QBitSyncLoop` 每 2s 轮询 `/sync/maindata`，仅状态变化时发事件
-- **URL 安全**：RFC 1918/链路本地/组播精确检查 + DNS 解析后验证，防 SSRF；`CRAWLER_ALLOW_FAKE_IP` 可豁免 mihomo/Clash fake-IP（默认关闭）
-- **剪贴板监控**：`pyperclip` 轮询（1s），提取 `btih` + `dn=` 名称，分类后发布 `MAGNET_FOUND` 事件
-
-## 验证
+## 开发与验证
 
 ```bash
-python -m pytest tests -q        # 全量测试（80+ 文件，fake qB/模拟爬虫）
-.venv/bin/ruff check magnet_harvester tests   # 静态检查
+# 本地起服务
+uv sync --extra dev --locked
+uv run scrapling install          # 抓取用的 Chromium
+cp .env.example .env              # 填 qB 连接信息
+python run.py                     # http://localhost:8899
+
+# 机器闸门（与 CI 同一套）
+bash scripts/preflight.sh         # ruff check + format check + pytest
+bash scripts/preflight.sh --fast  # 只跑 lint/format
 ```
 
-- **自动化测试 ≠ 生产验收**：真实站点抓取、真实 qB 登录、NAS 下载链路请使用 `scripts/smoke_production.py`（可选，见 `docs/verification.md`）
-- WebSocket 事件版本不变量：不要引入 aware-UTC 时间戳或混合时区，否则前端 `seenAt` 比较会失序
+- 测试基线：`python -m pytest -q` → **753 passed**；`ruff check` / `ruff format --check` 全绿。
+- CI：push `main` / `stage/**` 与 PR 到 `main` 时由 GitHub Actions 跑同一套闸门（runner 内建 `.venv` 与 Chromium）。
+- 真实链路验证：`deploy/verify.sh`（容器/挂载/配置/自愈）与 `scripts/smoke_production.py`（真 qB、真站点）；自动化测试不能替代它们。
 
-## License
+## 故障排查
+
+| 现象 | 先看什么 | 常见原因 |
+| --- | --- | --- |
+| 抓取全部失败（`sslerror` / 超时） | NAS 上 `curl -v https://目标站`；网关日志 | NAS 出口被强制直连，海外站需要加 AND 放行规则 |
+| 页面显示「没有找到磁力」 | 任务面板的触发 URL 与页数 | 页面确实没有 `magnet:`；站点需要登录（用 `SITE_COOKIES`） |
+| qB 显示离线 / 提交失败 | 右侧连接设置 →「保存并测试」；`docker logs` | 地址、账号、密码或 qB 的 IP 白名单 |
+| 下载完成但页面不更新 | `/api/health`、WebSocket 状态 | 同步循环异常或 WS 断线（会自动重连） |
+| 修改配置后重启又回去了 | `docker logs qb-nas-center \| head -5` 的配置事实源行 | 改错文件；唯一事实源是 `config/.env` |
+| 页面时间对不上 | 时间戳约定 | 数据一律 UTC-aware；容器 `TZ=UTC` 只影响日志 |
+
+日志与状态：`docker logs -f qb-nas-center`（UTC，便于对账）、`/api/health`、`/api/v1/status?jobs=20`、Mac 端 `agent.log`。
+
+## 许可证
 
 MIT
