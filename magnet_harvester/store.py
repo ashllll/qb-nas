@@ -673,8 +673,11 @@ class SQLiteItemStore:
                 db.commit()
                 return cursor.rowcount > 0
             except sqlite3.OperationalError:
-                log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
-                return False
+                # 写不进去（库被锁/磁盘/IO）不等于「这条已经存在」：返回 False 会被上报入口
+                # 当成 duplicate，条目静默消失、用户还收到「已入库」。这里抛出去，让调用方
+                # 走失败路径（HTTP 5xx → Mac 代理会重发），下一轮重试还能补上。
+                log.error("sqlite: add(%s) 写入失败，未入库", item.hash[:16], exc_info=True)
+                raise
             except (TypeError, ValueError) as e:
                 log.error("sqlite: add(%s) 数据序列化错误: %s", item.hash[:16], e, exc_info=True)
                 raise
