@@ -197,9 +197,58 @@ class ClassificationTransitions(_TransitionBase):
 class DownloadTransitions(_TransitionBase):
     """下载域：下载生命周期相关的状态转换。"""
 
+    # 启动时一次最多回收多少条「卡在加入中」的记录；正常机器远到不了这个量。
+    RECOVER_LIMIT = 1000
+    INTERRUPTED_ADDING_MSG = (
+        "上次「加入 qB」在服务重启/退出时被中断，结果未知："
+        "qB 里已经有这条的话，下一轮同步会自动长回下载状态；没有就重新点「下载」"
+    )
+
     def __init__(self, store: ItemStore, bus: MessageBus):
         super().__init__(store, bus)
         self._submit_lock = asyncio.Lock()
+
+    async def recover_interrupted(self) -> int:
+        """服务启动时调用：把「正在加入 qB」的半截条目退回可重试状态。
+
+        ``adding`` 只出现在 qB add 调用进行中的那一小段：进程在这中间没了（容器
+        重启、kill -9、部署重建），条目就永远停在「添加中」——qB 同步查不到种子
+        不会管它，``download``/``reclassify`` 又都不收 adding，界面没有任何重试入口。
+        这里把它改成 ``error`` 并写清原因：同步循环认得 error（qB 里真有这条会自己
+        长回去），用户也能直接重新点下载。
+        """
+        try:
+            pending = await self._store.list(
+                status=TaskStatus.adding.value, limit=self.RECOVER_LIMIT
+            )
+        except Exception:
+            log.exception("读取「加入中」条目失败，跳过本次恢复")
+            return 0
+
+        recovered = 0
+        for item in pending:
+            if not await self._store.update_if_status(
+                item.hash,
+                {TaskStatus.adding},
+                status=TaskStatus.error,
+                error_msg=self.INTERRUPTED_ADDING_MSG,
+                torrent_state="submit_interrupted",
+            ):
+                continue
+            recovered += 1
+            await self._emit_item_changed(item.hash)
+        if recovered:
+            log.warning(
+                "上次运行有 %d 条「加入 qB」被中断，已退回可重试状态（%s）",
+                recovered,
+                self.INTERRUPTED_ADDING_MSG,
+            )
+        if len(pending) >= self.RECOVER_LIMIT:
+            log.warning(
+                "「加入中」条目达到回收上限 %d 条，其余留给 qB 同步处理",
+                self.RECOVER_LIMIT,
+            )
+        return recovered
 
     async def submitting(self, hash_key: str) -> bool:
         async with self._submit_lock:

@@ -54,6 +54,18 @@ class AppRuntime:
             await self.ctx.core.crawler.start()
         except Exception as e:
             log.error("crawler 启动失败（降级模式，爬取功能不可用）: %s", e)
+
+        # 上次进程在「加入 qB」的中途没了：那批条目停在 adding，界面没有任何重试入口。
+        # 先退回可重试状态，再起同步循环（同步认得 error，qB 里真有的会长回去）。
+        pipeline = self.ctx.core.pipeline
+        if pipeline is not None and hasattr(pipeline, "recover_interrupted"):
+            try:
+                recovered = await pipeline.recover_interrupted()
+                if recovered:
+                    log.warning("回收 %d 条被中断的「加入 qB」记录", recovered)
+            except Exception as e:
+                log.error("回收被中断的「加入 qB」记录失败: %s", e)
+
         await self.sync_loop.start()
         # 上次没干完的抓取任务接着做（重启不丢活）
         ingest = self.ctx.app_services.ingest

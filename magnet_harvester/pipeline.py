@@ -424,6 +424,13 @@ class HarvestPipeline:
     async def download(self, hashes: List[str]):
         await self._download_items(hashes)
 
+    async def recover_interrupted(self) -> int:
+        """启动时回收「加入 qB」被中断的半截条目（见 DownloadTransitions）。"""
+        recover = getattr(self._downloads, "recover_interrupted", None)
+        if recover is None:
+            return 0
+        return await recover()
+
     def replace_download_phase(self, new_qbit: DownloadPhase):
         """Hot-swap the download phase (e.g. when qBittorrent config changes)."""
         if new_qbit is None:
