@@ -407,12 +407,14 @@ done
 
 # ── 4. compose.yaml ──────────────────────────────────────────────────────────
 step "4/8 生成 compose.yaml"
-[ -n "$PYPI_INDEX" ] || PYPI_INDEX=${QB_NAS_PYPI_INDEX:-}
-if [ -z "$PYPI_INDEX" ]; then
-  if curl -fsS --max-time 4 -o /dev/null https://mirrors.aliyun.com/pypi/simple/ 2>/dev/null; then
-    PYPI_INDEX=https://mirrors.aliyun.com/pypi/simple/
-  fi
+# 构建源要「粘住」：--build-arg 变化会让 RUN pip install 整层缓存失效，
+# 每次重建都重下 ~200MB（实测在这台 NAS 上多花 10–20 分钟）。
+# 优先级：显式参数 > 上次生成的 compose 里那个值 > 环境变量 > 现场探测。
+if [ -z "$PYPI_INDEX" ] && [ -f "$COMPOSE" ]; then
+  PYPI_INDEX=$(sed -n 's/^ *PYPI_INDEX: "\(.*\)"$/\1/p' "$COMPOSE" 2>/dev/null | head -1)
 fi
+# 默认用阿里云镜像：这台 NAS 在国内，直连 pypi.org 常超时；要直连就 --pypi-index ""
+[ -n "${PYPI_INDEX:-}" ] || PYPI_INDEX=${QB_NAS_PYPI_INDEX:-https://mirrors.aliyun.com/pypi/simple/}
 [ -n "$PYPI_INDEX" ] && dim "构建源 $PYPI_INDEX"
 sed -e "s|@@PROJECT@@|$PROJECT|g" \
     -e "s|@@APP@@|$APP|g" \
