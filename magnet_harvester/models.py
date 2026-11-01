@@ -16,6 +16,9 @@ class TaskStatus(str, Enum):
     adding = "adding"
     queued = "queued"
     downloading = "downloading"
+    # 已加入 qB、处于停止/暂停（qB v5 的 stoppedDL、v4 的 pausedDL）。
+    # 语义上属成功路径：种子在 qB 里，只是没在跑，不是失败。
+    paused = "paused"
     success = "success"
     error = "error"
     skipped = "skipped"

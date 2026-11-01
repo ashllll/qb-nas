@@ -45,6 +45,7 @@ def test_status_mapper_maps_downloading_states():
         "downloading",
         "forcedDL",
         "metaDL",
+        "forcedMetaDL",
         "stalledDL",
         "checkingDL",
         "checkingResumeData",
@@ -55,13 +56,24 @@ def test_status_mapper_maps_downloading_states():
 
 
 def test_status_mapper_maps_download_queue_states():
-    """qB 下载队列状态应保持为下载中，避免 UI 状态震荡"""
+    """qB 排队状态映射为 queued（v5 的 queuedForChecking / allocating 同此）"""
     from magnet_harvester.qbit_client import TorrentStatusMapper
 
     mapper = TorrentStatusMapper()
-    for state in ["queuedDL", "pausedDL"]:
+    for state in ["queuedDL", "queuedForChecking", "allocating"]:
         result = mapper.map({"state": state, "progress": 0.0})
-        assert result["status"] == TaskStatus.downloading
+        assert result["status"] == TaskStatus.queued
+
+
+def test_status_mapper_maps_paused_states_to_paused():
+    """「已暂停/已停止」是成功路径，不是失败（N18）"""
+    from magnet_harvester.qbit_client import TorrentStatusMapper
+
+    mapper = TorrentStatusMapper()
+    for state in ["pausedDL", "stoppedDL"]:
+        result = mapper.map({"state": state, "progress": 0.0})
+        assert result["status"] == TaskStatus.paused
+        assert result["error_msg"] is None
 
 
 def test_status_mapper_progress_rounding():

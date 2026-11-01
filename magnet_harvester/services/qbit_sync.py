@@ -20,11 +20,14 @@ log = logging.getLogger(__name__)
 
 _MAX_STORE_ITEMS = 50000
 
-# 非终态 — qBittorrent 同步只关心已提交到 qB 的活跃条目
+# 非终态 — qBittorrent 同步只关心已提交到 qB 的活跃条目。
+# paused 必须在内：用户在 qB 里恢复下载后，库里要从「已暂停」跟着变成下载中；
+# error 也在内：qB 侧状态可能被修好（历史上被误判成 error 的条目靠下一轮同步自愈）。
 _SYNC_ACTIVE_STATUSES = [
     TaskStatus.adding.value,
     TaskStatus.queued.value,
     TaskStatus.downloading.value,
+    TaskStatus.paused.value,
     TaskStatus.error.value,
 ]
 
