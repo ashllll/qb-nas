@@ -40,6 +40,7 @@ QBIT_HOST=""
 QBIT_USER=""
 QBIT_PASS=""
 ALLOW_ANY_DISK=0
+ALLOW_FAKE_IP=""
 PREPARE=0
 LOG_LEVEL=INFO
 
@@ -71,6 +72,7 @@ usage() {
   --rotate-key        重新生成 API Key
   --pypi-index URL    构建时用的 PyPI 源（默认自动探测阿里云镜像）
   --qbit-host/-user/-pass   顺带写入 qB 配置（可之后在 Web UI 填）
+  --allow-fake-ip 0|1 局域网走 mihomo/Clash fake-IP 时设 1（默认自动探测）
   --with-browser      镜像内装 Chromium（HTTP 优先，通常不需要）
   --test              测试档：prefix=/vol3/1000/qb-nas-test，port=18999，名字都带 -test
   --allow-any-disk    允许装到 /vol3 以外（默认拒绝，用户要求数据只在存储空间 3）
@@ -96,6 +98,7 @@ while [ $# -gt 0 ]; do
     --qbit-host) QBIT_HOST=${2:?}; shift 2 ;;
     --qbit-user) QBIT_USER=${2:?}; shift 2 ;;
     --qbit-pass) QBIT_PASS=${2:?}; shift 2 ;;
+    --allow-fake-ip) ALLOW_FAKE_IP=${2:?}; shift 2 ;;
     --with-browser) WITH_BROWSER=1; shift ;;
     --allow-any-disk) ALLOW_ANY_DISK=1; shift ;;
     --test) PREFIX=/vol3/1000/qb-nas-test; HOST_PORT=18999; PROJECT=qb-nas-test; \
@@ -221,6 +224,19 @@ if [ -z "$API_KEY" ] || [ "$ROTATE_KEY" = "1" ]; then
   [ "$ROTATE_KEY" = "1" ] && info "已按要求重新生成 API Key"
 fi
 [ ${#API_KEY} -ge 24 ] || die "API Key 太短（至少 24 字符）"
+# fake-IP（mihomo/Clash）环境：域名会解析到 198.18.0.0/15，SSRF 校验必须放行这一段，
+# 否则所有公开网址都会被判「不安全」。没显式给就沿用旧 .env，再没有就现场探测一次。
+if [ -z "$ALLOW_FAKE_IP" ] && [ -f "$ENV_FILE" ]; then
+  ALLOW_FAKE_IP=$(grep -E '^CRAWLER_ALLOW_FAKE_IP=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
+fi
+if [ -z "$ALLOW_FAKE_IP" ]; then
+  if getent hosts example.com 2>/dev/null | grep -qE '^198\.18\.'; then
+    ALLOW_FAKE_IP=1
+    info "探测到 fake-IP（example.com → 198.18.x.x）：CRAWLER_ALLOW_FAKE_IP=1"
+  else
+    ALLOW_FAKE_IP=0
+  fi
+fi
 if [ -z "$QBIT_HOST" ] && [ -f "$ENV_FILE" ]; then
   QBIT_HOST=$(grep -E '^QBIT_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
   QBIT_USER=$(grep -E '^QBIT_USERNAME=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
@@ -243,6 +259,7 @@ STORE_DB_PATH=/data/magnet_items.db
 # 取页：公开页 HTTP 优先；1080p/720p 也收
 CRAWLER_HTTP_FIRST=true
 CRAWLER_ALLOWED_RESOLUTIONS=
+CRAWLER_ALLOW_FAKE_IP=$ALLOW_FAKE_IP
 CRAWLER_MAX_DEPTH=2
 CRAWLER_TIMEOUT=30
 CRAWLER_CONCURRENCY=4
