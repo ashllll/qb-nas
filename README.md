@@ -12,7 +12,7 @@
 - **qBittorrent Web API v2 客户端**：自动建分类、403 自动重登录、路径安全解析、`ensure_category` 防并发竞态
 - **qB 配置热替换**：`QBitRuntime` 只依赖最窄替换目标，配置变更原子生效、失败自动回滚（无需重启）
 - **WebSocket 实时推送**：事件总线（MessageBus）驱动，事件携带 `updated_at` 版本号，前端按版本丢弃延迟到达的旧事件
-- **WebSocket API Key 认证**：`/ws` 握手与写接口同策略校验（`API_KEY` 为空时保持兼容）
+- **WebSocket 授权**：`/ws` 与写接口共用同一份授权判定；`API_KEY` 只走握手后第一帧，不进 URL
 - **单页 Web UI**：无构建步骤，实时进度、分类筛选、搜索、重分类与批量下载；qB 连接状态面板
 - **生产链路验证脚本**：可选真实环境 smoke test（真实 qB 登录、真实站点抓取、可选提交轮询）
 
@@ -68,7 +68,7 @@ Web UI 是无构建步骤的单页应用，直接由 FastAPI 提供：
 
 - 左侧：采集任务、自动下载开关、任务统计和活动日志
 - 中央：资源库表格、分类筛选、搜索、选择、重分类和批量下载
-- 右侧：qBittorrent 连接设置（热替换保存）、API Key 会话输入、运行状态
+- 右侧：qBittorrent 连接设置（显示服务端真实值、密码不回显）、运行状态（浏览器不保存任何密钥）
 - 顶部：WebSocket、qBittorrent、剪贴板监控状态
 - 移动端：底部分段导航，在"采集 / 资源库 / 设置"之间切换
 
@@ -108,7 +108,9 @@ cp .env.example .env
 | `QBIT_SYNC_INTERVAL`              | qB 状态轮询间隔（秒）                                               | `2.0`                           |
 | `SERVICE_HOST`                    | 服务监听地址                                                        | `127.0.0.1`                     |
 | `SERVICE_PORT`                    | 服务端口                                                            | `8899`                          |
-| `API_KEY`                         | 写操作的 `X-API-Key`；`/ws` 握手后第一帧（不进 URL）                | 空（仅 loopback）               |
+| `API_KEY`                         | 程序通道的 `X-API-Key`（Mac 代理等）；浏览器不需要、也不该保存      | 空（仅 loopback）               |
+| `AUTH_MODE`                       | `trusted`（默认，局域网内直接读写）/ `strict`（写必须带 key）       | `trusted`                       |
+| `TRUSTED_HOSTS`                   | 额外允许的 Host（逗号分隔，给域名/反向代理用；DNS rebinding 防护）  | 空                             |
 | `ALLOW_INSECURE_WRITE_API`        | 允许非 loopback 无认证                                              | `false`                         |
 | `SITE_COOKIES`                    | 站点 Cookie 注入                                                    | `{}`                            |
 | `CRAWLER_TIMEOUT`                 | 抓取超时秒                                                          | `30`                            |
@@ -201,17 +203,20 @@ SERVICE_PORT=8899
 
 也可以首次启动后在前端保存 qBittorrent 地址、用户名和密码；保存成功会写回本机 `.env`，服务重启后继续使用同一配置。密码不会回传到前端，配置面板只显示"已保存密码"，再次保存时密码留空即可保持不变。`.env` 已被 Git 忽略，提交代码前请确认不要手动强制加入它。
 
-如果要让局域网其他设备访问，不要裸露无认证写接口。设置强随机 `API_KEY`：
+默认的 `AUTH_MODE=trusted` 面向「只绑定局域网地址」的部署：浏览器不保存也不输入任何密钥，局域网内打开页面即可读、可写（下载、清空、保存配置都行；清空这类危险动作仍要勾选二次确认）。写接口的信任边界是端口绑定范围 + `Host`/`Origin`/`Sec-Fetch-Site` 校验：跨源写、DNS rebinding（Host 不是局域网 IP/主机名）、以及不在 `TRUSTED_HOSTS` 里的域名都会被 403 拒绝。读接口（资源库、`/api/v1/status`、`/api/config` 的非敏感字段、`/api/auth`、健康检查）本来就开放，配合同一套 Host 校验。
+
+`API_KEY` 只给程序用：Mac 菜单栏代理等调用方在 `X-API-Key` 头里带上它，key 不轮换、不进浏览器、不进 URL。WebSocket 只认握手后的第一帧 `{"type":"auth","api_key":...}`，查询串里的 key 一律不读。
+
+要把服务暴露到局域网之外，显式切到严格模式（这时页面变成只读，写操作必须带 key）：
 
 ```env
+AUTH_MODE=strict
 SERVICE_HOST=0.0.0.0
 API_KEY=换成一串足够长的随机密钥
-ALLOW_INSECURE_WRITE_API=false
+TRUSTED_HOSTS=你的域名
 ```
 
-前端右侧"访问安全 / API Key"输入同一密钥后，即可执行爬取、下载、清空、配置保存等写操作；WebSocket 订阅同样需要该密钥（握手后第一帧提交，不进 URL）。
-
-只读接口（资源库、`/api/v1/status`、`/api/config` 的非敏感字段、`/api/auth`、健康检查）不需要密钥：没有钥匙的浏览器也能看见真实的 qB 地址、用户名与运行状态。`GET /api/auth` 会额外回答当前请求的钥匙状态（`missing` / `invalid` / `valid` / `not_required`），页面据此区分「只读」与「钥匙被拒」，而不是把缺钥匙显示成故障。密码永不回显，所有写接口仍必须带 `X-API-Key`。
+密码永不回显；`GET /api/config` 只回答非敏感字段与 `qbit_password_configured`。`GET /api/auth` 会回答 `mode` / `trusted` / `write` / `required` / `key`（`not_required` / `missing` / `valid` / `invalid`）/ `reason`，页面据此区分「可写」「只读」与「真实故障」，而不是把缺钥匙显示成故障。
 
 ### 3. 启动服务
 
