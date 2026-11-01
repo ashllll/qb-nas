@@ -31,9 +31,10 @@ class JobStatus:
     queued = "queued"
     running = "running"
     done = "done"
-    failed = "failed"
+    # 与台里 工具/投递.py 的判定一致：任务结束只有 done / error 两种
+    error = "error"
 
-    ALL = (queued, running, done, failed)
+    ALL = (queued, running, done, error)
     ACTIVE = (queued, running)
 
 
@@ -110,7 +111,7 @@ class CrawlJob:
                 return f"从 {self.urls_in_batch} 个网址找到 {self.found} 条，全部已在库里"
             label = self.reason_label
             return "没有找到磁力" + (f"：{label}" if label else "")
-        if self.status == JobStatus.failed:
+        if self.status == JobStatus.error:
             label = self.reason_label
             return "抓取失败" + (f"：{label}" if label else "")
         if self.status == JobStatus.running:
@@ -361,7 +362,7 @@ class JobStore:
                         "UPDATE crawl_jobs SET status=?, reason=?, message=?, finished_at=?, "
                         "updated_at=? WHERE job_id=?",
                         (
-                            JobStatus.failed,
+                            JobStatus.error,
                             "服务重启多次仍未完成，已停止自动重试",
                             "需要手动重试",
                             now,
@@ -388,7 +389,7 @@ class JobStore:
             "queued": by_status.get(JobStatus.queued, 0),
             "running": by_status.get(JobStatus.running, 0),
             "done": by_status.get(JobStatus.done, 0),
-            "failed": by_status.get(JobStatus.failed, 0),
+            "error": by_status.get(JobStatus.error, 0),
         }
 
     # ── ingest_events ─────────────────────

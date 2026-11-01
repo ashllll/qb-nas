@@ -788,7 +788,7 @@ const JOB_STATUS = {
   queued: { label: "等待", tone: "queued" },
   running: { label: "进行中", tone: "running" },
   done: { label: "完成", tone: "done" },
-  failed: { label: "失败", tone: "failed" },
+  error: { label: "失败", tone: "failed" },
 };
 
 const INGEST_STATUS = {
@@ -834,14 +834,14 @@ function batchSentence(job) {
   if (status === "running")
     return added ? `正在找磁力 · 已收到 ${added} 条…` : "正在找磁力…";
   if (status === "queued") return "任务排队中";
-  if (status === "failed")
-    return job && job.reason ? `抓取失败：${job.reason}` : "抓取失败";
+  if (status === "error" || status === "failed")
+    return job && job.reason_label ? `抓取失败：${job.reason_label}` : "抓取失败";
   return added ? `已收到 ${added} 条` : "没有找到磁力";
 }
 
 function canRetryJob(job) {
   if (!job || !job.job_id) return false;
-  if (job.status === "failed") return true;
+  if (job.status === "error" || job.status === "failed") return true;
   // 完成但一条都没入库时允许重抓（页面可能临时抽风）
   return job.status === "done" && !Number(job.added || 0);
 }
@@ -869,7 +869,8 @@ function renderBatchBar() {
 /* 任务那一行的「原因」：失败说清为什么；完成但没条目也说明白；有页面级失败时给个数 */
 function jobNote(job) {
   const errors = Array.isArray(job.errors) ? job.errors.length : 0;
-  if (job.status === "failed") return job.summary || job.message || "抓取失败";
+  if (job.status === "error" || job.status === "failed")
+    return job.summary || job.message || "抓取失败";
   if (job.status === "queued") return "排队中";
   if (job.status === "running") return errors ? `${errors} 处页面失败` : "";
   const added = Number(job.added || 0);

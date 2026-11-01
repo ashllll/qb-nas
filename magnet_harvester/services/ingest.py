@@ -410,7 +410,7 @@ class IngestService:
             if fatal:
                 final = self._jobs.update(
                     job_id,
-                    status=JobStatus.failed,
+                    status=JobStatus.error,
                     reason=fatal,
                     message="抓取失败",
                     elapsed_ms=elapsed_ms,

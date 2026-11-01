@@ -1029,7 +1029,7 @@ svg {
 .batch-bar[data-status="done"] {
   box-shadow: inset 2px 0 0 0 var(--success);
 }
-.batch-bar[data-status="failed"] {
+.batch-bar[data-status="error"], .batch-bar[data-status="failed"] {
   box-shadow: inset 2px 0 0 0 var(--danger);
 }
 .batch-dot {
@@ -1194,6 +1194,7 @@ svg {
   color: var(--text-secondary);
   font-size: 10px;
 }
+.job-row[data-status="error"] .job-note,
 .job-row[data-status="failed"] .job-note {
   color: var(--danger);
 }

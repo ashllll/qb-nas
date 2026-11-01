@@ -45,10 +45,10 @@ def test_summary_explains_empty_result_and_failure():
     assert done_empty.reason == "no_magnet"
     assert done_empty.as_dict()["reason_label"] == "页面里没有磁力"
 
-    blocked = _job(status=JobStatus.failed, reason="blocked")
+    blocked = _job(status=JobStatus.error, reason="blocked")
     assert blocked.summary == "抓取失败：被站点挡住"
 
-    failed = _job(status=JobStatus.failed, reason="connect timed out")
+    failed = _job(status=JobStatus.error, reason="connect timed out")
     assert failed.summary == "抓取失败：connect timed out"
 
     running = _job(status=JobStatus.running, added=4)
@@ -88,7 +88,7 @@ def test_claim_resumable_gives_up_after_max_attempts(tmp_path):
 
     assert resumed == []
     fired = store.get("job-fire")
-    assert fired is not None and fired.status == JobStatus.failed
+    assert fired is not None and fired.status == JobStatus.error
     assert "重启多次" in fired.reason
 
 
@@ -124,12 +124,12 @@ def test_ingest_events_are_idempotent_records(tmp_path):
 def test_counts_by_status(tmp_path):
     store = JobStore(tmp_path / "jobs.db")
     store.create(_job("a", status=JobStatus.done))
-    store.create(_job("b", status=JobStatus.failed))
+    store.create(_job("b", status=JobStatus.error))
     store.create(_job("c", status=JobStatus.running))
 
     counts = store.counts()
 
-    assert counts == {"total": 3, "queued": 0, "running": 1, "done": 1, "failed": 1}
+    assert counts == {"total": 3, "queued": 0, "running": 1, "done": 1, "error": 1}
 
 
 def test_prune_keeps_recent_rows_only(tmp_path):
