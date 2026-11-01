@@ -98,9 +98,28 @@ class QBittorrentClient:
             try:
                 r = await self._req("GET", "/app/version")
                 ok = r.status_code == 200
-            except Exception as e:
-                log.warning(f"qBittorrent ping 失败: {e}")
+                if not ok:
+                    self.stats.error(f"qBittorrent 返回 HTTP {r.status_code}")
+            except httpx.TimeoutException as e:
+                log.warning(f"qBittorrent ping 超时: {e or type(e).__name__}")
                 ok = False
+                self.stats.error(f"连接 qBittorrent 超时：{type(e).__name__}")
+            except httpx.TransportError as e:
+                log.warning(f"qBittorrent ping 失败（网络）: {type(e).__name__}: {e}")
+                ok = False
+                self.stats.error(f"连接 qBittorrent 失败：{type(e).__name__}: {e}")
+            except Exception as e:
+                log.warning(f"qBittorrent ping 失败: {type(e).__name__}: {e}")
+                ok = False
+                # 登录失败/HTTP 状态等由 transport 抛 RuntimeError，原因要留给界面
+                if "登录" in str(e):
+                    self.stats.error("qBittorrent 认证失败：用户名或密码不对")
+                else:
+                    self.stats.error(f"qBittorrent 不可用：{type(e).__name__}: {e}")
+            else:
+                # 恢复正常时清掉旧原因，别让界面一直显示过期的失败说明
+                if ok and self.stats.last_error:
+                    self.stats.error(None)
             self._last_ping_at = time.monotonic()
             self._last_ping_result = ok
             return ok
