@@ -188,13 +188,13 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
             await page.evaluate(
                 "() => new MagnetApiClient().fetch('/api/error422').catch(error => error.message)"
             )
-            == "invalid probe"
+            == "参数校验失败：invalid probe"
         )
         assert (
             await page.evaluate(
                 "() => new MagnetApiClient().fetch('/api/error-text').catch(error => error.message)"
             )
-            == "请求失败 (503)"
+            == "unavailable"
         )
 
         await page.locator("#cfgPass").fill("")

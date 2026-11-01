@@ -22,10 +22,28 @@ const ICON_SYMBOLS = {
 const itemState = new MagnetItemState();
 const { items, selected } = itemState;
 const apiClient = new MagnetApiClient({
-  onUnauthorized: () => setMobileView("config"),
+  onUnauthorized: (error) => handleAuthFailure(error),
+  onNetworkError: (error) => handleNetworkFailure(error),
 });
 let ws = null;
 let reconnectTimer = null;
+// WS 重连：指数退避；鉴权失败就停（改 Key 后再连），不在 2 秒一次的空转里刷日志。
+let wsReconnectAttempt = 0;
+let wsNeedsKey = false;
+let wsWasConnected = false;
+let wsLastMessageAt = 0;
+let wsWatchdog = null;
+let wsHello = null;
+// 服务端是否启用了鉴权：null=未知（还没问到）
+let authRequired = null;
+let authProbeFailed = false;
+let authProblem = null;
+let lastAuthCode = "";
+let keyChangeTimer = null;
+let itemsRequestSeq = 0;
+let statusRequestSeq = 0;
+let statusInFlight = null;
+let clearBusy = false;
 
 /* ---- 采集中心状态（任务 / 上报事件） ----
    任务与上报事件来自两条通道：/api/v1/status 首屏快照 + ws 的 job_updated /
@@ -119,21 +137,45 @@ if (fieldReducedMotion) {
 
 /* ---- End field animation ---- */
 
+function wsSocketUrl() {
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  // API Key 不进 URL：URL 会落到代理与访问日志里。
+  // 握手后第一帧用 {type:"auth"} 提交（服务端在发数据前校验）。
+  return `${protocol}//${location.host}/ws`;
+}
+
+function nextReconnectDelay() {
+  // 2s → 4s → 8s → 16s → 30s（上限），±20% 抖动，避免多标签页同时敲服务端
+  const base = Math.min(30000, 2000 * Math.pow(2, wsReconnectAttempt));
+  wsReconnectAttempt += 1;
+  return Math.round(base * (0.8 + Math.random() * 0.4));
+}
+
+function sendWsAuth(sock) {
+  const key = apiClient.getKey();
+  try {
+    sock.send(JSON.stringify({ type: "auth", api_key: key }));
+  } catch (error) {
+    addLog(`实时通道认证发送失败：${error.message}`, "error");
+  }
+}
+
 function connectWS() {
   clearTimeout(reconnectTimer);
+  if (wsNeedsKey) {
+    setWsState("locked", "需要 API Key");
+    return;
+  }
   setWsState("checking", "连接中");
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  // 浏览器 WebSocket API 无法自定义请求头，API Key 走查询参数；
-  // 未配置 key 时不带参数（服务端兼容模式）。
-  const wsKey = apiClient.getKey();
-  const wsQuery = wsKey ? `?api_key=${encodeURIComponent(wsKey)}` : "";
-  const sock = new WebSocket(`${protocol}//${location.host}/ws${wsQuery}`);
+  const sock = new WebSocket(wsSocketUrl());
   ws = sock;
   // 心跳定时器为连接级闭包：每个连接只操作自己的定时器，
-  // 避免 API Key 快速重连时旧连接误清新连接的定时器（stale onclose）。
+  // 避免 API Key 变化时旧连接误清新连接的定时器（stale onclose）。
   let heartbeatTimer = null;
   sock.onopen = () => {
-    setWsState("online", "已连接");
+    wsLastMessageAt = Date.now();
+    // 浏览器 WebSocket API 无法自定义请求头：先发一帧认证，Key 不落在 URL/日志里。
+    sendWsAuth(sock);
     // 服务端 5 分钟无消息即关闭僵尸连接（websocket.py idle timeout），
     // 客户端每 30s 发送文本 ping 维持连接；onclose 时清理定时器。
     clearInterval(heartbeatTimer);
@@ -142,35 +184,97 @@ function connectWS() {
     }, 30000);
   };
   sock.onmessage = (event) => {
+    wsLastMessageAt = Date.now();
     try {
       handleMsg(JSON.parse(event.data));
     } catch (error) {
       addLog(`事件解析失败: ${error.message}`, "error");
     }
   };
-  sock.onclose = () => {
+  sock.onclose = (event) => {
     clearInterval(heartbeatTimer);
-    setWsState("offline", "重连中");
-    reconnectTimer = setTimeout(connectWS, 2000);
+    if (ws !== sock) return; // 旧连接的 onclose 不许改新连接的状态
+    ws = null;
+    const code = Number(event?.code || 0);
+    const reason = String(event?.reason || "");
+    if (code === 4401) {
+      // 鉴权失败：停止自动重连（每 2 秒重试只会刷服务端日志，用户也什么都看不到）
+      wsNeedsKey = true;
+      const missing = reason === "api_key_missing" || (!reason && !apiClient.getKey());
+      setWsState("locked", missing ? "需要 API Key" : "API Key 不正确");
+      reportAuthProblem({
+        code: missing ? "api_key_missing" : "api_key_invalid",
+        detail: missing ? "实时通道需要 API Key" : "实时通道的 API Key 不正确",
+        hint: missing
+          ? "在右侧「连接设置」填入 NAS 上 .env 里 API_KEY 的值后保存。"
+          : "当前保存的 API Key 与服务端不一致；到右侧「连接设置」核对后保存。",
+      });
+      return;
+    }
+    const delay = nextReconnectDelay();
+    setWsState("offline", `重连中（${Math.round(delay / 1000)}s）`);
+    reconnectTimer = setTimeout(connectWS, delay);
   };
-  sock.onerror = () => sock.close();
+  sock.onerror = () => {
+    try {
+      sock.close();
+    } catch (error) {
+      /* 已断开 */
+    }
+  };
 }
 
 function setWsState(state, label) {
-  document.getElementById("dotWs").className = `dot ${state}`;
-  document.getElementById("wsDetailDot").className = `dot ${state}`;
+  const dotState = state === "locked" ? "offline" : state;
+  document.getElementById("dotWs").className = `dot ${dotState}`;
+  document.getElementById("wsDetailDot").className = `dot ${dotState}`;
   document.getElementById("wsStatus").textContent = label;
   document.getElementById("wsDetail").textContent = label;
+  const chip = document.getElementById("wsChip");
+  if (chip) chip.title = label;
+}
+
+/* 半开连接检测：浏览器不一定收到 onclose，界面却还写着「已连接」。
+   75 秒没有任何帧（含心跳 pong）就主动断开重连，避免状态漂移。 */
+function watchWs() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (Date.now() - wsLastMessageAt > 75000) {
+    addLog("实时通道 75 秒无响应，重新连接", "warn");
+    try {
+      ws.close(4000, "heartbeat timeout");
+    } catch (error) {
+      /* 忽略 */
+    }
+  }
 }
 
 function handleMsg(msg) {
   switch (msg.type) {
-    case "init":
+    case "hello":
+      // 握手完成：服务端告诉界面它是否启用了鉴权（不含任何凭据）
+      wsHello = msg;
+      authRequired = Boolean(msg.auth_required);
+      wsReconnectAttempt = 0;
+      setWsState("online", "已连接");
+      renderAuthState();
+      break;
+    case "init": {
       fieldPulse(0.5);
+      const reconnected = wsWasConnected;
+      wsWasConnected = true;
       itemState.reset(msg.items || []);
       renderTable();
-      addLog("实时数据已同步", "info");
+      setWsState("online", "已连接");
+      if (reconnected) {
+        // 断线期间可能错过事件：重连后强制对账一次，避免界面停在旧状态
+        addLog("实时数据已重新同步", "info");
+        checkStatus({ force: true });
+        scheduleItemsRefresh(0);
+      } else {
+        addLog("实时数据已同步", "info");
+      }
       break;
+    }
     case "init_page":
       itemState.upsertMany(msg.items || []);
       renderTable();
@@ -207,13 +311,14 @@ function handleMsg(msg) {
       break;
     case "classify_done": {
       const existing = items.get(msg.hash);
-      // 旧事件延迟到达时不得覆盖较新的状态（以 seenAt 版本表为准）
+      // 旧事件延迟到达时不得覆盖较新的状态（以 seenAt 版本表为准，数值比较）
       const latest = itemState.seenAt.get(msg.hash);
-      const stale = latest && msg.updated_at && msg.updated_at < latest;
+      const incoming = itemState.versionOf(msg);
+      const stale = Number.isFinite(latest) && Number.isFinite(incoming) && incoming < latest;
       if (existing && !stale) {
         existing.category = msg.category;
         existing.status = "pending";
-        if (msg.updated_at) itemState.seenAt.set(msg.hash, msg.updated_at);
+        if (Number.isFinite(incoming)) itemState.seenAt.set(msg.hash, incoming);
         renderTable();
       }
       break;
@@ -227,7 +332,7 @@ function handleMsg(msg) {
       setTimeout(() => setProgress(0), 900);
       setCrawling(false);
       addLog(`爬取完成，共 ${msg.total || 0} 个资源`, "found");
-      toast("采集任务已完成", "success");
+      toast("采集任务已完成", "success", { key: "crawl:done" });
       break;
     case "download_start":
       addLog(
@@ -237,16 +342,18 @@ function handleMsg(msg) {
       break;
     case "download_result": {
       const item = items.get(msg.hash);
-      // 旧事件延迟到达时不得覆盖较新的状态（以 seenAt 版本表为准）
+      // 旧事件延迟到达时不得覆盖较新的状态（以 seenAt 版本表为准，数值比较）
       const latest = itemState.seenAt.get(msg.hash);
-      const stale = latest && msg.updated_at && msg.updated_at < latest;
+      const incoming = itemState.versionOf(msg);
+      const stale = Number.isFinite(latest) && Number.isFinite(incoming) && incoming < latest;
       if (item && !stale) {
         item.status = msg.status;
         if (msg.error_msg !== undefined) item.error_msg = msg.error_msg;
         if (msg.progress !== undefined) item.progress = msg.progress;
         if (msg.torrent_state !== undefined)
           item.torrent_state = msg.torrent_state;
-        if (msg.updated_at) itemState.seenAt.set(msg.hash, msg.updated_at);
+        if (Number.isFinite(incoming)) itemState.seenAt.set(msg.hash, incoming);
+        updateCounts();
         renderTable();
         logDownloadState(item, msg);
       }
@@ -255,9 +362,12 @@ function handleMsg(msg) {
     case "items_cleared":
       itemState.clear();
       renderTable();
-      addLog("资源库已清空", "warn");
+      addLog(
+        Number(msg.count) > 0 ? `资源库已清空（${msg.count} 条）` : "资源库已清空",
+        "warn"
+      );
       break;
-    case "crawl_error":
+    case "crawl_error": {
       setCrawling(false);
       setProgress(0);
       // found_handler_failed 等变体将原始 dict 放入 msg（嵌套），取其中的字符串字段
@@ -265,14 +375,21 @@ function handleMsg(msg) {
         typeof msg.msg === "string"
           ? msg.msg
           : msg.message || msg.error || "爬取失败";
-      addLog(crawlErr, "error");
-      toast(crawlErr, "error");
+      reportError(
+        { message: crawlErr, hint: msg.hint || "", code: msg.code || "crawl_error" },
+        { context: "采集失败", key: "ws:crawl_error" }
+      );
       break;
-    case "error":
+    }
+    case "error": {
       setCrawling(false);
-      addLog(msg.msg || msg.message || "发生未知错误", "error");
-      toast(msg.msg || msg.message || "发生未知错误", "error");
+      const text = msg.msg || msg.message || "发生未知错误";
+      reportError(
+        { message: text, hint: msg.hint || "", code: msg.code || "ws_error" },
+        { context: "实时通道报告错误", key: "ws:error" }
+      );
       break;
+    }
     case "job_updated":
       applyJobUpdate(msg);
       break;
@@ -293,7 +410,12 @@ async function loadConfig() {
       ? "已保存密码，留空保持不变"
       : "请输入 qBittorrent 密码";
   } catch (error) {
-    setConfigResult(error.message, "error");
+    // 401 由 handleAuthFailure 统一说明（否则同一次失败会弹两条通知）
+    if (!error || error.status !== 401) {
+      reportError(error, { context: "读取连接设置失败", key: "config:load" });
+    }
+    // 401 的下一步写在 访问安全 区；这里只放原因，避免同一句话出现两遍
+    setConfigResult(error.message, "error", error.status === 401 ? "" : error.hint || "");
   }
   const savedKey = apiClient.getKey();
   document.getElementById("apiKeyInput").value = savedKey;
@@ -316,25 +438,51 @@ async function saveConfig() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!data.connected) throw new Error("无法连接 qBittorrent");
+    if (data && data.connected === false) {
+      const error = new MagnetApiClient.ApiError({
+        status: 0,
+        code: "qbit_unreachable",
+        detail: "连不上 qBittorrent，配置没有保存",
+        hint: "检查 qB 是否在运行、地址与端口是否正确（例如 http://192.168.20.193:8085）、用户名密码是否匹配；保存成功后页面会自动刷新。",
+      });
+      throw error;
+    }
     setConfigResult(
       password ? "连接成功，配置已保存" : "连接成功，已保留原密码",
       "success"
     );
-    toast("qBittorrent 连接成功", "success");
-    checkStatus();
+    lastAuthCode = "";
+    wsNeedsKey = false;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      wsReconnectAttempt = 0;
+      connectWS();
+    }
+    toast("qBittorrent 配置已保存", "success", { key: "config:save" });
+    refreshAuthState();
+    checkStatus({ force: true });
   } catch (error) {
-    setConfigResult(error.message, "error");
-    toast(error.message, "error");
+    // 一次动作只通知一次；原因与下一步留在设置面板里，不靠 4 秒就消失的 toast
+    setConfigResult(error.message, "error", error.status === 401 ? "" : error.hint || "");
+    if (!error || error.status !== 401) {
+      reportError(error, { context: "保存连接设置失败", key: "config:save" });
+    }
   } finally {
     setButtonBusy(button, false);
   }
 }
 
-function setConfigResult(message, state = "") {
+function setConfigResult(message, state = "", hint = "") {
   const result = document.getElementById("cfgResult");
-  result.textContent = message;
+  const title = document.getElementById("cfgResultText");
+  const detail = document.getElementById("cfgHint");
+  if (title) title.textContent = message;
+  else result.textContent = message;
+  if (detail) {
+    detail.textContent = hint || "";
+    detail.hidden = !hint;
+  }
   result.className = `connection-result ${state}`;
+  result.title = hint ? `${message} · ${hint}` : message;
   document.getElementById("configDot").className =
     `dot ${state === "success" ? "online" : state === "error" ? "offline" : "checking"}`;
 }
@@ -342,7 +490,7 @@ function setConfigResult(message, state = "") {
 async function startCrawl() {
   const url = document.getElementById("urlInput").value.trim();
   if (!url) {
-    toast("请输入目标网址", "error");
+    toast("请输入目标网址", "error", { key: "crawl:url-empty" });
     document.getElementById("urlInput").focus();
     return;
   }
@@ -350,7 +498,7 @@ async function startCrawl() {
     const parsed = new URL(url);
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
   } catch {
-    toast("请输入有效的 HTTP 或 HTTPS 网址", "error");
+    toast("请输入有效的 HTTP 或 HTTPS 网址", "error", { key: "crawl:url-invalid" });
     document.getElementById("urlInput").focus();
     return;
   }
@@ -371,8 +519,7 @@ async function startCrawl() {
     // 进度与结果通过 job_updated 实时回推，按钮在这里即可复位。
     checkStatus();
   } catch (error) {
-    addLog(error.message, "error");
-    toast(error.message, "error");
+    reportError(error, { context: "提交采集任务失败", key: "crawl:start" });
   } finally {
     setCrawling(false);
   }
@@ -394,16 +541,16 @@ async function downloadSelected() {
         `没有可提交的下载任务（${result.skipped || selected.size} 个条目已在队列或状态不允许）`,
         "warn"
       );
-      toast("没有可提交的下载任务", "error");
+      toast("没有可提交的下载任务", "error", { key: "download:none" });
     } else {
       const skippedNote = result.skipped
         ? `，${result.skipped} 个已在队列跳过`
         : "";
       addLog(`已提交 ${result.count} 个下载任务${skippedNote}`, "info");
-      toast("下载任务已提交", "success");
+      toast("下载任务已提交", "success", { key: "download:submitted" });
     }
   } catch (error) {
-    toast(error.message, "error");
+    reportError(error, { context: "提交下载失败", key: "download:selected" });
   } finally {
     setButtonBusy(button, false);
     updateCounts();
@@ -425,27 +572,75 @@ async function reclassifySelected() {
     });
     addLog(`已提交 ${hashes.length} 个分类任务`, "info");
   } catch (error) {
-    toast(error.message, "error");
+    reportError(error, { context: "提交重新分类失败", key: "reclassify:selected" });
   } finally {
     setButtonBusy(button, false);
   }
 }
 
+/* ---- 清空资源库：危险操作，作用域必须说清且要二次确认 ---- */
 function openClearDialog() {
-  document.getElementById("clearDialog").showModal();
+  const counts = itemState.counts();
+  const total = counts.all;
+  const dialog = document.getElementById("clearDialog");
+  if (!total) {
+    toast("资源库已经是空的", "info", { key: "clear:empty" });
+    return;
+  }
+  document.getElementById("clearCount").textContent = String(total);
+  document.getElementById("clearBreakdown").textContent =
+    `已完成 ${counts.done} · 已暂停 ${counts.paused} · 进行中 ${counts.active + counts.waiting} · 失败 ${counts.failed}` +
+    (counts.skipped ? ` · 已跳过 ${counts.skipped}` : "") +
+    (counts.unknown ? ` · 未知状态 ${counts.unknown}` : "");
+  const check = document.getElementById("clearConfirmCheck");
+  check.checked = false;
+  const confirm = document.getElementById("clearConfirmBtn");
+  confirm.disabled = true;
+  confirm.textContent = `清空全部 ${total} 条`;
+  document.getElementById("clearError").hidden = true;
+  document.getElementById("clearError").textContent = "";
+  dialog.showModal();
 }
 function closeClearDialog() {
-  document.getElementById("clearDialog").close();
+  const dialog = document.getElementById("clearDialog");
+  if (dialog.open) dialog.close();
+  const check = document.getElementById("clearConfirmCheck");
+  if (check) check.checked = false;
+  const confirm = document.getElementById("clearConfirmBtn");
+  if (confirm) confirm.disabled = true;
+}
+function syncClearConfirm() {
+  const check = document.getElementById("clearConfirmCheck");
+  const confirm = document.getElementById("clearConfirmBtn");
+  const total = itemState.counts().all;
+  confirm.disabled = !check.checked || clearBusy;
+  confirm.textContent = clearBusy ? "清空中…" : `清空全部 ${total} 条`;
 }
 async function clearAll() {
-  closeClearDialog();
+  const check = document.getElementById("clearConfirmCheck");
+  if (!check.checked || clearBusy) return;
+  const total = itemState.counts().all;
+  clearBusy = true;
+  syncClearConfirm();
+  const errorBox = document.getElementById("clearError");
+  errorBox.hidden = true;
   try {
-    await apiClient.fetch("/api/items", { method: "DELETE" });
+    // 显式 scope=all：服务端拒绝无参 DELETE，脚本/误触不会再"碰巧清库"
+    await apiClient.fetch("/api/items?scope=all", { method: "DELETE" });
     itemState.clear();
     renderTable();
-    toast("资源库已清空", "success");
+    closeClearDialog();
+    toast(`已清空 ${total} 条资源记录`, "success", { key: "clear:done" });
   } catch (error) {
-    toast(error.message, "error");
+    // 失败时留在弹窗里把原因说完，而不是关掉弹窗只留一个 4 秒 toast
+    errorBox.hidden = false;
+    errorBox.textContent = error.hint
+      ? `${error.message}。${error.hint}`
+      : error.message;
+    reportError(error, { context: "清空资源库失败", key: "clear:failed" });
+  } finally {
+    clearBusy = false;
+    syncClearConfirm();
   }
 }
 
@@ -455,18 +650,27 @@ const statusLabels = {
   adding: "添加中",
   queued: "队列中",
   downloading: "下载中",
+  paused: "已暂停",
   success: "完成",
   error: "失败",
   skipped: "已跳过",
 };
 
-/* 条目状态 → 徽章色（等待=中性、进行中=青、完成=绿、失败=红、跳过=灰） */
+/* 条目状态 → 徽章色（等待=中性、进行中=青、暂停=琥珀、完成=绿、失败=红、跳过=灰；
+   不认识的状态用中性色，绝不冒充失败） */
 function statusTone(status) {
   if (status === "success") return "done";
+  if (status === "paused") return "paused";
   if (status === "error") return "failed";
   if (status === "skipped") return "muted";
-  if (status === "pending" || !status) return "idle";
-  return "running";
+  if (status === "pending" || status === "classifying" || !status) return "idle";
+  if (["adding", "queued", "downloading"].includes(status)) return "running";
+  return "muted";
+}
+
+function statusLabel(status) {
+  if (!status) return statusLabels.pending;
+  return statusLabels[status] || "未知状态";
 }
 
 /* 「结果 · 原因」列的一句话：人能看懂现在到哪一步了 */
@@ -482,11 +686,19 @@ function resultSentence(item) {
     const percent = progress > 0 ? ` ${Math.round(progress)}%` : "";
     return `下载中${percent}`;
   }
+  if (status === "paused") {
+    const state = item.torrent_state ? `（${item.torrent_state}）` : "";
+    return `在 qB 里点继续即可下载${state}`;
+  }
   if (status === "success") return "已完成";
-  if (status === "error")
-    return item.error_msg ? `失败：${item.error_msg}` : "失败，原因未记录";
+  if (status === "error") {
+    return item.error_msg
+      ? `失败：${item.error_msg}`
+      : "失败，原因未记录——请按时间点查 NAS 日志";
+  }
   if (status === "skipped") return "已跳过";
-  return statusLabels[status] || status;
+  // 未知状态：显示原值 + 中性色，不崩也不冒充失败（约定第 3 条）
+  return `未知状态「${status}」——界面还不认识这个值，已按中性显示`;
 }
 
 const SOURCE_KIND_LABELS = {
@@ -517,15 +729,14 @@ function visibleItems() {
 
 function itemTime(item) {
   const stamp = item && (item.created_at || item.updated_at);
-  const time = stamp ? Date.parse(stamp) : NaN;
-  return Number.isFinite(time) ? time : -Infinity;
+  return stamp ? MagnetTime.parse(stamp) : NaN;
 }
 
 function rowHtml(item) {
   const status = item.status || "pending";
-  const statusText = statusLabels[status] || status;
+  const statusText = statusLabel(status);
   const sentence = resultSentence(item);
-  const resultTitle = `${statusLabels[status] || status} · ${sentence}`;
+  const resultTitle = `${statusText} · ${sentence}`;
   const sourceUrl = item.source_url || "";
   const detailUrl = item.detail_url || "";
   const detailLink = detailUrl
@@ -541,19 +752,61 @@ function rowHtml(item) {
   </tr>`;
 }
 
+const STATUS_FILTER_LABELS = {
+  all: "全部",
+  waiting: "待处理",
+  active: "进行中",
+  paused: "已暂停",
+  done: "已完成",
+  failed: "失败",
+  skipped: "已跳过",
+  unknown: "未知状态",
+};
+
 function renderTable() {
   const rows = visibleItems();
   document.getElementById("tbody").innerHTML = rows.map(rowHtml).join("");
   const empty = document.getElementById("emptyState");
   empty.style.display = rows.length ? "none" : "grid";
+  const statusNote =
+    itemState.statusFilter !== "all"
+      ? `「${STATUS_FILTER_LABELS[itemState.statusFilter] || itemState.statusFilter}」状态下`
+      : "";
   document.getElementById("emptyTitle").textContent = items.size
     ? "没有匹配结果"
     : "资源库为空";
   document.getElementById("emptyCopy").textContent = items.size
-    ? "调整搜索词或分类筛选后重试。"
+    ? `没有${statusNote}符合条件的资源；调整搜索词、分类或状态筛选后重试。`
     : "在 Mac 上复制磁力或网址，或从左侧提交网址采集。";
+  renderFilterIndicator();
   updateCounts();
   initIcons();
+}
+
+/* 当前状态筛选的可视提示：筛选生效时表格会变短，必须让人知道"是我筛的，不是丢了" */
+function renderFilterIndicator() {
+  const chip = document.getElementById("statusFilterChip");
+  if (!chip) return;
+  const bucket = itemState.statusFilter;
+  if (bucket === "all") {
+    chip.hidden = true;
+    chip.textContent = "";
+    return;
+  }
+  chip.hidden = false;
+  chip.textContent = `仅看：${STATUS_FILTER_LABELS[bucket] || bucket}（${itemState.counts()[bucket] || 0}）`;
+  chip.title = "点这里恢复显示全部状态";
+}
+
+function setStatusFilter(bucket) {
+  itemState.setStatusFilter(bucket);
+  document.querySelectorAll(".stat[data-status]").forEach((card) => {
+    card.setAttribute(
+      "aria-pressed",
+      card.dataset.status === bucket ? "true" : "false"
+    );
+  });
+  renderTable();
 }
 
 function setFilter(category) {
@@ -587,19 +840,26 @@ function selectNone() {
 }
 
 function updateCounts() {
+  const counts = itemState.counts();
   const values = [...items.values()];
-  document.getElementById("totalCount").textContent = values.length;
-  document.getElementById("selCount").textContent = selected.size;
-  document.getElementById("activeCount").textContent = values.filter((item) =>
-    ["adding", "queued", "downloading"].includes(item.status)
-  ).length;
-  document.getElementById("successCount").textContent = values.filter(
-    (item) => item.status === "success"
-  ).length;
-  document.getElementById("errorCount").textContent = values.filter(
-    (item) => item.status === "error"
-  ).length;
+  const setText = (id, value) => {
+    const node = document.getElementById(id);
+    if (node) node.textContent = String(value);
+  };
+  setText("totalCount", counts.all);
+  setText("activeCount", counts.active);
+  setText("pausedCount", counts.paused);
+  setText("successCount", counts.done);
+  setText("errorCount", counts.failed);
+  setText("selCount", selected.size);
   document.getElementById("dlBtn").disabled = selected.size === 0;
+  const clearButton = document.getElementById("clearBtn");
+  if (clearButton) {
+    clearButton.title = counts.all
+      ? `清空资源库（${counts.all} 条，需要二次确认）`
+      : "资源库已经是空的";
+  }
+  // 状态筛选后该状态的条数可能变化：让卡片上的数字始终是"全库"口径
   const visible = visibleItems();
   const selectedVisible = visible.filter((item) =>
     selected.has(item.hash)
@@ -609,7 +869,11 @@ function updateCounts() {
   header.indeterminate =
     selectedVisible > 0 && selectedVisible < visible.length;
   document.getElementById("workspaceSubtitle").textContent = values.length
-    ? `${values.length} 个资源 · ${selected.size} 个已选`
+    ? `${values.length} 个资源 · ${selected.size} 个已选${
+        itemState.statusFilter === "all"
+          ? ""
+          : ` · 仅看${STATUS_FILTER_LABELS[itemState.statusFilter] || itemState.statusFilter}`
+      }`
     : "等待新任务";
 }
 
@@ -647,34 +911,19 @@ function shortUrl(value, limit = 34) {
   return midTruncate(text || raw, limit);
 }
 
-/* 后端时间戳是不带时区的本地时间 ISO 字符串，Date.parse 会按本地时间解释 */
+/* 时间只走 MagnetTime：带偏移按偏移解析，不带偏移按服务端契约（UTC）解析，
+   绝不交给 Date.parse 按浏览器本地时区猜（否则 UTC 容器会把 8 分钟说成 8 小时）。 */
 function timeOf(value) {
-  const time = value ? Date.parse(value) : NaN;
+  const time = MagnetTime.parse(value);
   return Number.isFinite(time) ? time : 0;
 }
 
 function formatRelative(value) {
-  const time = timeOf(value);
-  if (!time) return "";
-  const diff = Date.now() - time;
-  if (diff < 10 * 1000) return "刚刚";
-  if (diff < 60 * 1000) return `${Math.floor(diff / 1000)} 秒前`;
-  if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 24 * 60 * 60 * 1000)
-    return `${Math.floor(diff / 3600000)} 小时前`;
-  return `${Math.floor(diff / 86400000)} 天前`;
+  return MagnetTime.relative(value);
 }
 
 function formatClock(value) {
-  const time = timeOf(value);
-  if (!time) return "";
-  return new Date(time).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return MagnetTime.clock(value);
 }
 
 function formatDuration(ms) {
@@ -726,6 +975,8 @@ function logDownloadState(item, msg) {
   if (msg.status === "queued") addLog(`已进入 qB 队列 · ${name}`, "info");
   else if (msg.status === "downloading")
     addLog(`下载中 ${Math.round(msg.progress || 0)}% · ${name}`, "found");
+  else if (msg.status === "paused")
+    addLog(`已暂停（在 qB 里继续即可下载）· ${name}`, "info");
   else if (msg.status === "success") addLog(`下载完成 · ${name}`, "found");
   else if (msg.status === "error")
     if (msg.error_msg) addLog(`下载失败 · ${name} · ${msg.error_msg}`, "error");
@@ -753,33 +1004,94 @@ function setProgress(percent) {
   document.getElementById("progressBar").style.width = `${percent}%`;
 }
 
-async function checkStatus() {
-  let snapshot = null;
-  let online = false;
-  try {
-    // 首屏数据：任务、最近上报、qB / 采集服务可用性一次拿全
-    snapshot = await apiClient.fetch("/api/v1/status?jobs=20");
-    online = Boolean(snapshot && snapshot.qbit && snapshot.qbit.ok);
-  } catch {
-    // 老装配 / 未配 key 时退回旧接口，只取 qB 状态
+/* 首屏/轮询状态。三件事必须分清，不许互相冒充：
+   1) 鉴权失败 → 说 API Key；2) 服务端接口失败 → 说接口；3) 网络不通 → 说连不上 NAS。
+   只有服务端亲口说 qbit.ok=false，界面才写「qB 离线」，并带上它给的原因。 */
+async function checkStatus({ force = false } = {}) {
+  if (statusInFlight && !force) return statusInFlight;
+  const seq = ++statusRequestSeq;
+  const task = (async () => {
+    let snapshot = null;
     try {
-      const legacy = await apiClient.fetch("/api/status");
-      online = legacy.qbittorrent === "online";
-    } catch {
-      online = false;
+      snapshot = await apiClient.fetch("/api/v1/status?jobs=20");
+    } catch (error) {
+      if (seq !== statusRequestSeq) return;
+      if (error.status === 404) {
+        // 老装配没有 v1 状态接口：退回旧接口，只取 qB 状态
+        try {
+          const legacy = await apiClient.fetch("/api/status");
+          if (seq === statusRequestSeq) {
+            setQbitState(
+              legacy && legacy.qbittorrent === "online" ? "online" : "offline",
+              ""
+            );
+          }
+        } catch (legacyError) {
+          if (seq === statusRequestSeq) handleStatusFailure(legacyError);
+        }
+        return;
+      }
+      handleStatusFailure(error);
+      return;
+    } finally {
+      if (seq === statusRequestSeq) statusInFlight = null;
     }
-  }
-  setQbitState(online);
-  if (snapshot) applyStatusSnapshot(snapshot);
+    if (seq !== statusRequestSeq) return; // 迟到的旧响应不许覆盖新状态
+    lastAuthCode = "";
+    authProblem = null;
+    renderAuthState();
+    const qbit = (snapshot && snapshot.qbit) || {};
+    setQbitState(
+      qbit.ok ? "online" : "offline",
+      qbit.ok ? "" : String(qbit.reason || ""),
+      qbit.ok ? "" : String(qbit.hint || "")
+    );
+    applyStatusSnapshot(snapshot);
+  })();
+  statusInFlight = task;
+  return task;
 }
 
-function setQbitState(online) {
-  document.getElementById("dotQbit").className = `dot ${online ? "online" : "offline"}`;
-  document.getElementById("qbitStatus").textContent = online
-    ? "qB 在线"
-    : "qB 离线";
-  document.getElementById("configDot").className =
-    `dot ${online ? "online" : "offline"}`;
+function setCrawlerState(text) {
+  const dot = document.getElementById("crawlerDetailDot");
+  const label = document.getElementById("crawlerDetail");
+  if (dot) dot.className = "dot offline";
+  if (label) label.textContent = text;
+}
+
+function handleStatusFailure(error) {
+  if (error && error.status === 401) {
+    // 鉴权问题已经由 onUnauthorized 统一说明；这里只保证不说"qB 离线"
+    setQbitState("unknown", "API Key 未通过");
+    setCrawlerState("状态未知 · API Key 未通过");
+    return;
+  }
+  if (error && error.status) {
+    setQbitState("unknown", `状态接口失败（${error.status}）`);
+    setCrawlerState(`状态未知 · 接口失败（${error.status}）`);
+    reportError(error, { context: "读取运行状态失败", key: "status:failed" });
+    return;
+  }
+  setQbitState("unknown", "连不上 NAS");
+  setCrawlerState("状态未知 · 连不上 NAS");
+  reportError(error, { context: "读取运行状态失败", key: "status:network" });
+}
+
+function setQbitState(state, detail = "", hint = "") {
+  const online = state === "online";
+  const dot = document.getElementById("dotQbit");
+  const label = document.getElementById("qbitStatus");
+  const text =
+    state === "online" ? "qB 在线" : state === "offline" ? "qB 离线" : "qB 状态未知";
+  dot.className = `dot ${online ? "online" : "offline"}`;
+  // 原因可能很长（aiohttp 原文）：标题里截断，完整值放 title，别把状态栏撑破
+  const short = detail && detail.length > 42 ? `${detail.slice(0, 42)}…` : detail;
+  label.textContent = short ? `${text} · ${short}` : text;
+  label.title = detail || hint || text;
+  const configDot = document.getElementById("configDot");
+  if (configDot && !authProblem) {
+    configDot.className = `dot ${online ? "online" : "offline"}`;
+  }
 }
 
 /* ---- 采集中心：任务面板 / 批次提示条 / Mac 上报 ---- */
@@ -911,8 +1223,11 @@ function renderJobs() {
     : `<div class="jobs-empty">还没有抓取任务</div>`;
 }
 
+const retryingJobs = new Set();
+
 async function retryJob(jobId) {
-  if (!jobId) return;
+  if (!jobId || retryingJobs.has(jobId)) return;
+  retryingJobs.add(jobId);
   try {
     const data = await apiClient.fetch(
       `/api/v1/jobs/${encodeURIComponent(jobId)}/retry`,
@@ -920,17 +1235,24 @@ async function retryJob(jobId) {
     );
     if (data && data.ok === false) {
       const reason = data.reason || "未知原因";
-      addLog(`重试未被接受：${reason}`, "warn");
-      toast(`重试未被接受：${reason}`, "error");
+      reportError(
+        {
+          message: `重试未被接受：${reason}`,
+          hint: "任务可能已经结束或在排队；刷新任务列表确认后再说。",
+          code: "job_retry_rejected",
+        },
+        { context: "重新排队失败", key: `job:retry:${jobId}` }
+      );
       return;
     }
     const job = ingest.jobs.get(jobId) || {};
     addLog(`任务已重新排队 · ${shortUrl(job.url)}`, "info");
-    toast("任务已重新排队", "success");
+    toast("任务已重新排队", "success", { key: `job:retried:${jobId}` });
     checkStatus();
   } catch (error) {
-    addLog(`重试失败：${error.message}`, "error");
-    toast(error.message, "error");
+    reportError(error, { context: "重新排队失败", key: `job:retry:${jobId}` });
+  } finally {
+    retryingJobs.delete(jobId);
   }
 }
 
@@ -1138,25 +1460,44 @@ function scheduleItemsRefresh(delay = 600) {
 }
 
 async function loadItems() {
+  const seq = ++itemsRequestSeq;
+  const startedAt = Date.now();
   try {
     // order=newest：新入库的条目排在最前，Mac 复制后立刻能在表头看到
     const data = await apiClient.fetch("/api/items?order=newest&limit=500");
-    const list = Array.isArray(data.items) ? data.items : null;
+    if (seq !== itemsRequestSeq) return; // 并发刷新：只认最后一次
+    const list = Array.isArray(data.items) ? data.items.slice() : null;
     if (!list) return;
-    if (items.size > list.length) {
-      // ws init 已经推了更全的快照时只做增量合并，别把老条目挤掉
-      itemState.upsertMany(list);
+    const total = Number.isFinite(Number(data.total))
+      ? Number(data.total)
+      : list.length;
+    let offset = list.length;
+    // 分页补齐：筛选与计数要按全库算，不能只看前 500 条（上限 2000 防失控）
+    while (offset < total && offset < 2000) {
+      const page = await apiClient.fetch(
+        `/api/items?order=newest&limit=500&offset=${offset}`
+      );
+      if (seq !== itemsRequestSeq) return;
+      const pageItems = Array.isArray(page.items) ? page.items : [];
+      if (!pageItems.length) break;
+      list.push(...pageItems);
+      offset += pageItems.length;
+    }
+    if (seq !== itemsRequestSeq) return;
+    if (list.length >= total) {
+      // 全量快照：服务端已删除的条目必须消失；请求期间收到的新事件不被覆盖
+      itemState.reconcile(list, { since: startedAt });
     } else {
-      const keep = new Set(selected);
-      itemState.reset(list);
-      // 后台刷新不应打断用户已经勾选的行
-      keep.forEach((hash) => {
-        if (items.has(hash)) itemState.selected.add(hash);
-      });
+      itemState.upsertMany(list);
     }
     renderTable();
   } catch (error) {
-    addLog(`资源库刷新失败：${error.message}`, "error");
+    if (seq !== itemsRequestSeq) return;
+    if (error && error.status === 401) return; // 鉴权问题统一由 handleAuthFailure 说明
+    addLog(
+      `资源库刷新失败：${error.message}${error.hint ? `（${error.hint}）` : ""}`,
+      "error"
+    );
   }
 }
 
@@ -1175,23 +1516,184 @@ function setMobileView(view) {
     );
 }
 
-function toast(message, type = "") {
+/* ---- 通知：一次动作只留一条；重复的同类通知折叠成 ×N，而不是刷满屏 ---- */
+const TOAST_TTL_MS = 5200;
+const TOAST_DEDUPE_MS = 6000;
+const TOAST_MAX_VISIBLE = 3;
+const toastLive = new Map(); // key -> {node, count, timer, at}
+
+function removeToast(key) {
+  const live = toastLive.get(key);
+  if (!live) return;
+  clearTimeout(live.timer);
+  live.node.remove();
+  toastLive.delete(key);
+}
+
+function trimToasts() {
   const stack = document.getElementById("toastStack");
+  while (stack.children.length > TOAST_MAX_VISIBLE) {
+    const oldest = stack.firstElementChild;
+    const key = oldest.dataset.toastKey;
+    if (key) removeToast(key);
+    else oldest.remove();
+  }
+}
+
+function toast(message, type = "", { key = "", hint = "" } = {}) {
+  const stack = document.getElementById("toastStack");
+  // 同一条原因再次发生就折叠；类型算进 key，"保存失败"与"保存成功"不会互相吞掉
+  const dedupeKey = key ? `${type}:${key}` : `${type}:${message}`;
+  const now = Date.now();
+  const live = toastLive.get(dedupeKey);
+  if (live && now - live.at < TOAST_DEDUPE_MS) {
+    // 同一条原因再次发生：不叠新卡片，只更新次数与计时
+    live.count += 1;
+    live.at = now;
+    const counter = live.node.querySelector(".toast-count");
+    if (counter) {
+      counter.textContent = `×${live.count}`;
+      counter.hidden = false;
+    }
+    clearTimeout(live.timer);
+    live.timer = setTimeout(() => removeToast(dedupeKey), TOAST_TTL_MS);
+    return live.node;
+  }
   const node = document.createElement("div");
   node.className = `toast ${type}`;
+  node.dataset.toastKey = dedupeKey;
+  node.setAttribute("role", type === "error" ? "alert" : "status");
   const icon = document.createElement("i");
   icon.dataset.lucide =
-    type === "error"
-      ? "circle-alert"
-      : type === "success"
-        ? "circle-check"
-        : "info";
+    type === "error" ? "circle-alert" : type === "success" ? "circle-check" : "info";
+  const body = document.createElement("div");
+  body.className = "toast-body";
   const text = document.createElement("span");
+  text.className = "toast-text";
   text.textContent = message;
-  node.append(icon, text);
+  const counter = document.createElement("span");
+  counter.className = "toast-count";
+  counter.hidden = true;
+  body.append(text, counter);
+  if (hint) {
+    const hintNode = document.createElement("span");
+    hintNode.className = "toast-hint";
+    hintNode.textContent = hint;
+    body.append(hintNode);
+  }
+  node.append(icon, body);
   stack.appendChild(node);
   initIcons();
-  setTimeout(() => node.remove(), 4200);
+  trimToasts();
+  const entry = { node, count: 1, at: now, timer: null };
+  entry.timer = setTimeout(() => removeToast(dedupeKey), TOAST_TTL_MS);
+  toastLive.set(dedupeKey, entry);
+  return node;
+}
+
+/* 所有失败走这里：先写活动记录（不丢），再最多弹一条带原因的 toast。
+   原因与下一步都进 DOM，不靠一个 4 秒就消失的气泡。 */
+function reportError(error, { context = "", key = "" } = {}) {
+  const detail = (error && error.message) || String(error || "未知错误");
+  const hint = (error && error.hint) || "";
+  addLog(`${context ? `${context}：` : ""}${detail}`, "error");
+  const toastKey = key || `err:${(error && error.code) || ""}:${detail}`;
+  // 401 已经由 handleAuthFailure 统一提示过：同一次失败不再弹第二条
+  if (error && error.status === 401) return toastKey;
+  toast(context || "操作失败", "error", {
+    key: toastKey,
+    hint: hint || detail,
+  });
+  return toastKey;
+}
+
+function handleNetworkFailure(error) {
+  // 网络失败由发起请求的那一处统一提示（一次动作一条）；
+  // 这里只把状态灯改为"连不上 NAS"，并写一条去重后的活动记录。
+  addLog(`连不上 NAS：${error && error.message ? error.message : "网络不可达"}`, "error");
+  setQbitState("unknown", "连不上 NAS");
+}
+
+/* 鉴权失败：说清是"没带 key"还是"key 不对"，并把人带到设置面板 */
+function reportAuthProblem(problem) {
+  if (!problem) return;
+  authProblem = problem;
+  renderAuthState();
+  const hasKey = Boolean(apiClient.getKey());
+  const signature = `${problem.code}:${hasKey ? "hasKey" : "noKey"}`;
+  if (signature !== lastAuthCode) {
+    lastAuthCode = signature;
+    addLog(`${problem.detail}。${problem.hint || ""}`.trim(), "error");
+    toast(problem.detail, "error", {
+      key: `auth:${signature}`,
+      hint: problem.hint || "",
+    });
+  }
+  setMobileView("config");
+}
+
+function handleAuthFailure(error) {
+  const payload = error && error.status === 401 ? error : null;
+  reportAuthProblem(
+    payload
+      ? { code: payload.code, detail: payload.message, hint: payload.hint }
+      : {
+          code: "api_key_invalid",
+          detail: "API Key 未通过校验",
+          hint: "到右侧「连接设置」核对 NAS 上 .env 里的 API_KEY 后保存。",
+        }
+  );
+}
+
+function renderAuthState() {
+  const state = document.getElementById("authState");
+  const hint = document.getElementById("authHint");
+  if (!state) return;
+  if (authProblem) {
+    state.textContent = `⚠ ${authProblem.detail}`;
+    state.className = "auth-state error";
+    // 下一步要留在面板里（toast 会消失，面板不会）
+    if (hint) {
+      hint.textContent = authProblem.hint || "";
+      hint.hidden = !authProblem.hint;
+    }
+    return;
+  }
+  if (authRequired === null) {
+    state.textContent = authProbeFailed
+      ? "无法确认服务端鉴权状态（服务端没有提供 /api/auth）"
+      : "正在确认服务端鉴权状态…";
+    state.className = "auth-state muted";
+  } else if (authRequired) {
+    state.textContent = "服务端已启用 API Key 校验";
+    state.className = "auth-state ok";
+  } else {
+    state.textContent = "服务端未启用 API Key（本机/局域网部署）";
+    state.className = "auth-state muted";
+  }
+  if (hint) {
+    hint.textContent = "";
+    hint.hidden = true;
+  }
+}
+
+async function loadAuthState() {
+  try {
+    const data = await apiClient.fetch("/api/auth");
+    authRequired = Boolean(data && data.required);
+    authProbeFailed = false;
+  } catch (error) {
+    // 老服务端没有 /api/auth：如实说"无法确认"，不编造
+    authProbeFailed = true;
+  }
+  renderAuthState();
+}
+
+function refreshAuthState() {
+  lastAuthCode = "";
+  authProblem = null;
+  renderAuthState();
+  loadAuthState();
 }
 
 document.getElementById("urlInput").addEventListener("keydown", (event) => {
@@ -1202,14 +1704,29 @@ document.getElementById("searchInput").addEventListener("input", (event) => {
   renderTable();
 });
 document.getElementById("apiKeyInput").addEventListener("input", (event) => {
-  const value = event.target.value.trim();
-  apiClient.setKey(value);
-  // API Key 变更后立即用新凭据重连，避免等待下一次定时重连
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.close(); // onclose 回调会安排重连
-  } else {
+  // 只记录，不重连：每敲一个字符就握手一次 = 8 个字符 8 次 401（用户看到的
+  // "Invalid or missing API key ×8"）。重连放在 change（回车/失焦）时做一次。
+  apiClient.setKey(event.target.value.trim());
+});
+document.getElementById("apiKeyInput").addEventListener("change", () => {
+  clearTimeout(keyChangeTimer);
+  keyChangeTimer = setTimeout(() => {
+    wsNeedsKey = false;
+    if (ws) {
+      const old = ws;
+      ws = null;
+      try {
+        old.close(4001, "key changed");
+      } catch (error) {
+        /* 已断开 */
+      }
+    }
+    wsReconnectAttempt = 0;
+    refreshAuthState();
     connectWS();
-  }
+    checkStatus({ force: true });
+    loadItems();
+  }, 300);
 });
 document.addEventListener("keydown", (event) => {
   if (
@@ -1229,16 +1746,27 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest || !event.target.closest(".mac-status"))
     closeMacPanel();
 });
+// 切回标签页时对账一次：后台标签的轮询可能被浏览器节流
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  checkStatus({ force: true });
+  loadItems();
+});
 
 initIcons();
 connectWS();
 loadConfig();
+loadAuthState();
 checkStatus();
 renderJobs();
 renderBatchBar();
 renderMacStatus();
 loadItems();
 renderTable();
+setStatusFilter("all");
 addLog("工作台已就绪", "info");
-setInterval(checkStatus, 30000);
+setInterval(() => {
+  if (!document.hidden) checkStatus();
+}, 30000);
 setInterval(refreshRelativeLabels, 10000);
+setInterval(watchWs, 15000);
