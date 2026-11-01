@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           # requirements.txt holds runtime deps only; the gate tools live in the pyproject dev extra.
-          pip install ruff pytest pytest-asyncio
+          pip install ruff==0.15.21 pytest pytest-asyncio
 
       - name: ruff check
         run: ruff check magnet_harvester tests
