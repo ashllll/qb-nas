@@ -57,10 +57,10 @@ Magnet Harvester（`qb-nas`）是一套**自托管的磁力采集 → 分类 →
 
 ### 0. 前置条件
 
-| 角色 | 要求 |
-| --- | --- |
-| NAS | 飞牛 fnOS 或任意 Linux，已装 Docker 与 Docker Compose；数据盘建议 ≥ 50 GB 空闲 |
-| qBittorrent | Web UI 可访问（v4.1+，推荐 v5），建议与 NAS 部署在同一台机器 |
+| 角色        | 要求                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| NAS         | 飞牛 fnOS 或任意 Linux，已装 Docker 与 Docker Compose；数据盘建议 ≥ 50 GB 空闲           |
+| qBittorrent | Web UI 可访问（v4.1+，推荐 v5），建议与 NAS 部署在同一台机器                             |
 | Mac（可选） | macOS 13+，装过 Xcode Command Line Tools（`xcode-select --install`），用于构建菜单栏代理 |
 
 ### 1. 在 NAS 上部署服务
@@ -94,14 +94,14 @@ Key     /vol3/1000/qb-nas/api-key.txt        # 程序通道用，浏览器不需
 
 常用安装参数（完整列表 `bash deploy/install.sh --help`）：
 
-| 参数 | 说明 |
-| --- | --- |
-| `--prefix DIR` | 安装根目录，默认 `/vol3/1000/qb-nas`（必须在存储空间 3 下） |
-| `--port N` / `--bind-ip ADDR` | 对外端口（默认 8899）/ 只监听指定局域网地址 |
-| `--qbit-host/-user/-pass` | 顺带写入 qB 连接信息，也可以在网页「连接设置」里填 |
-| `--test` | 测试档：`/vol3/1000/qb-nas-test`、端口 18999，不碰正式目录 |
-| `--prepare` / `--no-start` | 只摆文件 / 只构建不启动 |
-| `--commit SHA` | 记录构建来源（推 GitHub 后用 `git rev-parse --short HEAD`） |
+| 参数                          | 说明                                                        |
+| ----------------------------- | ----------------------------------------------------------- |
+| `--prefix DIR`                | 安装根目录，默认 `/vol3/1000/qb-nas`（必须在存储空间 3 下） |
+| `--port N` / `--bind-ip ADDR` | 对外端口（默认 8899）/ 只监听指定局域网地址                 |
+| `--qbit-host/-user/-pass`     | 顺带写入 qB 连接信息，也可以在网页「连接设置」里填          |
+| `--test`                      | 测试档：`/vol3/1000/qb-nas-test`、端口 18999，不碰正式目录  |
+| `--prepare` / `--no-start`    | 只摆文件 / 只构建不启动                                     |
+| `--commit SHA`                | 记录构建来源（推 GitHub 后用 `git rev-parse --short HEAD`） |
 
 安装后跑一次自检（容器、健康、Key、挂载、配置事实源、只监听局域网、kill -9 自愈）：
 
@@ -123,10 +123,10 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 
 在菜单栏图标 →「设置」里填：
 
-| 项 | 说明 |
-| --- | --- |
+| 项       | 说明                                                         |
+| -------- | ------------------------------------------------------------ |
 | NAS 地址 | `http://192.168.20.193:8899`（局域网地址，不要写 localhost） |
-| API Key | 从 NAS 的 `api-key.txt` 复制；只存钥匙串，不落配置文件 |
+| API Key  | 从 NAS 的 `api-key.txt` 复制；只存钥匙串，不落配置文件       |
 
 菜单栏状态一眼可读：在线（绿）/ 离线（灰，自动退避重试）/ 暂停（暂停期间不读剪贴板）/ 无 Key（红）。运行数据在：
 
@@ -175,15 +175,15 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 
 **资源条目**（`/api/items` 的 `status`）：
 
-| 状态 | 含义 | 下一步 |
-| --- | --- | --- |
-| `pending` | 已入库，待分类 | 自动进入分类 |
-| `classified` | 分类完成 | 可下载 |
-| `queued` | 已提交 qB，排队中 | 等待 qB 调度 |
-| `downloading` | qB 正在下载 | 看百分比 |
-| `success` | 下载完成 | — |
-| `failed` | 提交或下载失败 | 看 `error` 字段与任务面板 |
-| `paused` | qB 中暂停 | 在 qB 里恢复，页面状态会同步 |
+| 状态          | 含义              | 下一步                       |
+| ------------- | ----------------- | ---------------------------- |
+| `pending`     | 已入库，待分类    | 自动进入分类                 |
+| `classified`  | 分类完成          | 可下载                       |
+| `queued`      | 已提交 qB，排队中 | 等待 qB 调度                 |
+| `downloading` | qB 正在下载       | 看百分比                     |
+| `success`     | 下载完成          | —                            |
+| `failed`      | 提交或下载失败    | 看 `error` 字段与任务面板    |
+| `paused`      | qB 中暂停         | 在 qB 里恢复，页面状态会同步 |
 
 **采集任务**（`/api/v1/status?jobs=N`）：`status` 四态 + `reason`（`no_magnet` 页面没有磁力、`http_error` 状态码异常、`sslerror` TLS/代理问题、`timeout` 超时、`robots` 被 robots.txt 拒绝）。
 
@@ -195,20 +195,20 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 
 配置文件只有一个：`/vol3/1000/qb-nas/config/.env`（600）。网页「保存并测试」写它、`install.sh` 幂等合并它、容器启动读它——**不要**在别处再维护第二份配置。优先级：文件 > 进程环境 > 内置默认；`SERVICE_HOST` / `SERVICE_PORT` / `STORE_DB_PATH` 由 compose 钉死。
 
-| 变量 | 说明 | 默认 |
-| --- | --- | --- |
-| `QBIT_HOST` / `QBIT_USERNAME` / `QBIT_PASSWORD` | qBittorrent Web UI 与凭据 | — |
-| `QBIT_SYNC_INTERVAL` | qB 状态轮询间隔（秒） | `2.0` |
-| `AUTH_MODE` | `trusted`（局域网内直接读写）/ `strict`（写必须带 API Key） | `trusted` |
-| `API_KEY` | 程序通道 `X-API-Key`（Mac 代理等）；浏览器不使用 | 空（仅 loopback） |
-| `TRUSTED_HOSTS` | 额外允许的 Host（域名/反代场景，防 DNS rebinding） | 空 |
-| `SITE_COOKIES` | 需要登录站点的 Cookie 注入，JSON `{"domain": "cookie"}` | `{}` |
-| `CRAWLER_TIMEOUT` / `CRAWLER_MAX_DEPTH` / `CRAWLER_CONCURRENCY` | 抓取超时 / 最大深度 / 并发 | `30` / `2` / `6` |
-| `CRAWLER_ALLOWED_RESOLUTIONS` | 只保留这些清晰度（逗号分隔） | `2160p,4k` |
-| `CRAWLER_ALLOW_FAKE_IP` | 允许 mihomo/Clash fake-IP 作为抓取目标（SSRF 豁免） | `false` |
-| `STORE_BACKEND` / `STORE_DB_PATH` | `memory` 或 `sqlite` 及数据库路径 | `memory` / — |
-| `MIN_DISK_SPACE_GB` | 磁盘告警阈值 | `10.0` |
-| `LOG_LEVEL` / `LOG_FILE` | 日志级别与文件输出（轮转） | `INFO` / 控制台 |
+| 变量                                                            | 说明                                                        | 默认              |
+| --------------------------------------------------------------- | ----------------------------------------------------------- | ----------------- |
+| `QBIT_HOST` / `QBIT_USERNAME` / `QBIT_PASSWORD`                 | qBittorrent Web UI 与凭据                                   | —                 |
+| `QBIT_SYNC_INTERVAL`                                            | qB 状态轮询间隔（秒）                                       | `2.0`             |
+| `AUTH_MODE`                                                     | `trusted`（局域网内直接读写）/ `strict`（写必须带 API Key） | `trusted`         |
+| `API_KEY`                                                       | 程序通道 `X-API-Key`（Mac 代理等）；浏览器不使用            | 空（仅 loopback） |
+| `TRUSTED_HOSTS`                                                 | 额外允许的 Host（域名/反代场景，防 DNS rebinding）          | 空                |
+| `SITE_COOKIES`                                                  | 需要登录站点的 Cookie 注入，JSON `{"domain": "cookie"}`     | `{}`              |
+| `CRAWLER_TIMEOUT` / `CRAWLER_MAX_DEPTH` / `CRAWLER_CONCURRENCY` | 抓取超时 / 最大深度 / 并发                                  | `30` / `2` / `6`  |
+| `CRAWLER_ALLOWED_RESOLUTIONS`                                   | 只保留这些清晰度（逗号分隔）                                | `2160p,4k`        |
+| `CRAWLER_ALLOW_FAKE_IP`                                         | 允许 mihomo/Clash fake-IP 作为抓取目标（SSRF 豁免）         | `false`           |
+| `STORE_BACKEND` / `STORE_DB_PATH`                               | `memory` 或 `sqlite` 及数据库路径                           | `memory` / —      |
+| `MIN_DISK_SPACE_GB`                                             | 磁盘告警阈值                                                | `10.0`            |
+| `LOG_LEVEL` / `LOG_FILE`                                        | 日志级别与文件输出（轮转）                                  | `INFO` / 控制台   |
 
 > 时间约定：数据与接口时间戳一律 **UTC-aware**，`updated_at` 用 naive-local ISO 以便前端按字典序比较；不要混入 aware-UTC，否则前端版本表会失序。
 
@@ -229,7 +229,7 @@ rules:
   - AND,((SRC-IP-CIDR,192.168.20.193/32),(DOMAIN-SUFFIX,github.com)),GitHub Download
   - AND,((SRC-IP-CIDR,192.168.20.193/32),(DOMAIN-SUFFIX,pypi.org)),Package Download
   - AND,((SRC-IP-CIDR,192.168.20.193/32),(DOMAIN-SUFFIX,huggingface.co)),Model Download
-  - SRC-IP-CIDR,192.168.20.193/32,DIRECT   # NAS 其余流量（含 BT/PT）全部直连
+  - SRC-IP-CIDR,192.168.20.193/32,DIRECT # NAS 其余流量（含 BT/PT）全部直连
 ```
 
 判断链条：抓取报 `sslerror` / 超时 → 先在 NAS 上 `curl -v https://目标站`；再看网关日志有没有把 NAS 的流量判成 `DIRECT`；最后才怀疑服务本身。若使用 fake-IP，需要把 `CRAWLER_ALLOW_FAKE_IP=true`（或让目标域名走真实 IP）。
@@ -250,7 +250,7 @@ qb-nas/
 ├── static/                    # 无构建步骤的单页 Web UI
 ├── mac_agent/                 # macOS 菜单栏代理（Swift，build.sh 一键出 .app）
 ├── deploy/                    # install.sh / verify.sh / uninstall.sh / Dockerfile
-├── docs/                      # 架构说明、ADR、验收记录、assets/
+├── docs/                      # 架构说明、ADR、验收记录、assets/、本地工作区说明
 ├── scripts/                   # preflight.sh（本地闸门）、smoke_production.py
 ├── tests/                     # 750+ 用例（pytest + pytest-asyncio）
 └── .github/workflows/gates.yml # GitHub Actions：ruff + format + pytest
@@ -276,14 +276,14 @@ bash scripts/preflight.sh --fast  # 只跑 lint/format
 
 ## 故障排查
 
-| 现象 | 先看什么 | 常见原因 |
-| --- | --- | --- |
-| 抓取全部失败（`sslerror` / 超时） | NAS 上 `curl -v https://目标站`；网关日志 | NAS 出口被强制直连，海外站需要加 AND 放行规则 |
-| 页面显示「没有找到磁力」 | 任务面板的触发 URL 与页数 | 页面确实没有 `magnet:`；站点需要登录（用 `SITE_COOKIES`） |
-| qB 显示离线 / 提交失败 | 右侧连接设置 →「保存并测试」；`docker logs` | 地址、账号、密码或 qB 的 IP 白名单 |
-| 下载完成但页面不更新 | `/api/health`、WebSocket 状态 | 同步循环异常或 WS 断线（会自动重连） |
-| 修改配置后重启又回去了 | `docker logs qb-nas-center \| head -5` 的配置事实源行 | 改错文件；唯一事实源是 `config/.env` |
-| 页面时间对不上 | 时间戳约定 | 数据一律 UTC-aware；容器 `TZ=UTC` 只影响日志 |
+| 现象                              | 先看什么                                              | 常见原因                                                  |
+| --------------------------------- | ----------------------------------------------------- | --------------------------------------------------------- |
+| 抓取全部失败（`sslerror` / 超时） | NAS 上 `curl -v https://目标站`；网关日志             | NAS 出口被强制直连，海外站需要加 AND 放行规则             |
+| 页面显示「没有找到磁力」          | 任务面板的触发 URL 与页数                             | 页面确实没有 `magnet:`；站点需要登录（用 `SITE_COOKIES`） |
+| qB 显示离线 / 提交失败            | 右侧连接设置 →「保存并测试」；`docker logs`           | 地址、账号、密码或 qB 的 IP 白名单                        |
+| 下载完成但页面不更新              | `/api/health`、WebSocket 状态                         | 同步循环异常或 WS 断线（会自动重连）                      |
+| 修改配置后重启又回去了            | `docker logs qb-nas-center \| head -5` 的配置事实源行 | 改错文件；唯一事实源是 `config/.env`                      |
+| 页面时间对不上                    | 时间戳约定                                            | 数据一律 UTC-aware；容器 `TZ=UTC` 只影响日志              |
 
 日志与状态：`docker logs -f qb-nas-center`（UTC，便于对账）、`/api/health`、`/api/v1/status?jobs=20`、Mac 端 `agent.log`。
 
