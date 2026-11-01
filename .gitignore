@@ -66,8 +66,6 @@ test-results/
 .codegraph/
 
 # Agent 配置
-.reasonix/
-reasonix.toml
 .planning/
 .codex/
 architecture-review-*.html

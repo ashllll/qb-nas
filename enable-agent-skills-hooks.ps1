@@ -56,4 +56,4 @@ if (-not $settings.enabledPlugins.'agent-skills@addy-agent-skills') {
 
 $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8
 Write-Host ""
-Write-Host "Done! Restart Claude Code/Reasonix." -ForegroundColor Green
+Write-Host "Done! Restart Claude Code." -ForegroundColor Green
