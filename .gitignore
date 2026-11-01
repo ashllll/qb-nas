@@ -77,5 +77,5 @@ architecture-review-*.html
 # 运行期数据（SQLite 资源库/任务库、日志）
 data/
 
-# 本地虚拟环境（uv/venv）
-.venv/
+# 本地虚拟环境（uv/venv；也匹配 worktree 里的软链）
+.venv
