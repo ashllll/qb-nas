@@ -84,10 +84,9 @@ class BGTaskManager:
             if not task.done():
                 task.cancel()
         if tasks:
-            pending = asyncio.gather(*tasks, return_exceptions=True)
             try:
                 await asyncio.wait_for(
-                    asyncio.shield(pending),
+                    asyncio.gather(*tasks, return_exceptions=True),
                     timeout=10.0,
                 )
             except asyncio.TimeoutError:
@@ -99,7 +98,7 @@ class BGTaskManager:
                         task.cancel()
                 try:
                     await asyncio.wait_for(
-                        asyncio.shield(pending),
+                        asyncio.gather(*tasks, return_exceptions=True),
                         timeout=5.0,
                     )
                 except asyncio.TimeoutError:

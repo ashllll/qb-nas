@@ -57,76 +57,17 @@ SMOKE_SUBMIT=1 SMOKE_QBIT_... python scripts/smoke_production.py
 注意：smoke 使用的 magnet 是占位 hash（仅验证提交与轮询机制，无真实对等体）。
 如需真实下载验证，替换脚本中 `_PLACEHOLDER_MAGNET` 为有效 magnet 后再运行。
 
-## 3. WebSocket API Key 的已知权衡
+## 3. WebSocket API Key 的传递
 
-- `/ws` 的 API Key 通过查询参数传递（浏览器 WebSocket 无法自定义请求头）。
-  应用自身日志已脱敏：`uvicorn_log_config()` 给 access 与 default 两个 formatter
-  都套了脱敏版，HTTP access log 与 WebSocket 握手行（后者由 uvicorn.error /
-  default formatter 输出）中的 `api_key=` 值都会写成 `***`。
-  **仍存在的外部暴露面**：反代（nginx/traefik 等）自己的 access log 在应用之外
-  记录原始请求行。非本机部署时需在反代层重写/脱敏查询串，或将 key 视为短期
-  凭据并定期轮换。
-- 认证在 `ws.accept()` 之前完成，失败连接（4401）不进入广播器；
-  比较使用 `secrets.compare_digest`（恒定时间），拒绝日志不含 key 内容。
+- `/ws` 的 API Key 只接受握手后的第一帧 `{"type":"auth","api_key":"..."}`；
+  查询串里的 `api_key` 一律不读（即使值正确也按「没带」拒绝，close 4401）。
+  这样 key 不会进入 URL、反代/Uvicorn 访问日志或浏览器历史。
+- 必须先 `ws.accept()` 再收第一帧，否则浏览器只能看到 1006/403，
+  界面分不清「没带 key」「key 不对」「服务端没配 key」。
+- 认证失败（4401）不进入广播器；比较使用 `secrets.compare_digest`（恒定时间），
+  日志只记 `api_key_missing`/`api_key_invalid`，不含 key 内容。
 - 未配置 `API_KEY` 时 `/ws` 保持开放（本地回环默认部署兼容模式）；
   非本机部署必须配置 `API_KEY`，否则资源名称/来源/下载状态可被未授权订阅。
-
-## 3.1 启动方式与鉴权强制
-
-无鉴权（未配置 `API_KEY` 且未设 `ALLOW_INSECURE_WRITE_API=true`）时，写操作有两层防护：
-
-1. **启动期**：校验**真实绑定地址**，非 loopback 即拒绝启动。真实地址按优先级取自
-   启动入口设置的 `MH_BOUND_HOST`、uvicorn CLI 的 `--host` 参数、`UVICORN_HOST`。
-2. **请求期兜底**：来自**非 loopback 来源**的无鉴权写请求一律 403；WebSocket
-   握手同样处理。判定同时看 ASGI scope 的两侧，缺一不可：
-   - `server` —— 该连接被接受的**本机接口地址**。实测绑定 `0.0.0.0` 时经 loopback
-     为 `127.0.0.1`、经 LAN 为真实网卡 IP，用于识别"直接经对外网卡进来"。
-   - `client` —— 连接来源地址。**本机反向代理**（nginx/traefik 反代到 `127.0.0.1`
-     后端）会让 `server` 恒为 `127.0.0.1`，此时只有 `client` 反映真实来源。
-
-   只看 `server` 会漏掉反代形态（实测：反代转发远程请求时后端仍观测到
-   `server=('127.0.0.1', ...)`）；只看 `client` 则漏掉直连形态。两侧都是 loopback
-   才算本机访问。该判定与启动方式无关。
-
-   已知边界：`client` 会被 uvicorn 按 `X-Forwarded-For` 重写（实测），而该头部可被
-   客户端伪造。伪造风险被 `server` 一侧限制——想同时让 `server` 为 loopback，攻击者
-   必须先在本机内发起连接。因此本项属**尽力而为的兜底**，不能替代 `API_KEY`。
-
-两层的意义不同：第 1 层给出清晰的启动失败信息；第 2 层即使有人用非受支持的启动
-方式（如 `uvicorn magnet_harvester.main:app --host 0.0.0.0`）也无法从 LAN 写操作。
-本机 `127.0.0.1` 访问不受影响（本机浏览器改用 `localhost` 而非 LAN IP），读接口不
-做限制，配置了 `API_KEY` 则两层都不介入。
-
-仍推荐用 `python run.py` 启动。
-
-## 3.2 SSRF 防护的已知残余风险（TOCTOU / DNS rebinding）
-
-`CrawlTargetAdmission.admit()`（`magnet_harvester/utils/url_validator.py:119-134`）
-解析主机名并校验**全部**解析结果，但返回的是**原 URL**，连接时必然再次解析：
-
-```python
-addresses = await self._resolver(parsed.hostname or "", port)   # :125 校验用解析
-...
-return candidate                                               # :134 连接时再解析一次
-```
-
-因此存在经典的 check-then-connect 窗口：目标域名首次解析为公网地址通过校验，
-真正建连前再解析为 `127.0.0.1`/内网即可绕过。
-
-- 已验证的缓解：`scrapling_spider.py` 安装的 `page.route` 逐请求复检**确实生效**
-  （scrapling 安装版 `_controllers.py:346-350` 会消费 `page_setup`），且 SSRF 的
-  常规绕过写法（十进制 `2130706433`、`0x7f.0.0.1`、`127.1`、`[::ffff:127.0.0.1]` 等）
-  在 `admit()` 均被拒。
-- 但该复检同样是 check-then-connect（校验用解析 ≠ Chromium 建连用解析），且
-  robots / 静态 fetcher 路径不经过 `page.route`。
-- 重定向链全链校验**已删除**（原 `admit_redirect_chain` / `_probe_redirect` /
-  `CrawlTargetAdmission._client` 均无生产调用方，属未接线的死代码）。它此前由
-  AGENTS.md 描述为已生效的能力，属"文档说做了、代码没做"；删掉后该表述与实际一致，
-  也去掉了该类持有的空转 `httpx.AsyncClient`。
-
-**彻底修法**（未实施，需改动连接层）：解析一次后把 IP 固定用于连接 —— httpx 自定义
-transport，或 Chromium 的 `--host-resolver-rules`；也可在建连后校验对端 IP。
-未实施的原因是它改动爬虫的连接与浏览器启动参数，属架构改动而非局部修补。
 
 ## 4. 验收结论判定
 

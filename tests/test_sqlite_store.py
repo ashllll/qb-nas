@@ -389,3 +389,39 @@ class TestSQLiteItemStore:
         assert s.by_category["未分类"] == 1
         assert "" not in s.by_category, "不应出现空字符串键"
         assert s.by_category.get("电影", 0) == 1
+
+
+def test_add_raises_instead_of_silently_dropping_on_write_failure(tmp_path):
+    """写库失败（locked/IO）不能返回 False：上报入口会把它当成「库里已有」，
+    用户收到「已入库」但条目消失。必须抛出去走失败路径，让重试补上。"""
+    import sqlite3
+
+    from magnet_harvester.models import MagnetItem
+    from magnet_harvester.store import SQLiteItemStore
+
+    store = SQLiteItemStore(tmp_path / "items.db")
+    item = MagnetItem(hash="D" * 40, name="x", magnet=f"magnet:?xt=urn:btih:{'D' * 40}")
+
+    class LockedConnection:
+        """连接可用，但一执行就报 database is locked（真实竞争时的形态）。"""
+
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            self._conn.close()
+
+        def execute(self, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+        def commit(self):
+            return None
+
+    real_connect = sqlite3.connect
+    store._connect = lambda: LockedConnection(real_connect(str(tmp_path / "items.db")))
+
+    with pytest.raises(sqlite3.OperationalError):
+        store.add(item)

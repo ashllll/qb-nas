@@ -148,3 +148,7 @@ class UserActionExecutor:
     async def clear_items(self) -> dict:
         count = await self._discovery.cleared()
         return {"status": "cleared", "removed": count}
+
+    async def remove_item(self, hash_key: str) -> bool:
+        """删一条资源记录；返回 False 表示库里没有这个 hash。"""
+        return await self._discovery.removed(hash_key)

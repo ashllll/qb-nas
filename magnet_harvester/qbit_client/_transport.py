@@ -51,6 +51,9 @@ class QBitTransport:
         self._closing = asyncio.Event()
         self._client_factory = client_factory or self._build_client
         self._max_auth_retries = 2
+        # 登录失败的**真实**原因（给界面看）：连不上 / 服务不可用 / 凭据被拒
+        # 是三条不同的处置路径，混成一句「登录失败」时，页面只能猜成密码错。
+        self.last_login_error: str | None = None
         self._retry_config = {
             "max_retries": 3,
             "base_delay": 1.0,
@@ -119,15 +122,27 @@ class QBitTransport:
                     if r.status_code >= 500:
                         raise IOError(f"qBittorrent 服务暂时不可用 (HTTP {r.status_code})")
 
-                    if r.text.strip().lower() == "ok.":
+                    # qB v4：200 + "Ok."；qB v5：204 + 空 body（SID 在 Set-Cookie 里）。
+                    # 只要没有 401/403、会话 cookie 已下发，就当登录成功。
+                    body = r.text.strip().lower()
+                    session_cookie = any("SID" in name for name in r.cookies.keys())
+                    if r.status_code in (200, 204) and body in ("", "ok.", "ok") and (
+                        session_cookie or body in ("ok.", "ok")
+                    ):
                         client.cookies.update(r.cookies)
                         self._authenticated = True
+                        self.last_login_error = None
                         self._record_success()
                         log.info("qBittorrent 登录成功")
                         return True
 
                     # 认证凭据错误 — 不重试，立即失败
-                    log.error("qBittorrent 登录失败: %s", r.text[:100])
+                    log.error(
+                        "qBittorrent 登录失败: HTTP %s %s",
+                        r.status_code,
+                        r.text[:100],
+                    )
+                    self.last_login_error = self._describe_login_rejection(r)
                     self._record_failure()
                     return False
 
@@ -150,9 +165,26 @@ class QBitTransport:
                             self._max_auth_retries,
                             e,
                         )
+                        self.last_login_error = (
+                            f"连接不上 qBittorrent（{type(e).__name__}: {e}）："
+                            "检查「连接设置」里的地址与端口，以及 NAS 到 qB 的网络"
+                        )
 
             self._record_failure()
+            if self.last_login_error is None:
+                self.last_login_error = "qBittorrent 登录没有成功（未知原因，查看 NAS 日志）"
             return False
+
+    @staticmethod
+    def _describe_login_rejection(response) -> str:
+        """把 qB 的拒绝回答翻成用户能照着做的一句话。"""
+        body = (response.text or "").strip()
+        lowered = body.lower()
+        if "banned" in lowered:
+            return "qBittorrent 封禁了这台 NAS 的 IP（失败登录次数过多），等一会或到 qB 里解封"
+        return (
+            f"qBittorrent 拒绝了登录（HTTP {response.status_code}）：用户名或密码不对"
+        )
 
     async def _handle_auth_retry(self, client, auth_retry_count: int, max_auth_retries: int) -> int:
         """Handle 403 response by re-authenticating. Returns new retry count or raises."""
@@ -185,16 +217,17 @@ class QBitTransport:
         last_exception = None
         auth_retry_count = 0
         max_auth_retries = self._max_auth_retries
-        attempt = 0
 
-        while attempt < config["max_retries"]:
+        for attempt in range(config["max_retries"]):
             try:
                 async with self._auth_lock:
                     needs_auth = not self._authenticated
                 if needs_auth:
                     ok = await self._login()
                     if not ok:
-                        raise RuntimeError("qBittorrent 登录失败")
+                        raise RuntimeError(
+                            self.last_login_error or "qBittorrent 登录失败"
+                        )
 
                 client = await self._get_client()
 
@@ -217,13 +250,13 @@ class QBitTransport:
                         log.warning(
                             f"qBittorrent 请求失败 ({r.status_code})，{delay:.1f}秒后重试..."
                         )
-                        attempt += 1
                         await asyncio.sleep(delay)
                         continue
                     # 最后一次重试仍失败，跳出由底部统一记录+抛出
                     break
 
-                if r.status_code == 200:
+                if 200 <= r.status_code < 300:
+                    # qB 5.x 部分端点从 200 改成 204（空 body），2xx 一律算成功
                     self._record_success()
                     return r
 
@@ -240,7 +273,6 @@ class QBitTransport:
             ) as e:
                 last_exception = e
                 await self._handle_network_retry(attempt, "传输异常", e)
-                attempt += 1
 
             except RuntimeError:
                 raise

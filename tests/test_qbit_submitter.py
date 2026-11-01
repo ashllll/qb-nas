@@ -94,6 +94,9 @@ async def test_submitter_succeeds_on_ok_response():
     assert kwargs["data"]["urls"] == "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
     assert kwargs["data"]["category"] == "电影"
     assert kwargs["data"]["autoTMM"] == "true"
+    # 点「下载」即开始：不能再用 paused/stopped 把种子停在已停止状态
+    assert "paused" not in kwargs["data"]
+    assert "stopped" not in kwargs["data"]
     assert "savepath" not in kwargs["data"]
     assert recorder.attempts == 1
     assert recorder.successes == 1
@@ -236,3 +239,48 @@ async def test_submitter_rejects_relative_save_path_escape():
     request.assert_not_awaited()
     assert recorder.failures == 1
     assert recorder.errors and "保存路径" in recorder.errors[-1]
+
+
+@pytest.mark.asyncio
+async def test_submitter_accepts_qbittorrent_v5_json_add_response():
+    """qB v5 /torrents/add 返回 JSON（而非 v4 的 "Ok."）。"""
+    response = httpx.Response(
+        200,
+        json={
+            "added_torrent_ids": ["0123456789abcdef0123456789abcdef01234567"],
+            "failure_count": 0,
+            "pending_count": 0,
+            "success_count": 1,
+        },
+        request=httpx.Request("POST", "http://qbit.test/api/v2/torrents/add"),
+    )
+    request = AsyncMock(return_value=response)
+    recorder = FakeSubmissionRecorder()
+    submitter = _make_submitter(request=request, recorder=recorder)
+
+    assert await submitter.add_magnet(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567", "电影", ""
+    )
+    assert recorder.successes == 1
+
+
+@pytest.mark.asyncio
+async def test_submitter_detects_existing_torrent_when_magnet_uses_base32_btih():
+    """base32 写法的 btih：查 qB 已有种子必须用归一化后的 hex 前缀。"""
+    import base64
+
+    from magnet_harvester.utils.infohash import normalize_infohash
+
+    hex_hash = "0123456789abcdef0123456789abcdef01234567"
+    base32 = base64.b32encode(bytes.fromhex(hex_hash)).decode()
+    magnet = f"magnet:?xt=urn:btih:{base32}&dn=Base32"
+
+    find_torrent = AsyncMock(return_value={"name": "already-there"})
+    submitter = _make_submitter(
+        request=AsyncMock(return_value=_fail_response()),
+        find_torrent_by_prefix=find_torrent,
+    )
+
+    assert await submitter.add_magnet(magnet, "电影", "/downloads/电影")
+    prefix = find_torrent.await_args.args[0]
+    assert prefix == normalize_infohash(hex_hash)[:8]

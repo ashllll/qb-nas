@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from magnet_harvester.classifier.limits import clip_name
+
 # 已知工作室 → 规范分类名映射
 KNOWN_STUDIOS: dict[str, str] = {
     "sexart": "SexArt",
@@ -52,18 +54,23 @@ KNOWN_STUDIOS: dict[str, str] = {
 ## 匹配模式：
 ## 只有 "StudioName + 日期 (YY MM DD)" 格式才触发
 ## 例如: SexArt 24 05 20  /  SexArt.24.05.20.  /  X-Art 24-05-20
-##
-## 厂牌部分的词数必须设上限：该组后面紧跟可选的日期分隔符，无界时会在长文本上
-## 退化成 O(n^2)（病态输入 32KB 实测 4.7s，64KB 19.3s）。dn 长度不受限且分类在
-## 事件循环内同步执行，因此长 dn 的 magnet 可让服务停摆。32 个词对真实厂牌名
-## 绰绰有余，实测真实样本识别结果完全一致。
-_STUDIO_MAX_WORDS = 32
+## 量词都带上界：`(?:...[A-Za-z0-9]+)*?` 这种惰性嵌套在没有日期的长串上
+## 每换一个起点都要扫到结尾（8KB ≈ 1.1 秒、64KB ≈ 71 秒）。厂牌名不会超过
+## 8 个词、每词 64 字符，封顶后匹配耗时只与长度线性相关。
 _STUDIO_WITH_DATE = re.compile(
     r"(?:^\[[^\]]+\]\s*)?"  ## 可选: [Tag] 前缀
-    rf"([A-Za-z0-9]+(?:[\s.\-][A-Za-z0-9]+){{0,{_STUDIO_MAX_WORDS}}}?)"  ## 工作室名 (含连字符/点)
+    r"([A-Za-z0-9]{1,64}(?:[\s.\-][A-Za-z0-9]{1,64}){0,7}?)"  ## 工作室名 (含连字符/点)
     r"[\s.]"  ## 分隔符
-    r"\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"  ## 日期 YY MM DD（\b 防止匹配 2022.2160p 中的 20.22.21）
+    r"(?<!\d)\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b"  ## 日期 YY MM DD（\b 防 2022.2160p 中 20.22.21；(?<!\d) 防四位年份内嵌匹配）
     r"(?:[\s.]|$)",  ## 日期后边界
+    re.IGNORECASE,
+)
+
+# 未知厂牌时，若日期段后紧跟发布/编码标记（如 2160p、REPACK），
+# 说明是「片名 + 两位发行日期」（Avatar.24.05.20.2160p），而非「厂牌 + 日期」。
+_RELEASE_MARKER_RE = re.compile(
+    r"^(?:2160p|4k|1080p|720p|480p|repack|proper|remux|blu-?ray|bdrip|"
+    r"web-?dl|webrip|hdrip|dvdrip|hdr|x26[45]|h26[45]|hevc|avc|aac|flac|mp4|mkv)\b",
     re.IGNORECASE,
 )
 
@@ -75,8 +82,8 @@ def extract_studio(name: str) -> Optional[str]:
     同样作为分类返回，避免同类内容因白名单覆盖不全而一半归厂牌、
     一半落「其他」。纯数字或过短的前缀视为误匹配（如 "1917 19 12 25"）。
     """
-    # 清理常见噪音前缀
-    cleaned = name.strip()
+    # 清理常见噪音前缀；超长输入在这里就截断（规则上界之外的部分不参与判类）
+    cleaned = clip_name(name.strip())
 
     # 尝试日期模式匹配
     m = _STUDIO_WITH_DATE.search(cleaned)
@@ -87,6 +94,9 @@ def extract_studio(name: str) -> Optional[str]:
             return normalized
         # 未知厂牌：排除纯数字/过短前缀的误匹配
         if len(raw) >= 3 and not raw.isdigit():
+            # 日期后紧跟发布/编码标记 → 普通片名 + 两位发行日期，而非厂牌 + 日期
+            if _RELEASE_MARKER_RE.match(cleaned[m.end() :]):
+                return None
             return normalize_studio(raw)
 
     return None

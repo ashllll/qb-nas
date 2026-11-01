@@ -6,13 +6,15 @@ import asyncio
 
 import pytest
 
+from magnet_harvester.config import settings
 from magnet_harvester.models import MagnetItem, TaskStatus
 from tests.fixtures import make_test_app, asgi_client
 
 
 @pytest.fixture
-def app_with_key():
-    """Create a test app with API Key auth enabled."""
+def app_with_key(monkeypatch):
+    """Create a test app with API Key auth enabled (strict 模式)."""
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     store = None
     app, ctx, qbit = make_test_app(store=store)
     ctx.runtime.api_key = "secret"

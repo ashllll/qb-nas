@@ -55,6 +55,7 @@ class UserActionExecutorLike(Protocol):
     async def reclassify(self, hashes: list[str]) -> dict: ...
     async def manually_reclassify(self, hash_prefix: str, category: str) -> dict: ...
     async def clear_items(self) -> dict: ...
+    async def remove_item(self, hash_key: str) -> bool: ...
 
 
 class QBitSyncLike(Protocol):
@@ -78,13 +79,29 @@ class QBitRuntimeLike(Protocol):
     ) -> dict: ...
 
 
-class ClipboardMonitorLike(Protocol):
-    @property
-    def is_running(self) -> bool: ...
-    @property
-    def magnet_count(self) -> int: ...
-    async def start(self) -> None: ...
-    async def stop(self) -> None: ...
+class IngestServiceLike(Protocol):
+    """采集中心入口：Mac 上报、网址任务、重启续跑。
+
+    实现在 services/ingest.py；NAS 侧不再有本地剪贴板监控，剪贴板在 Mac 代理里。
+    """
+
+    async def handle_event(self, req, *, source: str = "mac") -> dict: ...
+    async def ingest_url(
+        self,
+        url: str,
+        *,
+        source: str = "mac",
+        batch_id: str | None = None,
+        depth: int | None = None,
+        auto_start: bool = True,
+    ) -> dict: ...
+    async def resume_pending(self) -> int: ...
+    async def shutdown(self) -> None: ...
+    async def retry_job(self, job_id: str) -> dict: ...
+    def list_jobs(self, *, limit: int = 20, status: str | None = None) -> list[dict]: ...
+    def job_counts(self) -> dict: ...
+    def get_job(self, job_id: str) -> dict | None: ...
+    async def status_snapshot(self, *, jobs_limit: int = 10) -> dict: ...
 
 
 class ErrorHandlerLike(Protocol):
@@ -141,7 +158,7 @@ class AppServices:
     action_executor: UserActionExecutorLike | None = None
     observability: ObservabilityLike | None = None
     item_queries: ItemQueryLike | None = None
-    clipboard_monitor: ClipboardMonitorLike | None = None
+    ingest: IngestServiceLike | None = None
     broadcaster: BroadcasterLike | None = None
 
 
@@ -150,8 +167,6 @@ class RuntimeState:
     """运行时协调层：生命周期、热替换、错误处理。"""
 
     api_key: str = ""
-    # 显式开发豁免：为真时允许无鉴权写操作（含跨接口），用于有意为之的本地开发
-    allow_insecure_write_api: bool = False
     stats: StatsTracker | None = None
     bg_manager: BackgroundTaskSpawner | None = None
     error_handler: ErrorHandlerLike | None = None

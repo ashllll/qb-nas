@@ -62,15 +62,6 @@ class QBittorrentClient:
         )
 
     @property
-    def config(self) -> QBitConfig:
-        """只读配置快照。
-
-        QBitRuntime.replace_qbit_config 用它保存旧配置，以便热替换失败时把
-        .env 回滚回去；缺少该属性会让回滚分支永不执行，造成内存与磁盘不一致。
-        """
-        return self._config
-
-    @property
     def last_error(self) -> str | None:
         return self.stats.last_error
 
@@ -107,9 +98,47 @@ class QBittorrentClient:
             try:
                 r = await self._req("GET", "/app/version")
                 ok = r.status_code == 200
-            except Exception as e:
-                log.warning(f"qBittorrent ping 失败: {e}")
+                if not ok:
+                    self.stats.error(f"qBittorrent 返回 HTTP {r.status_code}")
+            except asyncio.CancelledError:
+                # 菜单栏/页面走的是 1.5 秒超时的探针：qB 不可达时登录重试要 2~3 秒，
+                # 探测被取消时根本走不到下面的失败分支，原因就成了空的——界面只能写
+                # 「qB 离线」。这里把「没有回应」这件事本身记成原因，再让取消继续传播。
+                log.info("qBittorrent ping 探测被取消（超时或调用方取消）")
+                self.stats.error(
+                    "qBittorrent 没有响应：这次探测在超时前没返回（qB 可能离线，"
+                    "或地址/端口不通）"
+                )
+                raise
+            except httpx.TimeoutException as e:
+                log.warning(f"qBittorrent ping 超时: {e or type(e).__name__}")
                 ok = False
+                self.stats.error(f"连接 qBittorrent 超时：{type(e).__name__}")
+            except httpx.TransportError as e:
+                log.warning(f"qBittorrent ping 失败（网络）: {type(e).__name__}: {e}")
+                ok = False
+                self.stats.error(f"连接 qBittorrent 失败：{type(e).__name__}: {e}")
+            except Exception as e:
+                log.warning(f"qBittorrent ping 失败: {type(e).__name__}: {e}")
+                ok = False
+                # transport 抛的 RuntimeError 已经带真实原因（连不上 / 凭据被拒 /
+                # 服务不可用），原样留给界面；这里不再按「含登录两个字」猜成认证失败。
+                message = str(e).strip()
+                if message.startswith("qBittorrent") and "登录失败" not in message:
+                    self.stats.error(message)
+                elif "登录失败" in message:
+                    # 老版本的 transport 只抛这句笼统的话，连不上的时候也是它。
+                    # 不能据此断定是密码错（那会让用户白改一通密码），两种可能都摆出来。
+                    self.stats.error(
+                        "qBittorrent 登录没有成功：可能是地址/端口不通或 qB 离线，"
+                        "也可能是用户名或密码不对（NAS 日志里有同一刻的具体原因）"
+                    )
+                else:
+                    self.stats.error(f"qBittorrent 不可用：{type(e).__name__}: {e}")
+            else:
+                # 恢复正常时清掉旧原因，别让界面一直显示过期的失败说明
+                if ok and self.stats.last_error:
+                    self.stats.error(None)
             self._last_ping_at = time.monotonic()
             self._last_ping_result = ok
             return ok
@@ -128,12 +157,17 @@ class QBittorrentClient:
             log.error(f"get_maindata 未知异常: {e}", exc_info=True)
             raise
 
-    async def poll_torrent_snapshot_with_removed(self) -> tuple[Dict[str, dict], set[str]]:
-        """增量同步 qB torrent 状态，原子返回快照和本轮移除的哈希。
+    async def poll_torrent_snapshot(self) -> Dict[str, dict]:
+        """增量同步 qB torrent 状态，并缓存当前快照。"""
+        snapshot, _removed = await self._sync_state.poll(self.get_maindata)
+        return snapshot
 
-        第二个元素是本轮增量，不是「至今累计」——保留到处理完为止是调用方的责任。
-        """
+    async def poll_torrent_snapshot_with_removed(self) -> tuple[Dict[str, dict], set[str]]:
+        """增量同步 qB torrent 状态，原子返回快照和本轮移除的哈希。"""
         return await self._sync_state.poll(self.get_maindata)
+
+    def take_recently_removed(self) -> set[str]:
+        return self._sync_state.take_recently_removed()
 
     @staticmethod
     def map_torrent_status(torrent: dict) -> dict:

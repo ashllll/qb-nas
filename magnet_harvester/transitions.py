@@ -91,13 +91,6 @@ class DiscoveryTransitions(_TransitionBase):
             log.warning("MAGNET_FOUND emit 失败，item 已持久化 hash=%s", item.hash, exc_info=True)
         return True
 
-    async def clipboard_found(self, item: MagnetItem) -> bool:
-        """found + emit_item_changed（剪贴板入口专用）"""
-        if not await self.found(item):
-            return False
-        await self._emit_item_changed(item.hash)
-        return True
-
     async def cleared(self) -> int:
         """Clear all Magnet items and publish the collection change."""
         count = await self._store.clear()
@@ -107,33 +100,54 @@ class DiscoveryTransitions(_TransitionBase):
             log.warning("cleared() 后 store 仍有 %d 个条目（并发写入）", remaining)
         return count
 
+    async def removed(self, hash_key: str) -> bool:
+        """删除单条资源记录并通知界面立即移除。
+
+        只删资源库里的这一行，**不动 qBittorrent 里的种子**：用户真实下载队列
+        不归资源库管（约定：测试条目用完删掉，但不许动 qB 队列）。
+        """
+        if not await self._store.remove(hash_key):
+            return False
+        try:
+            await self._bus.emit(Event(EventType.ITEM_REMOVED, {"hash": hash_key}))
+        except Exception:
+            log.warning("ITEM_REMOVED emit 失败，item 已删除 hash=%s", hash_key, exc_info=True)
+        return True
+
 
 class ClassificationTransitions(_TransitionBase):
     """分类域：分类生命周期相关的状态转换。"""
 
     async def started(self, hash_key: str):
-        item = await self._store.get(hash_key)
-        if item is not None and item.status == TaskStatus.classifying:
-            return  # 已在分类中，拒绝重复调用
-        if not await self._store.update(hash_key, status=TaskStatus.classifying, error_msg=None):
+        """进入分类中。
+
+        只允许从 pending/error 进入：分类与「用户点下载」「qB 状态同步」是并发的，
+        读一次再无条件写回会把别人刚写好的 adding/downloading/paused 覆盖掉。
+        """
+        changed = await self._store.update_if_status(
+            hash_key,
+            {TaskStatus.pending, TaskStatus.error},
+            status=TaskStatus.classifying,
+            error_msg=None,
+        )
+        if not changed:
             return
         await self._emit_item_changed(hash_key)
 
     async def classified(self, hash_key: str, result: dict):
-        item = await self._store.get(hash_key)
-        if item is None or item.status != TaskStatus.classifying:
-            return
         category = result.get("category", "其他")
-        if not await self._store.update(
+        changed = await self._store.update_if_status(
             hash_key,
+            {TaskStatus.classifying},
             category=category,
             save_path=result.get("save_path", ""),
             status=TaskStatus.pending,
             progress=0.0,
             torrent_state=None,
             error_msg=None,
-        ):
-            log.warning("classified update 失败 %s (条目可能已被并发删除)", hash_key)
+        )
+        if not changed:
+            log.warning("classified 跳过 %s（不在 classifying，可能已被并发删除或转入下载）", hash_key)
             return
         # 重新读取以拿到 update 后的 updated_at（作为事件版本号）
         item = await self._store.get(hash_key)
@@ -156,10 +170,13 @@ class ClassificationTransitions(_TransitionBase):
 
     async def failed(self, hash_key: str, error_msg: str):
         """分类失败时回退状态到 pending，以便后续重试。"""
-        item = await self._store.get(hash_key)
-        if item is None or item.status != TaskStatus.classifying:
-            return
-        if not await self._store.update(hash_key, status=TaskStatus.pending, error_msg=error_msg):
+        changed = await self._store.update_if_status(
+            hash_key,
+            {TaskStatus.classifying},
+            status=TaskStatus.pending,
+            error_msg=error_msg,
+        )
+        if not changed:
             return
         await self._emit_item_changed(hash_key)
 
@@ -194,9 +211,58 @@ class ClassificationTransitions(_TransitionBase):
 class DownloadTransitions(_TransitionBase):
     """下载域：下载生命周期相关的状态转换。"""
 
+    # 启动时一次最多回收多少条「卡在加入中」的记录；正常机器远到不了这个量。
+    RECOVER_LIMIT = 1000
+    INTERRUPTED_ADDING_MSG = (
+        "上次「加入 qB」在服务重启/退出时被中断，结果未知："
+        "qB 里已经有这条的话，下一轮同步会自动长回下载状态；没有就重新点「下载」"
+    )
+
     def __init__(self, store: ItemStore, bus: MessageBus):
         super().__init__(store, bus)
         self._submit_lock = asyncio.Lock()
+
+    async def recover_interrupted(self) -> int:
+        """服务启动时调用：把「正在加入 qB」的半截条目退回可重试状态。
+
+        ``adding`` 只出现在 qB add 调用进行中的那一小段：进程在这中间没了（容器
+        重启、kill -9、部署重建），条目就永远停在「添加中」——qB 同步查不到种子
+        不会管它，``download``/``reclassify`` 又都不收 adding，界面没有任何重试入口。
+        这里把它改成 ``error`` 并写清原因：同步循环认得 error（qB 里真有这条会自己
+        长回去），用户也能直接重新点下载。
+        """
+        try:
+            pending = await self._store.list(
+                status=TaskStatus.adding.value, limit=self.RECOVER_LIMIT
+            )
+        except Exception:
+            log.exception("读取「加入中」条目失败，跳过本次恢复")
+            return 0
+
+        recovered = 0
+        for item in pending:
+            if not await self._store.update_if_status(
+                item.hash,
+                {TaskStatus.adding},
+                status=TaskStatus.error,
+                error_msg=self.INTERRUPTED_ADDING_MSG,
+                torrent_state="submit_interrupted",
+            ):
+                continue
+            recovered += 1
+            await self._emit_item_changed(item.hash)
+        if recovered:
+            log.warning(
+                "上次运行有 %d 条「加入 qB」被中断，已退回可重试状态（%s）",
+                recovered,
+                self.INTERRUPTED_ADDING_MSG,
+            )
+        if len(pending) >= self.RECOVER_LIMIT:
+            log.warning(
+                "「加入中」条目达到回收上限 %d 条，其余留给 qB 同步处理",
+                self.RECOVER_LIMIT,
+            )
+        return recovered
 
     async def submitting(self, hash_key: str) -> bool:
         async with self._submit_lock:
@@ -308,15 +374,6 @@ class DownloadTransitions(_TransitionBase):
             if was_removed and item.status != TaskStatus.success:
                 await self.removed(hash_key, item.status)
                 return True
-            if item.status == TaskStatus.adding:
-                # adding 只可能在本进程 submitting()→submitted() 之间出现，而这两个
-                # 动作都不涉及 qB 中种子的存在性。因此快照缺失即意味着上一次提交
-                # 中途被杀（强杀/断电），submitted() 永不执行：此时必须兜底判失败，
-                # 否则条目永久停留在「添加中」（submitting 只接受 pending/error，
-                # 没有任何重试路径）。queued/downloading 等状态则可能只是本轮快照
-                # 缺失或用户在 qB 侧操作，不做处理。
-                await self.failed(hash_key, "提交中断：条目未出现在 qBittorrent 中")
-                return True
             return False
 
         try:
@@ -326,6 +383,20 @@ class DownloadTransitions(_TransitionBase):
             return False
 
         fields: dict = {}
+
+        if mapped["status"] is None:
+            # 增量里 state 还没到（字段未到 ≠ 状态未知）：只同步进度，
+            # 不动 status / torrent_state / error_msg，更不许把正在下载的种子说成失败。
+            if item.progress != mapped["progress"]:
+                fields["progress"] = mapped["progress"]
+            if fields:
+                await self.status_changed(
+                    hash_key,
+                    fields=fields,
+                    previous_status=item.status,
+                )
+                return True
+            return False
 
         if item.status != mapped["status"]:
             fields["status"] = mapped["status"]
@@ -366,9 +437,6 @@ class MagnetItemTransitions:
 
     async def found(self, item: MagnetItem) -> bool:
         return await self._discovery.found(item)
-
-    async def clipboard_found(self, item: MagnetItem) -> bool:
-        return await self._discovery.clipboard_found(item)
 
     async def classification_started(self, hash_key: str):
         await self._classification.started(hash_key)

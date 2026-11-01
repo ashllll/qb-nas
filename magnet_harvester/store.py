@@ -16,24 +16,19 @@ import sqlite3
 import threading
 from contextlib import closing
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol
 
 from pydantic import ValidationError
 
 from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.utils.timeutil import iso_utc, parse_iso_utc, utc_now
 
 log = logging.getLogger(__name__)
 
 
-def _item_name_key(item: MagnetItem) -> tuple[str, str]:
-    """排序键：(name.lower(), hash)。
-
-    hash 作稳定的次序键，必须与 SQLite 后端的 `ORDER BY LOWER(name) ASC, hash ASC`
-    一致 —— 否则同名条目在两种后端下顺序不同（切换 SQLITE_PATH 即变）。
-    """
-    return (item.name.lower(), item.hash)
+def _item_name_key(item: MagnetItem) -> str:
+    return item.name.lower()
 
 
 def _escape_like(s: str) -> str:
@@ -50,7 +45,7 @@ def _validated_update(item: MagnetItem, fields: dict) -> MagnetItem | None:
         return None
     data = item.model_dump()
     data.update(fields)
-    data["updated_at"] = datetime.now()
+    data["updated_at"] = utc_now()
     try:
         return MagnetItem.model_validate(data)
     except ValidationError:
@@ -95,6 +90,7 @@ class _ItemStoreBackend(Protocol):
     def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]: ...
     def get_pending(self) -> List[MagnetItem]: ...
     def get_hashes_by_prefix(self, prefix: str) -> List[str]: ...
+    def recent(self, limit: int = 10) -> List[MagnetItem]: ...
     @property
     def count(self) -> int: ...
     def count_items(
@@ -108,6 +104,7 @@ class _ItemStoreBackend(Protocol):
         status: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "name",
     ) -> tuple: ...
     def stats(self) -> StoreStats: ...
     def add_batch(self, items: List[MagnetItem]) -> int: ...
@@ -120,6 +117,12 @@ class ItemStore(Protocol):
     async def add(self, item: MagnetItem) -> bool: ...
     async def get(self, hash_key: str) -> Optional[MagnetItem]: ...
     async def update(self, hash_key: str, **fields) -> bool: ...
+    async def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool: ...
     async def remove(self, hash_key: str) -> bool: ...
     async def list(
         self,
@@ -130,6 +133,7 @@ class ItemStore(Protocol):
     async def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]: ...
     async def get_pending(self) -> List[MagnetItem]: ...
     async def get_hashes_by_prefix(self, prefix: str) -> List[str]: ...
+    async def recent(self, limit: int = 10) -> List[MagnetItem]: ...
     async def count(self) -> int: ...
     async def count_items(
         self,
@@ -142,6 +146,7 @@ class ItemStore(Protocol):
         status: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "name",
     ) -> tuple: ...
     async def stats(self) -> StoreStats: ...
     async def add_batch(self, items: List[MagnetItem]) -> int: ...
@@ -173,6 +178,20 @@ class AsyncItemStore:
     async def update(self, hash_key: str, **fields) -> bool:
         return await self._invoke(self._backend.update, hash_key, **fields)
 
+    async def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool:
+        """仅当当前状态匹配时更新；比较与写入在同一把锁/同一条 SQL 里完成。"""
+        return await self._invoke(
+            self._backend.update_if_status,
+            hash_key,
+            expected_statuses,
+            **fields,
+        )
+
     async def remove(self, hash_key: str) -> bool:
         return await self._invoke(self._backend.remove, hash_key)
 
@@ -198,6 +217,9 @@ class AsyncItemStore:
     async def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         return await self._invoke(self._backend.get_hashes_by_prefix, prefix)
 
+    async def recent(self, limit: int = 10) -> List[MagnetItem]:
+        return await self._invoke(self._backend.recent, limit)
+
     async def count(self) -> int:
         if getattr(self._backend, "blocks_event_loop", False):
             return await asyncio.to_thread(getattr, self._backend, "count")
@@ -220,6 +242,7 @@ class AsyncItemStore:
         status: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "name",
     ) -> tuple:
         return await self._invoke(
             self._backend.count_and_page,
@@ -227,6 +250,7 @@ class AsyncItemStore:
             status=status,
             limit=limit,
             offset=offset,
+            order=order,
         )
 
     async def stats(self) -> StoreStats:
@@ -365,6 +389,18 @@ class InMemoryItemStore:
                 i for i in self._items.values() if i.status == TaskStatus.pending and i.category
             ]
 
+    def recent(self, limit: int = 10) -> List[MagnetItem]:
+        """最近入库的条目（新→旧）。"""
+        if limit <= 0:
+            return []
+        with self._lock:
+            ordered = sorted(
+                self._items.values(),
+                key=lambda i: (i.created_at, i.updated_at),
+                reverse=True,
+            )
+            return ordered[:limit]
+
     def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         """支持通过 hash 前缀查找完整 hash（Agent 用）"""
         p = prefix.lower()
@@ -397,6 +433,7 @@ class InMemoryItemStore:
         status: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "name",
     ) -> tuple:
         """单次持锁返回 total + 分页 items，消除 count→list 之间的 TOCTOU。"""
         with self._lock:
@@ -404,6 +441,13 @@ class InMemoryItemStore:
             if limit <= 0:
                 return len(filtered), []
             offset = max(0, offset)
+            if order == "newest":
+                ordered = sorted(
+                    filtered,
+                    key=lambda i: (i.created_at, i.updated_at),
+                    reverse=True,
+                )
+                return len(filtered), ordered[offset : offset + limit]
             sorted_items = heapq.nsmallest(offset + limit, filtered, key=_item_name_key)
             return len(filtered), sorted_items[offset : offset + limit]
 
@@ -490,6 +534,9 @@ class SQLiteItemStore:
                     magnet TEXT NOT NULL,
                     size TEXT,
                     source_url TEXT DEFAULT '',
+                    detail_url TEXT DEFAULT '',
+                    batch_id TEXT DEFAULT '',
+                    source_kind TEXT DEFAULT '',
                     category TEXT,
                     save_path TEXT,
                     status TEXT DEFAULT 'pending',
@@ -500,7 +547,22 @@ class SQLiteItemStore:
                     updated_at TEXT
                 )
             """)
+            self._migrate_columns(db)
             db.commit()
+
+    # 采集中心新增列：旧库升级时补列，不重建表、不丢数据。
+    _ADDED_COLUMNS = (
+        ("detail_url", "TEXT DEFAULT ''"),
+        ("batch_id", "TEXT DEFAULT ''"),
+        ("source_kind", "TEXT DEFAULT ''"),
+    )
+
+    @classmethod
+    def _migrate_columns(cls, db: sqlite3.Connection) -> None:
+        existing = {row[1] for row in db.execute("PRAGMA table_info(magnet_items)")}
+        for name, ddl in cls._ADDED_COLUMNS:
+            if name not in existing:
+                db.execute(f"ALTER TABLE magnet_items ADD COLUMN {name} {ddl}")
 
     @staticmethod
     def _item_to_row(item: MagnetItem) -> dict:
@@ -510,14 +572,17 @@ class SQLiteItemStore:
             "magnet": item.magnet,
             "size": item.size or "",
             "source_url": item.source_url,
+            "detail_url": item.detail_url or "",
+            "batch_id": item.batch_id or "",
+            "source_kind": item.source_kind or "",
             "category": item.category or "",
             "save_path": item.save_path or "",
             "status": item.status.value,
             "progress": item.progress,
             "torrent_state": item.torrent_state or "",
             "error_msg": item.error_msg or "",
-            "created_at": item.created_at.isoformat(),
-            "updated_at": item.updated_at.isoformat(),
+            "created_at": iso_utc(item.created_at),
+            "updated_at": iso_utc(item.updated_at),
         }
 
     @staticmethod
@@ -526,13 +591,25 @@ class SQLiteItemStore:
             return None
         d: dict = dict(row)
         try:
-            for field_name in ("category", "save_path", "torrent_state", "error_msg", "size"):
+            for field_name in (
+                "category",
+                "save_path",
+                "torrent_state",
+                "error_msg",
+                "size",
+                "detail_url",
+                "batch_id",
+            ):
                 if field_name in d and d[field_name] == "":
                     d[field_name] = None
-            if "created_at" in d and isinstance(d["created_at"], str):
-                d["created_at"] = datetime.fromisoformat(d["created_at"])
-            if "updated_at" in d and isinstance(d["updated_at"], str):
-                d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+            # 时间列：老行是 naive（当年容器 TZ=UTC，按 UTC 解释），新行带 +00:00。
+            # 解析不了的脏值不丢整行——丢掉等于用户看不见、同步也修不回来。
+            for field_name in ("created_at", "updated_at"):
+                parsed = parse_iso_utc(d.get(field_name))
+                if parsed is not None:
+                    d[field_name] = parsed
+                else:
+                    d.pop(field_name, None)
             return MagnetItem(**d)
         except (ValidationError, ValueError, TypeError) as e:
             hash_val = d.get("hash", "unknown")
@@ -585,17 +662,22 @@ class SQLiteItemStore:
             try:
                 cursor = db.execute(
                     """INSERT OR IGNORE INTO magnet_items
-                       (hash, name, magnet, size, source_url, category, save_path,
-                        status, progress, torrent_state, error_msg, created_at, updated_at)
-                       VALUES (:hash, :name, :magnet, :size, :source_url, :category, :save_path,
-                        :status, :progress, :torrent_state, :error_msg, :created_at, :updated_at)""",
+                       (hash, name, magnet, size, source_url, detail_url, batch_id, source_kind,
+                        category, save_path, status, progress, torrent_state, error_msg,
+                        created_at, updated_at)
+                       VALUES (:hash, :name, :magnet, :size, :source_url, :detail_url, :batch_id,
+                        :source_kind, :category, :save_path, :status, :progress, :torrent_state,
+                        :error_msg, :created_at, :updated_at)""",
                     row,
                 )
                 db.commit()
                 return cursor.rowcount > 0
             except sqlite3.OperationalError:
-                log.error("sqlite: add(%s) 数据库损坏", item.hash[:16], exc_info=True)
-                return False
+                # 写不进去（库被锁/磁盘/IO）不等于「这条已经存在」：返回 False 会被上报入口
+                # 当成 duplicate，条目静默消失、用户还收到「已入库」。这里抛出去，让调用方
+                # 走失败路径（HTTP 5xx → Mac 代理会重发），下一轮重试还能补上。
+                log.error("sqlite: add(%s) 写入失败，未入库", item.hash[:16], exc_info=True)
+                raise
             except (TypeError, ValueError) as e:
                 log.error("sqlite: add(%s) 数据序列化错误: %s", item.hash[:16], e, exc_info=True)
                 raise
@@ -693,9 +775,7 @@ class SQLiteItemStore:
                 params.append(status)
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        # 排序键必须与内存后端的 _item_name_key（name.lower()）一致；补 hash 作
-        # 稳定次序键，避免同名条目在分页间重复或漏项
-        sql = f"SELECT * FROM magnet_items {where} ORDER BY LOWER(name) ASC, hash ASC LIMIT ?"
+        sql = f"SELECT * FROM magnet_items {where} ORDER BY name ASC LIMIT ?"
         params.append(limit)
 
         with self._lock, self._connect() as db:
@@ -721,6 +801,16 @@ class SQLiteItemStore:
             cursor = db.execute(
                 "SELECT * FROM magnet_items WHERE status = ? AND category IS NOT NULL AND category != ''",
                 (pending_status,),
+            )
+            return [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
+
+    def recent(self, limit: int = 10) -> List[MagnetItem]:
+        if limit <= 0:
+            return []
+        with self._lock, self._connect() as db:
+            cursor = db.execute(
+                "SELECT * FROM magnet_items ORDER BY created_at DESC, updated_at DESC LIMIT ?",
+                (limit,),
             )
             return [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
 
@@ -770,6 +860,7 @@ class SQLiteItemStore:
         status: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "name",
     ) -> tuple:
         """单次持锁+单事务返回 total + 分页 items，消除 count→list 之间的 TOCTOU。"""
         conditions: list[str] = []
@@ -791,9 +882,9 @@ class SQLiteItemStore:
             if limit <= 0:
                 return total, []
             offset = max(0, offset)
+            order_by = "created_at DESC, updated_at DESC" if order == "newest" else "name ASC"
             cursor = db.execute(
-                f"SELECT * FROM magnet_items {where} "
-                "ORDER BY LOWER(name) ASC, hash ASC LIMIT ? OFFSET ?",
+                f"SELECT * FROM magnet_items {where} ORDER BY {order_by} LIMIT ? OFFSET ?",
                 params + [limit, offset],
             )
             items = [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
@@ -846,10 +937,12 @@ class SQLiteItemStore:
                 try:
                     cur = db.execute(
                         """INSERT OR IGNORE INTO magnet_items
-                           (hash, name, magnet, size, source_url, category, save_path,
-                            status, progress, torrent_state, error_msg, created_at, updated_at)
-                           VALUES (:hash, :name, :magnet, :size, :source_url, :category, :save_path,
-                            :status, :progress, :torrent_state, :error_msg, :created_at, :updated_at)""",
+                           (hash, name, magnet, size, source_url, detail_url, batch_id, source_kind,
+                            category, save_path, status, progress, torrent_state, error_msg,
+                            created_at, updated_at)
+                           VALUES (:hash, :name, :magnet, :size, :source_url, :detail_url,
+                            :batch_id, :source_kind, :category, :save_path, :status, :progress,
+                            :torrent_state, :error_msg, :created_at, :updated_at)""",
                         row,
                     )
                     if cur.rowcount > 0:

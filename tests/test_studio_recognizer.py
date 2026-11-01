@@ -75,6 +75,31 @@ def test_no_date_pattern_no_match():
     assert extract_studio("DorcelClub Nata Gold XXX 2160p") is None
 
 
+# ── 误匹配防护:日期后紧跟发布标记(2160p/4k/REPACK 等)不得触发厂牌识别 ──
+
+
+def test_release_marker_after_date_not_treated_as_studio():
+    """Avatar.24.05.20.2160p 是普通片名+两位发行日期,不得误判为厂牌 Avatar。"""
+    assert extract_studio("Avatar.24.05.20.2160p") is None
+    assert extract_studio("Some.Title.24.05.20.2160p") is None
+
+
+def test_release_marker_with_dash_separator_not_treated_as_studio():
+    assert extract_studio("movie.24-05-20.REPACK") is None
+
+
+def test_spaced_marker_after_date_not_treated_as_studio():
+    assert extract_studio("abc xyz 24 05 20 2160p") is None
+
+
+def test_legitimate_yy_formats_still_match():
+    """合法两位年份格式必须保留(回归保护)。"""
+    assert extract_studio("SexArt 24 05 20 Performer Names") == "SexArt"
+    assert extract_studio("X-Art 24-05-20 Title 2160p") == "X-Art"
+    # 未知厂牌 + 日期后跟内容词(非标记)仍应开放识别
+    assert extract_studio("DorcelClub 26 04 06 Nata Gold XXX 2160p MP4-NBQ") == "DorcelClub"
+
+
 if __name__ == "__main__":
     test_known_studio_normalized()
     test_known_studio_with_hyphen_variants()

@@ -206,9 +206,16 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch):
+async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch, tmp_path):
     import magnet_harvester.main as main_module
     import magnet_harvester.assembly as assembly_module
+
+    # 这个用例走真实 lifespan，若沿用默认相对路径 data/magnet_items.db，
+    # 第二次跑测试时会读到上一次留下的条目（重复入库 → 不再下载），变成"跑一次绿、再跑就红"。
+    from magnet_harvester.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "STORE_BACKEND", "sqlite")
+    monkeypatch.setattr(app_settings, "STORE_DB_PATH", str(tmp_path / "items.db"))
 
     created = {}
 

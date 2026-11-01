@@ -16,28 +16,13 @@ from starlette.websockets import WebSocketState
 
 from magnet_harvester.bus import Event, MessageBus
 from magnet_harvester.store import ItemStore
-from magnet_harvester.utils.interface_guard import request_arrived_on_non_loopback_interface
+from magnet_harvester.utils.auth import resolve_auth
 from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-
-def _insecure_writes_allowed(ctx) -> bool:
-    """是否显式允许无鉴权写操作（开发豁免）。"""
-    runtime = getattr(ctx, "runtime", None)
-    return bool(getattr(runtime, "allow_insecure_write_api", False))
-
-
 _INIT_PAGE_SIZE = 500
-
-# 单次 send_text 上限：慢客户端不得无限占用初始化/广播路径
-_SEND_TIMEOUT = 3.0
-# 关闭不可用连接的等待上限
-_CLOSE_TIMEOUT = 1.0
-# 初始化阶段的背压上限：客户端不读时不得让队列无限增长
-_MAX_INIT_QUEUE_ITEMS = 1000
-_MAX_INIT_QUEUE_BYTES = 4 * 1024 * 1024
 
 
 def _json_serializer(obj: Any) -> str:
@@ -63,27 +48,6 @@ class WSBroadcaster:
         self._active_ws.discard(ws)
         self._initializing_ws.pop(ws, None)
 
-    async def _send_text(self, ws: WebSocket, data: str) -> None:
-        """发送受 _SEND_TIMEOUT 约束，避免不读数据的客户端卡死整条路径。"""
-        await asyncio.wait_for(ws.send_text(data), timeout=_SEND_TIMEOUT)
-
-    async def _close_ws(self, ws: WebSocket, *, code: int, reason: str) -> None:
-        """关闭连接，成功后才解除登记。
-
-        只从集合中移除而不关闭会让客户端收不到 onclose：它仍会定期 ping、
-        服务端也照常回 pong，于是空闲超时永不触发，连接既不投递事件也永不断开
-        （前端仅在 onclose 时重连），表现为 UI 永久静默直到手动刷新。
-
-        因此关闭失败时保留登记，让下一次广播继续重试，而不是留下一个
-        既不投递也无人再处理的连接。
-        """
-        try:
-            await asyncio.wait_for(ws.close(code=code, reason=reason), timeout=_CLOSE_TIMEOUT)
-        except Exception:
-            log.warning("WebSocket 关闭失败，保留登记以便重试", exc_info=True)
-            return
-        self.remove(ws)
-
     def shutdown(self):
         """取消 MessageBus 订阅，断开强引用以允许 GC 回收。
 
@@ -99,7 +63,7 @@ class WSBroadcaster:
         data = json.dumps(
             {"type": "init", "items": items}, ensure_ascii=False, default=_json_serializer
         )
-        await self._send_text(ws, data)
+        await ws.send_text(data)
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store is None:
@@ -121,13 +85,12 @@ class WSBroadcaster:
                 await self.send_init(ws, payloads)
                 first_page = False
             elif payloads:
-                await self._send_text(
-                    ws,
+                await ws.send_text(
                     json.dumps(
                         {"type": "init_page", "items": payloads},
                         ensure_ascii=False,
                         default=_json_serializer,
-                    ),
+                    )
                 )
 
             offset += len(page)
@@ -141,12 +104,11 @@ class WSBroadcaster:
             offset = 0
 
     async def _send_init_done(self, ws: WebSocket, total: int) -> None:
-        await self._send_text(
-            ws,
+        await ws.send_text(
             json.dumps(
                 {"type": "init_done", "total": total},
                 ensure_ascii=False,
-            ),
+            )
         )
 
     async def _finish_initialization(self, ws: WebSocket) -> None:
@@ -158,15 +120,20 @@ class WSBroadcaster:
                 batch = list(queued)
                 queued.clear()
                 for data in batch:
-                    await self._send_text(ws, data)
+                    await ws.send_text(data)
                 continue
             self._initializing_ws.pop(ws, None)
             self._active_ws.add(ws)
             return
 
-    async def handle_connection(self, ws: WebSocket):
-        """Full WebSocket lifecycle: accept, init, keep-alive, cleanup."""
-        await ws.accept()
+    async def handle_connection(self, ws: WebSocket, already_accepted: bool = False):
+        """Full WebSocket lifecycle: accept, init, keep-alive, cleanup.
+
+        ``already_accepted``：端点需要先 accept 才能把鉴权失败的原因（4401 +
+        reason）送达到浏览器；重复 accept 会抛错，所以这里要认这个标记。
+        """
+        if not already_accepted:
+            await ws.accept()
         self._initializing_ws[ws] = []
         try:
             try:
@@ -221,6 +188,10 @@ class WSBroadcaster:
             return
 
         message_type = str(payload.get("type", "")).lower()
+        if message_type == "auth":
+            # 握手阶段已校验；这里只确认，不回显、不记录 key
+            await self._send_control(ws, {"type": "auth_ok"})
+            return
         if message_type == "ping":
             await self._send_control(ws, {"type": "pong"})
             return
@@ -239,10 +210,10 @@ class WSBroadcaster:
     async def _send_control(self, ws: WebSocket, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, default=_json_serializer)
         try:
-            await self._send_text(ws, data)
+            await ws.send_text(data)
         except Exception:
-            log.debug("_send_control send_text 失败，关闭连接", exc_info=True)
-            await self._close_ws(ws, code=1011, reason="control send failed")
+            log.debug("_send_control send_text 失败（连接可能已断开）", exc_info=True)
+            self.remove(ws)
 
     async def _on_event(self, event: Event):
         if not self._active_ws and not self._initializing_ws:
@@ -273,29 +244,10 @@ class WSBroadcaster:
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
 
-        # 初始化阶段的背压：客户端不读时不得让队列无限增长。
-        # 先快照再关闭，避免迭代中修改 _initializing_ws。
-        stalled: list[WebSocket] = []
-        queues: list[list[str]] = []
-        for ws, queued in list(self._initializing_ws.items()):
-            queued_bytes = sum(len(entry) for entry in queued)
-            if (
-                len(queued) + 1 > _MAX_INIT_QUEUE_ITEMS
-                or queued_bytes + len(data) > _MAX_INIT_QUEUE_BYTES
-            ):
-                stalled.append(ws)
-            else:
-                queues.append(queued)
-        for queued in queues:
+        for queued in self._initializing_ws.values():
             queued.append(data)
-        for ws in stalled:
-            log.warning(
-                "WebSocket 初始化阶段积压超限（>%d 条或 >%d 字节），关闭连接",
-                _MAX_INIT_QUEUE_ITEMS,
-                _MAX_INIT_QUEUE_BYTES,
-            )
-            await self._close_ws(ws, code=1013, reason="initialization backlog exceeded")
         _DEAD = b"DEAD"  # sentinel
+        _SEND_TIMEOUT = 3.0  # per-client 广播超时
 
         async def _send(ws: WebSocket):
             client_state = getattr(ws, "client_state", None)
@@ -350,17 +302,38 @@ class WSBroadcaster:
                 elif result is _DEAD:
                     dead.add(ws)
         finally:
-            if dead:
-                # 必须真正关闭：否则客户端收不到 onclose（仍在 ping、仍收到 pong），
-                # 连接既不投递事件也永不断开，前端不会重连。
-                # 关闭失败的连接由 _close_ws 保留登记，下一次广播继续重试 ——
-                # 此处不能无条件 difference_update，否则会抹掉该重试语义。
-                await asyncio.gather(
-                    *(
-                        self._close_ws(ws, code=1011, reason="send failed or timed out")
-                        for ws in dead
-                    )
-                )
+            self._active_ws.difference_update(dead)
+
+
+_AUTH_TIMEOUT_SECONDS = 8.0
+
+
+def _key_matches(supplied: str, expected: str) -> bool:
+    """常量时间比较；非 ASCII 一律按失败处理（与 REST 一致）。"""
+    try:
+        return bool(supplied) and secrets.compare_digest(supplied, expected)
+    except TypeError:
+        return False
+
+
+async def _first_frame_api_key(ws: WebSocket) -> tuple[str, str]:
+    """等第一帧 ``{"type":"auth","api_key":...}``；超时/非法返回 ("", "")。"""
+    try:
+        raw = await asyncio.wait_for(ws.receive_text(), timeout=_AUTH_TIMEOUT_SECONDS)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        return "", ""
+    except Exception:
+        log.debug("等待 WebSocket 认证帧失败", exc_info=True)
+        return "", ""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return "", ""
+    if not isinstance(payload, dict):
+        return "", ""
+    if str(payload.get("type", "")).lower() != "auth":
+        return "", ""
+    return str(payload.get("api_key") or "").strip(), "auth"
 
 
 @router.websocket("/ws")
@@ -390,43 +363,56 @@ async def websocket_endpoint(ws: WebSocket):
             log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
 
-    # ── API Key 认证（与写接口一致的策略） ──────────────────
-    # API_KEY 为空时保持向后兼容（本地回环部署默认不校验）；
-    # 非空时必须携带匹配的 api_key 查询参数 —— 浏览器 WebSocket
-    # API 无法自定义请求头，因此走 query param（见 static/app.js）。
-    expected_key = getattr(getattr(ctx, "runtime", None), "api_key", "") or ""
-    # 未配置 API_KEY 时的兜底：经非 loopback 接口进入的订阅同样拒绝。
-    # 与 HTTP 中间件同源判定（ASGI scope 的 server = 该连接被接受的本机接口地址），
-    # 因此与启动方式无关，本机 loopback 使用不受影响。
-    if not expected_key.strip() and not _insecure_writes_allowed(ctx):
-        if request_arrived_on_non_loopback_interface(ws.scope):
-            log.warning("拒绝经非 loopback 接口进入的无鉴权 WebSocket 连接")
-            try:
-                await ws.close(code=4403, reason="non-loopback access without API key")
-            except Exception:
-                log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
-            return
-    # 与 REST（utils/auth.py）一致：strip 后为空视为未配置认证（兼容模式）
-    if expected_key.strip():
-        # 与 REST（utils/auth.py）一致：两侧 strip 后比较
-        supplied = ws.query_params.get("api_key", "").strip()
-        expected = expected_key.strip()
-        # compare_digest 对非 ASCII 字符串会抛 TypeError，统一按认证失败处理
+    # ── 授权（与写接口共用 utils/auth.resolve_auth） ─────────
+    # trusted（默认）：局域网页面直连，不需要 key；strict：第一帧带
+    # {"type":"auth","api_key":...}。key 不进 URL/查询串/日志。
+    # Host/Origin 已由入口中间件挡过一次，这里再判一次是防御纵深。
+    auth = resolve_auth(ws)
+    if not auth.host_ok or not auth.origin_ok:
+        log.warning("WebSocket 连接被拒绝：%s", auth.reason)
         try:
-            authorized = supplied and secrets.compare_digest(supplied, expected)
-        except TypeError:
-            authorized = False
-        if not authorized:
-            log.warning("WebSocket 连接因缺少或错误的 API Key 被拒绝")
+            await ws.close(code=4403, reason=auth.reason)
+        except Exception:
+            log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
+        return
+
+    expected = (getattr(getattr(ctx, "runtime", None), "api_key", "") or "").strip()
+    # 必须先 accept：握手阶段直接 close 会被浏览器当成 1006/403，
+    # 界面就分不清「没带 key」「key 不对」「服务端没配 key」。
+    await ws.accept()
+    if auth.required and not auth.trusted:
+        frame_key, _frame_type = await _first_frame_api_key(ws)
+        # 是否"带过 key"决定原因是 api_key_invalid 还是 api_key_missing
+        supplied_any = bool(frame_key)
+        if not _key_matches(frame_key, expected):
+            reason = "api_key_invalid" if supplied_any else "api_key_missing"
+            # 只记原因，绝不记 key
+            log.warning("WebSocket 鉴权失败：%s", reason)
             try:
-                await ws.close(code=4401, reason="unauthorized")
+                await ws.close(code=4401, reason=reason)
             except Exception:
                 log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
             return
+    # 明确告诉界面这个连接要不要 key（不含凭据）；trusted 下即使服务端配了
+    # API_KEY，页面也不需要它，所以 auth_required 跟随 auth.required。
+    try:
+        await ws.send_text(
+            json.dumps(
+                {
+                    "type": "hello",
+                    "auth_required": auth.required,
+                    "mode": auth.mode,
+                },
+                ensure_ascii=False,
+            )
+        )
+    except Exception:
+        log.debug("hello 发送失败（连接可能已断开）", exc_info=True)
+        return
     app_services = getattr(ctx, "app_services", None)
     broadcaster = getattr(app_services, "broadcaster", None)
     if broadcaster:
-        await broadcaster.handle_connection(ws)
+        await broadcaster.handle_connection(ws, already_accepted=True)
     else:
         log.error("WebSocket 连接被拒绝：broadcaster 未初始化")
         try:

@@ -16,6 +16,7 @@ from typing import Protocol
 import httpx
 
 from magnet_harvester.magnet_parser import HASH_RE
+from magnet_harvester.utils.infohash import normalize_infohash
 from magnet_harvester.qbit_client.paths import _safe_fs_segment
 
 log = logging.getLogger(__name__)
@@ -62,6 +63,27 @@ def _resolve_relative_save_path(base: str, relative_path: str) -> str:
     return candidate
 
 
+def _add_response_succeeded(response) -> bool:
+    """qB v4 返回纯文本 "Ok."，v5 返回 JSON（success_count/failure_count/added_torrent_ids）。"""
+    text = response.text.strip()
+    if text.lower() == "ok.":
+        return True
+    if text.lower() == "fails.":
+        return False
+    try:
+        payload = response.json()
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if "failure_count" in payload:
+        failures = int(payload.get("failure_count") or 0)
+        added = payload.get("added_torrent_ids") or []
+        success = int(payload.get("success_count") or 0)
+        return failures == 0 and (success > 0 or bool(added))
+    return False
+
+
 class MagnetSubmitter:
     """Encapsulates adding a single magnet link to qBittorrent.
 
@@ -102,7 +124,10 @@ class MagnetSubmitter:
             self._recorder.error("磁力链接格式无效（缺少 btih）")
             self._recorder.failed()
             return False
-        btih_full = btih_match.group(1).upper()
+        # 磁力里的 btih 可能是 base32 写法；qB 的种子列表一律是 40 位 hex，
+        # 前缀比对必须用归一化后的 hex，否则「已存在」会被判成失败、条目误标 error。
+        btih_raw = btih_match.group(1)
+        btih_full = normalize_infohash(btih_raw) or btih_raw.upper()
         btih_prefix = btih_full[:8]
 
         category_save_path = save_path
@@ -140,10 +165,12 @@ class MagnetSubmitter:
                     "urls": magnet,
                     "category": category,
                     "autoTMM": "true",
+                    # 页面点「下载」就是要下：加入 qB 后立即开始，
+                    # 不再用 paused/stopped 参数把种子停在已停止状态。
                 },
             )
 
-            ok = r.text.strip() == "Ok."
+            ok = _add_response_succeeded(r)
 
             if ok:
                 self._recorder.succeeded()

@@ -1,2 +1,0 @@
-
-- 2026-11-01：CodeGraph 1.6.2 在本项目 SMB 挂载盘报 `unable to open database file`；原 WAL 数据库本机副本完整性检查通过。已将 `.codegraph/codegraph.db` 迁至 Mac `~/Library/Application Support/CodeGraph/indexes/qb-nas-4120fde52c4c/`，原路径改为符号链接。`status`、`sync`、CLI explore/callers 和 MCP explore 均通过；155 files / 3140 nodes / 7277 edges。原有文件哈希及暂存/未暂存 diff 完全一致。备份：`/Users/llll/.codex/recovery/qb-nas-codegraph-20261101-131047/`。链接仅适用于此 Mac；`codegraph index` 会重建数据库，执行前需处理本机索引存放，不能直接在 SMB 上重建。同步初次遇到活跃 daemon 锁，等待启动同步结束后重试成功，勿强行 unlock。

@@ -1,0 +1,61 @@
+# 备用：NAS Docker 界面不能构建镜像、又只有官方镜像可用时，用这份。
+# 与 compose.yaml 的差别：不 build，直接用 python:3.11-slim；首次启动在
+# venv（@@PREFIX@@/venv）里装依赖（只需一次，之后启动很快）。
+# 用法：在 fnOS Docker 界面「项目/Compose」新建，粘贴本文件全部内容。
+#
+# 配置唯一事实源与主 compose 一致：@@CONFIG_DIR@@/.env（挂到 /config，ENV_FILE 指过去），
+# 不用 env_file 注入（否则界面写入会被启动时的环境值盖回）。
+name: @@PROJECT@@
+
+services:
+  center:
+    image: python:3.11-slim
+    container_name: @@CONTAINER@@
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: "8899"
+      STORE_DB_PATH: /data/magnet_items.db
+      ENV_FILE: /config/.env
+      TZ: UTC
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      HOME: /tmp
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ ! -x /venv/bin/python ]; then
+          echo "首次启动：在 /venv 安装依赖（约 2–4 分钟，只做一次）"
+          python -m venv /venv
+          /venv/bin/pip install --no-cache-dir --index-url ${PYPI_INDEX:-https://mirrors.aliyun.com/pypi/simple/} -r requirements.txt
+        fi
+        exec /venv/bin/python -m magnet_harvester.main
+    ports:
+      - "@@BIND_IP@@:@@HOST_PORT@@:8899"
+    volumes:
+      - @@APP@@:/app:ro
+      - @@PREFIX@@/venv:/venv
+      - @@CONFIG_DIR@@:/config
+      - @@DATA_DIR@@:/data
+      - @@LOG_DIR@@:/logs
+    user: "1000:1001"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "/venv/bin/python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8899/api/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 6s
+      start_period: 300s
+      retries: 3

@@ -8,6 +8,33 @@
     />
     <meta name="color-scheme" content="light dark" />
     <title>Magnet Harvester</title>
+    <script>
+      /* N23：浏览器零密钥。进入页面的第一件事是清掉旧版本可能留下的钥匙：
+         只清不读（不 getItem、不解析），之后整页不再写任何浏览器存储。
+         旧版的 #key= 片段交接已作废：地址栏里若还带着片段，整段去掉，
+         不解析内容（片段本来就不会发给服务器，但也不该留在历史里）。 */
+      (function dropLegacySecrets() {
+        try {
+          /* 旧版本只写过 localStorage/sessionStorage；cookie 与 IndexedDB 从未用过，
+             这里也就不碰，免得「清理」本身变成一次存储写入。 */
+          window.localStorage.removeItem("magnet-api-key");
+          window.sessionStorage.removeItem("magnet-api-key");
+        } catch (error) {
+          /* 存储不可用：本来也没打算写 */
+        }
+        try {
+          if (window.location.hash) {
+            window.history.replaceState(
+              null,
+              "",
+              window.location.pathname + window.location.search
+            );
+          }
+        } catch (error) {
+          /* 忽略 */
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -83,16 +110,27 @@
             <span class="dot checking" id="dotQbit"></span
             ><span class="status-label" id="qbitStatus">检测中</span>
           </div>
-          <button
-            class="status-chip"
-            id="clipButton"
-            type="button"
-            onclick="toggleClipboard()"
-            title="切换剪贴板监控"
-          >
-            <span class="dot offline" id="dotClip"></span
-            ><span class="status-label" id="clipStatus">剪贴板</span>
-          </button>
+          <div class="mac-status" id="macStatus">
+            <button
+              class="status-chip"
+              id="macChip"
+              type="button"
+              onclick="toggleMacPanel()"
+              aria-expanded="false"
+              aria-controls="macPanel"
+              title="Mac 上报：最近一次收到的时间"
+            >
+              <span class="dot idle" id="dotMac"></span
+              ><span class="status-label" id="macLabel">Mac 上报</span>
+            </button>
+            <div class="mac-popover" id="macPanel" hidden>
+              <div class="mac-popover-head">
+                <span class="mac-popover-title">最近的 Mac 上报</span>
+                <span class="mac-popover-sub" id="macPanelSub">等待上报</span>
+              </div>
+              <div class="mac-events" id="macEvents"></div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -113,21 +151,18 @@
                 />
               </div>
               <div>
-                <label class="field-label" for="depthSelect">爬取深度</label>
+                <label class="field-label" for="depthSelect">采集深度</label>
                 <select class="select" id="depthSelect">
                   <option value="1">1 · 当前页面</option>
                   <option value="2">2 · 跟随子链接</option>
                   <option value="3">3 · 递归爬取</option>
                 </select>
               </div>
-              <div class="option-row">
+              <div class="option-row subtle">
                 <div class="option-copy">
-                  <strong>自动下载</strong><span>分类完成后发送到 qB</span>
+                  <strong>只入库，不下载</strong
+                  ><span>抓到的磁力先进资源库，点选后才进 qB</span>
                 </div>
-                <label class="switch">
-                  <input id="autoToggle" type="checkbox" />
-                  <span class="switch-track"></span>
-                </label>
               </div>
               <button
                 class="button primary full"
@@ -135,29 +170,68 @@
                 type="button"
                 onclick="startCrawl()"
               >
-                <i data-lucide="play"></i><span>开始爬取</span>
+                <i data-lucide="play"></i><span>开始采集</span>
               </button>
             </div>
           </section>
           <section class="section">
             <h2 class="section-heading">任务概览</h2>
             <div class="stats-grid">
-              <div class="stat">
-                <div class="stat-value" id="totalCount">0</div>
-                <div class="stat-label">发现资源</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value" id="activeCount">0</div>
-                <div class="stat-label">活动下载</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value" id="successCount">0</div>
-                <div class="stat-label">已完成</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value" id="errorCount">0</div>
-                <div class="stat-label">异常</div>
-              </div>
+              <button
+                class="stat active"
+                type="button"
+                data-status="all"
+                aria-pressed="true"
+                onclick="setStatusFilter('all')"
+                title="显示全部状态"
+              >
+                <span class="stat-value" id="totalCount">0</span>
+                <span class="stat-label">全部资源</span>
+              </button>
+              <button
+                class="stat"
+                type="button"
+                data-status="active"
+                aria-pressed="false"
+                onclick="setStatusFilter('active')"
+                title="只看正在提交/排队的条目"
+              >
+                <span class="stat-value" id="activeCount">0</span>
+                <span class="stat-label">进行中</span>
+              </button>
+              <button
+                class="stat"
+                type="button"
+                data-status="paused"
+                aria-pressed="false"
+                onclick="setStatusFilter('paused')"
+                title="只看已加入 qB、当前暂停的条目"
+              >
+                <span class="stat-value" id="pausedCount">0</span>
+                <span class="stat-label">已暂停</span>
+              </button>
+              <button
+                class="stat"
+                type="button"
+                data-status="done"
+                aria-pressed="false"
+                onclick="setStatusFilter('done')"
+                title="只看已完成"
+              >
+                <span class="stat-value" id="successCount">0</span>
+                <span class="stat-label">已完成</span>
+              </button>
+              <button
+                class="stat stat-wide"
+                type="button"
+                data-status="failed"
+                aria-pressed="false"
+                onclick="setStatusFilter('failed')"
+                title="只看失败（带原因）"
+              >
+                <span class="stat-value" id="errorCount">0</span>
+                <span class="stat-label">失败</span>
+              </button>
             </div>
           </section>
         </div>
@@ -228,15 +302,19 @@
             <i data-lucide="download"></i><span>下载</span>
           </button>
           <button
-            class="button danger icon-only"
+            class="button danger"
+            id="clearBtn"
             type="button"
             onclick="openClearDialog()"
-            title="清空资源"
-            aria-label="清空资源"
+            title="清空资源库（需要二次确认）"
           >
-            <i data-lucide="trash-2"></i>
+            <i data-lucide="trash-2"></i><span>清空</span>
           </button>
         </div>
+        <div class="status-filter-chip" id="statusFilterChip" hidden
+             role="button" tabindex="0"
+             onclick="setStatusFilter('all')"
+             onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setStatusFilter('all'); }"></div>
         <nav class="filter-tabs" aria-label="资源分类">
           <button
             class="filter-tab active"
@@ -319,6 +397,55 @@
             其他
           </button>
         </nav>
+        <div class="batch-bar" id="batchBar" role="status" hidden>
+          <span class="batch-dot idle" id="batchDot"></span>
+          <div class="batch-text" id="batchText">还没有抓取任务</div>
+          <span class="batch-meta" id="batchMeta"></span>
+          <div class="batch-actions">
+            <button
+              class="button tiny"
+              id="batchRetry"
+              type="button"
+              onclick="retryLatestJob()"
+              hidden
+            >
+              <i data-lucide="refresh-cw"></i><span>重试</span>
+            </button>
+            <button
+              class="button tiny"
+              id="batchJobsBtn"
+              type="button"
+              onclick="openJobsPanel()"
+            >
+              查看任务
+            </button>
+            <button
+              class="button icon-only tiny"
+              type="button"
+              onclick="dismissBatch()"
+              title="关闭提示"
+              aria-label="关闭提示"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        <section class="jobs-panel" id="jobsPanel" data-open="false">
+          <button
+            class="jobs-head"
+            type="button"
+            onclick="toggleJobsPanel()"
+            aria-expanded="false"
+            aria-controls="jobsBody"
+          >
+            <i data-lucide="radar"></i>
+            <span class="jobs-heading">抓取任务</span>
+            <span class="jobs-count" id="jobsCount">0</span>
+            <span class="jobs-summary" id="jobsSummary">还没有抓取任务</span>
+            <span class="jobs-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="jobs-body" id="jobsBody"></div>
+        </section>
         <div class="table-shell">
           <table>
             <thead>
@@ -333,10 +460,10 @@
                   />
                 </th>
                 <th>资源名称</th>
-                <th style="width: 88px">分类</th>
-                <th style="width: 70px">大小</th>
-                <th style="width: 118px">状态</th>
-                <th style="width: 150px">来源</th>
+                <th style="width: 84px">分类</th>
+                <th style="width: 72px">大小</th>
+                <th style="width: 22%">结果 · 原因</th>
+                <th style="width: 25%">来源</th>
               </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -346,7 +473,7 @@
               <div class="empty-icon"><i data-lucide="inbox"></i></div>
               <div class="empty-title" id="emptyTitle">资源库为空</div>
               <div class="empty-copy" id="emptyCopy">
-                从左侧创建采集任务，或开启剪贴板监控。
+                在 Mac 上复制磁力或网址，或从左侧提交网址采集。
               </div>
             </div>
           </div>
@@ -369,7 +496,7 @@
                   class="input"
                   id="cfgHost"
                   type="url"
-                  placeholder="http://nas.local:8080"
+                  placeholder="http://主机:端口（如 http://192.168.20.193:8085）"
                 />
               </div>
               <div>
@@ -378,7 +505,7 @@
                   class="input"
                   id="cfgUser"
                   autocomplete="username"
-                  placeholder="admin"
+                  placeholder="qBittorrent 用户名"
                 />
               </div>
               <div>
@@ -401,21 +528,17 @@
               </button>
             </div>
             <div class="connection-result" id="cfgResult">
-              尚未测试连接（密码仅保存在服务端，不会回显）
+              <span id="cfgResultText">尚未测试连接（密码仅保存在服务端，不会回显）</span>
+              <span class="connection-hint" id="cfgHint" hidden></span>
             </div>
           </section>
           <section class="section">
             <h2 class="section-heading">访问安全</h2>
-            <label class="field-label" for="apiKeyInput">API Key</label>
-            <input
-              class="input"
-              id="apiKeyInput"
-              type="password"
-              autocomplete="off"
-              placeholder="未配置时留空"
-            />
+            <p class="auth-state" id="authState">正在确认访问状态…</p>
+            <p class="security-note connection-hint" id="authHint" hidden></p>
             <p class="security-note">
-              密钥仅保存在当前浏览器会话中，用于需要授权的写操作。
+              浏览器不保存任何密钥；API Key 只保存在 NAS 的 config/.env，供 Mac 代理等
+              程序调用，页面上不需要填写。清空这类危险操作仍需二次确认。
             </p>
           </section>
           <section class="section">
@@ -434,9 +557,9 @@
               </div>
               <div class="option-row">
                 <span class="option-copy"
-                  ><strong>剪贴板</strong
-                  ><span id="clipDetail">已关闭</span></span
-                ><span class="dot offline" id="clipDetailDot"></span>
+                  ><strong>采集服务</strong
+                  ><span id="crawlerDetail">正在检测</span></span
+                ><span class="dot checking" id="crawlerDetailDot"></span>
               </div>
             </div>
           </section>
@@ -470,24 +593,38 @@
     </main>
 
     <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-    <dialog id="clearDialog">
+    <dialog id="clearDialog" aria-labelledby="clearTitle">
       <div class="dialog-body">
-        <h2 class="dialog-title">清空资源库？</h2>
+        <h2 class="dialog-title" id="clearTitle">
+          清空资源库里的全部 <span id="clearCount">0</span> 条记录？
+        </h2>
         <p class="dialog-copy">
-          这会移除当前界面中的全部资源记录，但不会删除 qBittorrent
-          中已有的任务。
+          作用范围是 NAS 上的<strong>整个资源库</strong>，不是当前筛选结果。
+          删除后无法恢复。
         </p>
+        <p class="dialog-breakdown" id="clearBreakdown"></p>
+        <p class="dialog-copy dialog-safe">
+          只删这里的记录：qBittorrent 里已有的种子不会被删除，也不会被暂停。
+        </p>
+        <label class="dialog-check">
+          <input class="checkbox" type="checkbox" id="clearConfirmCheck"
+                 onchange="syncClearConfirm()" />
+          <span>我明白这会清空上面列出的全部记录，且不可撤销</span>
+        </label>
+        <p class="dialog-error" id="clearError" hidden></p>
       </div>
       <div class="dialog-actions">
         <button class="button" type="button" onclick="closeClearDialog()">
           取消
         </button>
-        <button class="button danger" type="button" onclick="clearAll()">
-          清空
+        <button class="button danger" type="button" id="clearConfirmBtn"
+                onclick="clearAll()" disabled>
+          清空全部
         </button>
       </div>
     </dialog>
 
+    <script src="/static/time_format.js"></script>
     <script src="/static/api_client.js"></script>
     <script src="/static/item_state.js"></script>
     <script src="/static/app.js"></script>

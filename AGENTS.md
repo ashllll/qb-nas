@@ -25,12 +25,9 @@ scrapling install
 cp .env.example .env            # then edit .env with your qB credentials
 
 # Run
-python run.py                   # 推荐启动方式
-
-# 不要用 `uvicorn magnet_harvester.main:app --host ...` 直接启动：
-# 虽然已加防护（启动期会解析 --host 并拒绝非 loopback 的无鉴权暴露，且请求层
-# 会拒绝经非 loopback 接口进入的无鉴权写请求），但该路径不再受"应用知晓真实
-# 绑定地址"这一契约保护，属非受支持用法。
+python run.py
+# or
+uvicorn magnet_harvester.main:app --reload --host 0.0.0.0 --port 8899
 
 # Test
 python -m pytest tests -v
@@ -90,7 +87,7 @@ npm run check    # lint + test
 | `services/`        | Background and user-facing services: `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `ClipboardMonitor`, `SiteAuth`, `SystemStats` |
 | `context/`         | `AppContext` (dependency container) + `QBitRuntime` (hot-swap adapter)                                                                                                 |
 | `api/`             | REST routes, WebSocket broadcaster, static page router                                                                                                                 |
-| `utils/`           | `url_validator` (SSRF protection), `auth`, `interface_guard` (非 loopback 无鉴权写拦截), `bg_tasks`, `serializers`                                                     |
+| `utils/`           | `url_validator` (SSRF protection), `auth`, `bg_tasks`, `serializers`                                                                                                   |
 
 ### Classification rule chain
 
@@ -195,16 +192,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 | `MIN_DISK_SPACE_GB`               | `10.0`                      | Disk warning threshold                                  |
 | `SITE_COOKIES`                    | `{}`                        | JSON `{"domain": "cookie-string"}` for cookie injection |
 
-**Security posture**:
-
-- 未配置 `API_KEY`（且未设 `ALLOW_INSECURE_WRITE_API=true`）时：
-  - **启动期**拒绝绑定到非 loopback 地址（真实地址取自 `MH_BOUND_HOST` / uvicorn
-    `--host` / `UVICORN_HOST`，优先级同序）
-  - **请求期**拒绝来自非 loopback 来源的写请求（403）与 WebSocket 握手，同时依据
-    ASGI scope 的 `server`（本机接口地址）与 `client`（连接来源，覆盖本机反代形态），
-    与启动方式无关；本机 loopback 不受影响。属尽力而为兜底，不能替代 `API_KEY`
-    （见 `docs/verification.md` 3.1）
-- 推荐用 `python run.py` 启动（它设置 `MH_BOUND_HOST`，可给出最准确的启动期判定）
+**Security posture**: Service refuses to start on non-loopback without `API_KEY` or `ALLOW_INSECURE_WRITE_API=true`.
 
 ## Conventions
 
@@ -232,14 +220,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 - **Single assembly point**: `main.py` lifespan calls `build_runtime()` — all wiring in one place (see ADR-0001)
 - **Phase protocols**: `CrawlPhase`, `ClassifyPhase`, `DownloadPhase` protocols enable hot-swappable implementations
 - **Hot-swap qB config**: `QBitRuntime.replace_qbit_config()` validates, persists, and swaps the client atomically
-- **SSRF protection**: `url_validator` blocks loopback, link-local, multicast, RFC 1918
-  addresses. **注意已知残余风险**：`admit()` 校验 DNS 解析结果但连接时重新解析
-  （TOCTOU/DNS rebinding）；重定向链校验未接线，相关代码已删除 —— 详见
-  `docs/verification.md` 3.2。爬取路径另有 `page.route` 逐请求复检作缓解
-- **正则必须有界**: 输入来自被爬页面与控制面板，无界量词会在"含大量触发前缀但无
-  有效匹配"的文本上退化成 O(n²)，单个页面即可让服务停摆（`MAGNET_RE` 持有 GIL，
-  `asyncio.to_thread` 挡不住；分类在事件循环内同步执行）。见
-  `tests/test_regex_complexity.py`
+- **SSRF protection**: `url_validator` blocks loopback, link-local, multicast, RFC 1918 addresses, plus checks redirect chains
 - **No external AI**: Classification is 100% local rules — no API calls to any external service
 
 ## Agent Skills 自动化

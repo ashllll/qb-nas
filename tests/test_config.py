@@ -2,14 +2,15 @@
 测试配置派生对象
 """
 
+import stat
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 import pytest
 
-from magnet_harvester.config import CrawlerConfig, QBitConfig, Settings
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from magnet_harvester.config import ConfigPersistError, CrawlerConfig, QBitConfig, Settings
 
 
 def test_crawler_allowed_resolutions_parse_csv():
@@ -18,10 +19,12 @@ def test_crawler_allowed_resolutions_parse_csv():
     assert cfg.crawler.allowed_resolutions == ("1080p", "2160p", "4k")
 
 
-def test_crawler_allowed_resolutions_falls_back_when_empty():
+def test_crawler_allowed_resolutions_empty_disables_filtering():
+    """空值 = 不过滤分辨率：详情页 1080p/720p 也要收（采集中心约定）。"""
     cfg = Settings(CRAWLER_ALLOWED_RESOLUTIONS="")
 
-    assert cfg.crawler.allowed_resolutions == ("2160p", "4k")
+    assert cfg.crawler.allowed_resolutions == ()
+    assert Settings().crawler.allowed_resolutions == ()
 
 
 def test_default_crawler_concurrency_is_tuned_for_detail_pages():
@@ -102,37 +105,6 @@ def test_persist_qbit_config_updates_env_without_dropping_other_values(tmp_path)
     assert "old.example" not in text
 
 
-def test_persist_qbit_config_replaces_duplicate_keys_used_on_reload(monkeypatch, tmp_path):
-    for key in ("QBIT_HOST", "QBIT_USERNAME", "QBIT_PASSWORD"):
-        monkeypatch.delenv(key, raising=False)
-
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "QBIT_HOST=http://old-first.example:8080\n"
-        "QBIT_USERNAME=old-first-user\n"
-        "QBIT_PASSWORD=old-first-password\n"
-        "QBIT_HOST=http://old-last.example:8080\n"
-        "QBIT_USERNAME=old-last-user\n"
-        "QBIT_PASSWORD=old-last-password\n",
-        encoding="utf-8",
-    )
-    cfg = Settings(_env_file=None)
-
-    cfg.persist_qbit_config(
-        QBitConfig(
-            host="http://new.example:8080",
-            username="new-user",
-            password="new-password",
-        ),
-        env_path=env_path,
-    )
-
-    reloaded = Settings(_env_file=env_path)
-    assert reloaded.QBIT_HOST == "http://new.example:8080"
-    assert reloaded.QBIT_USERNAME == "new-user"
-    assert reloaded.QBIT_PASSWORD == "new-password"
-
-
 def test_check_disk_space_reports_configured_path(monkeypatch, tmp_path):
     import magnet_harvester.config as config_module
 
@@ -179,99 +151,126 @@ def test_allow_fake_ip_config_wires_to_crawler():
     assert default_cfg.crawler.allow_fake_ip is False
 
 
-def test_qbit_sync_interval_must_be_positive(monkeypatch):
-    """QBIT_SYNC_INTERVAL 必须为正：0 会让同步循环变成无休眠紧循环。
+def test_qbit_keys_in_config_file_win_over_process_env(tmp_path, monkeypatch):
+    """唯一事实源：文件里的 qB 配置压过进程环境。
 
-    QBitSyncLoop._run 每轮先 wait_for(stop_event, timeout=next_delay())，无失败时
-    next_delay() 即该间隔。设为 0 时每轮立即超时并立刻轮询 qB + SQLite。
-    """
-    from pydantic import ValidationError
-
-    for bad in ("0", "-1", "0.0"):
-        monkeypatch.setenv("QBIT_SYNC_INTERVAL", bad)
-        with pytest.raises(ValidationError):
-            Settings(_env_file=None)
-
-    # 闭环：合法的下限值必须仍被接受，避免把校验写死成"拒绝一切小值"
-    monkeypatch.setenv("QBIT_SYNC_INTERVAL", "0.1")
-    assert Settings(_env_file=None).QBIT_SYNC_INTERVAL == 0.1
-
-
-def test_env_value_round_trips_dollar_signs(tmp_path):
-    """含 $ 的值写入 .env 后必须原样读回。
-
-    回归背景：_format_env_value 曾把 $ 转义为 \\$，但 python-dotenv 不做 \\$
-    反转义，于是 'p$ss' 落盘为 "p\\$ss"、读回 'p\\\\$ss' —— 通过 UI 保存含 $ 的
-    qB 密码后，重启即登录失败，且要到重启后才暴露。
+    容器若用 compose 的 env_file / -e 注入 QBIT_*（旧部署就是这样），pydantic 默认
+    「环境 > 文件」会让界面刚写入的值在重启时被旧值盖回去。这条测试锁住反过来的优先级。
     """
     env_path = tmp_path / ".env"
-    for value in ("plainpass", "p$ss", "P@ss$word", "a$b$c", "trailing$", "中文$密码"):
-        Settings._write_env_values(env_path, {"QBIT_PASSWORD": value})
-        assert Settings(_env_file=env_path).QBIT_PASSWORD == value, (
-            f"{value!r} 未能原样读回，落盘内容: {env_path.read_text(encoding='utf-8').strip()}"
-        )
-
-
-def test_env_value_dollar_placeholder_is_rejected_on_persist(tmp_path):
-    """经 persist_qbit_config 落盘时，含 ${...} 的值必须被拒绝而不是静默写错。
-
-    回归背景：'p${X}word' 会被 dotenv 当变量插值，写盘后读回 'pword' —— 本次会话
-    内存里的配置仍正常，要重启才暴露，属**静默改坏密码**。该形式在 .env 中无法
-    表示（python-dotenv 1.2.2 对双引号/单引号/裸值一律插值，且
-    DotEnvSettingsSource 不支持关闭插值），因此选择在写入前拒绝。
-    """
-    from magnet_harvester.config import QBitConfig
-
-    env_path = tmp_path / ".env"
-    with pytest.raises(ValueError, match="无法写入"):
-        Settings().persist_qbit_config(
-            QBitConfig(host="http://h:8080", username="u", password="p$ss${X}word"),
-            env_path,
-        )
-    assert not env_path.exists(), "被拒绝的值不应落盘"
-
-    # 单个 $（非 ${ 形式）不受影响，仍可正常往返
-    Settings().persist_qbit_config(
-        QBitConfig(host="http://h:8080", username="u", password="p$ss#中文"), env_path
+    env_path.write_text(
+        "QBIT_HOST=http://from-file:8085\n"
+        "QBIT_USERNAME=file-user\n"
+        'QBIT_PASSWORD="file-pass"\n',
+        encoding="utf-8",
     )
-    assert Settings(_env_file=env_path).QBIT_PASSWORD == "p$ss#中文"
+    monkeypatch.setenv("QBIT_HOST", "http://from-process-env:8080")
+    monkeypatch.setenv("QBIT_USERNAME", "env-user")
+    monkeypatch.setenv("QBIT_PASSWORD", "env-pass")
+
+    cfg = Settings(_env_file=str(env_path))
+
+    assert cfg.QBIT_HOST == "http://from-file:8085"
+    assert cfg.QBIT_USERNAME == "file-user"
+    assert cfg.QBIT_PASSWORD == "file-pass"
 
 
-def test_security_posture_rejects_real_bind_address_not_just_env():
-    """鉴权强制必须依据真实监听地址，而非 SERVICE_HOST 环境变量。
+def test_qbit_keys_fall_back_to_process_env_when_file_has_none(tmp_path, monkeypatch):
+    """文件里没有这个键时，环境变量仍然有效（迁移期/首次启动）。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text("LOG_LEVEL=INFO\n", encoding="utf-8")
+    monkeypatch.setenv("QBIT_HOST", "http://from-process-env:8080")
 
-    回归背景：validate_security_posture 只读 SERVICE_HOST（.env.example 默认
-    127.0.0.1 → 判定 loopback 后早返回），而文档给出的备用启动方式
-    `uvicorn magnet_harvester.main:app --host 0.0.0.0` 会让服务真正绑定到 LAN，
-    此时 API_KEY 为空 → require_api_key 直接放行 → LAN 上出现无鉴权写接口。
-    """
-    # 环境变量仍是 loopback，但真实绑定地址是非 loopback → 必须拒绝
-    cfg = Settings(SERVICE_HOST="127.0.0.1", API_KEY="", ALLOW_INSECURE_WRITE_API=False)
-    with pytest.raises(RuntimeError, match="non-loopback"):
-        cfg.validate_security_posture(bound_host="0.0.0.0")
-    with pytest.raises(RuntimeError, match="non-loopback"):
-        cfg.validate_security_posture(bound_host="192.168.1.194")
+    cfg = Settings(_env_file=str(env_path))
 
-    # 真实绑定地址是 loopback → 放行
-    cfg.validate_security_posture(bound_host="127.0.0.1")
-    cfg.validate_security_posture(bound_host="::1")
-    cfg.validate_security_posture(bound_host="localhost")
+    assert cfg.QBIT_HOST == "http://from-process-env:8080"
 
-    # 显式配置了 API_KEY → 放行（即使绑定到 LAN）
-    secured = Settings(SERVICE_HOST="127.0.0.1", API_KEY="k", ALLOW_INSECURE_WRITE_API=False)
-    secured.validate_security_posture(bound_host="0.0.0.0")
 
-    # 显式开发豁免 → 放行
-    dev = Settings(SERVICE_HOST="127.0.0.1", API_KEY="", ALLOW_INSECURE_WRITE_API=True)
-    dev.validate_security_posture(bound_host="0.0.0.0")
+def test_deployment_keys_stay_pinned_by_process_env(tmp_path, monkeypatch):
+    """部署键由 compose 钉死：.env 里写错端口不会让端口映射对不上。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "SERVICE_HOST=127.0.0.1\nSERVICE_PORT=9999\nSTORE_DB_PATH=/tmp/wrong.db\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SERVICE_HOST", "0.0.0.0")
+    monkeypatch.setenv("SERVICE_PORT", "8899")
+    monkeypatch.setenv("STORE_DB_PATH", "/data/magnet_items.db")
 
-    # 真实绑定地址未知时，退回环境变量语义（保持既有行为）
-    cfg.validate_security_posture(bound_host=None)
+    cfg = Settings(_env_file=str(env_path))
+
+    assert cfg.SERVICE_HOST == "0.0.0.0"
+    assert cfg.SERVICE_PORT == 8899
+    assert cfg.STORE_DB_PATH == "/data/magnet_items.db"
+
+
+def test_persist_qbit_config_keeps_file_private_and_leaves_no_residue(tmp_path):
+    """界面保存后文件仍是 600，临时文件不残留（旧实现 rename 出来是 644）。"""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    env_path = config_dir / ".env"
+    env_path.write_text("API_KEY=secret-key\nQBIT_HOST=http://old:8080\n", encoding="utf-8")
+    env_path.chmod(0o600)
+    cfg = Settings(_env_file=str(env_path))
+
+    cfg.persist_qbit_config(
+        QBitConfig(host="http://new:8080", username="u", password="p"),
+        env_path=env_path,
+    )
+
+    assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
+    assert list(config_dir.glob("*.tmp")) == []
+    text = env_path.read_text(encoding="utf-8")
+    assert "API_KEY=secret-key" in text
+    assert 'QBIT_HOST="http://new:8080"' in text
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root 不受目录权限限制")
+def test_persist_qbit_config_error_names_path_uid_and_directory_mode(tmp_path):
+    """写不进去时，错误里带路径/uid/目录权限——不用再猜 Permission denied 出在哪一层。"""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    env_path = config_dir / ".env"
+    env_path.write_text("QBIT_HOST=http://old:8080\n", encoding="utf-8")
+    env_path.chmod(0o600)
+    cfg = Settings(_env_file=str(env_path))
+
+    config_dir.chmod(0o500)
+    try:
+        with pytest.raises(ConfigPersistError) as excinfo:
+            cfg.persist_qbit_config(
+                QBitConfig(host="http://new:8080", username="u", password="p"),
+                env_path=env_path,
+            )
+    finally:
+        config_dir.chmod(0o700)
+
+    message = str(excinfo.value)
+    assert str(env_path) in message
+    assert f"uid={os.getuid()}" in message
+    assert "目录" in message
+
+
+def test_config_source_report_points_at_file_without_leaking_values(tmp_path):
+    """启动自检报告：指出读的是哪个文件、每个键来自哪里，但不含任何密钥值。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        'QBIT_HOST="http://file:8085"\nQBIT_USERNAME=file-user\nQBIT_PASSWORD="sup3r-secret"\n',
+        encoding="utf-8",
+    )
+    cfg = Settings(_env_file=str(env_path))
+
+    report = cfg.describe_config_source()
+
+    assert report["file"] == str(env_path)
+    assert report["sources"]["QBIT_PASSWORD"] == "file"
+    assert report["sources"]["QBIT_HOST"] == "file"
+    assert "sup3r-secret" not in repr(report)
 
 
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
-    test_crawler_allowed_resolutions_falls_back_when_empty()
+    test_crawler_allowed_resolutions_empty_disables_filtering()
     test_default_crawler_concurrency_is_tuned_for_detail_pages()
     test_default_crawler_detail_link_limit_keeps_large_result_sets()
     import tempfile

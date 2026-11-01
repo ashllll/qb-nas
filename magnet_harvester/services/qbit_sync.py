@@ -20,17 +20,22 @@ log = logging.getLogger(__name__)
 
 _MAX_STORE_ITEMS = 50000
 
-# 非终态 — qBittorrent 同步只关心已提交到 qB 的活跃条目
+# 非终态 — qBittorrent 同步只关心已提交到 qB 的活跃条目。
+# paused 必须在内：用户在 qB 里恢复下载后，库里要从「已暂停」跟着变成下载中；
+# error 也在内：qB 侧状态可能被修好（历史上被误判成 error 的条目靠下一轮同步自愈）。
 _SYNC_ACTIVE_STATUSES = [
     TaskStatus.adding.value,
     TaskStatus.queued.value,
     TaskStatus.downloading.value,
+    TaskStatus.paused.value,
     TaskStatus.error.value,
 ]
 
 
 class QBitSyncClient(Protocol):
+    async def poll_torrent_snapshot(self) -> dict: ...
     async def poll_torrent_snapshot_with_removed(self) -> tuple[dict, set[str]]: ...
+    def take_recently_removed(self) -> set[str]: ...
 
 
 @dataclass
@@ -83,10 +88,6 @@ class QBitSyncLoop:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._downloads = downloads or DownloadTransitions(store=store, bus=bus)
-        # qB 的 torrents_removed 是 rid 增量：只在发生的那一轮出现，之后不再重发。
-        # 这里保留到某个 hash 真正被 reconcile 过为止，否则一次 store 读取失败或
-        # 一轮批次超时就会让条目永久停在 downloading。
-        self._pending_removed: set[str] = set()
 
     async def start(self):
         async with self._lock:
@@ -138,86 +139,73 @@ class QBitSyncLoop:
                 log.error("qB 同步跳过：store 为 None，数据持久化不可用")
                 continue
 
+            # 一轮里的任何异常都只影响这一轮：循环本身死了不会自动重启，
+            # 用户从此看不到状态更新（qB 重启、SQLite 偶发 locked 都能触发）。
             try:
-                snapshot, removed_hashes = await qbit.poll_torrent_snapshot_with_removed()
-            except Exception as e:
+                await self._sync_round(qbit, store)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
                 self._backoff.record_failure()
-                log.debug(
-                    "qB 状态同步失败，将退避到 %.1fs 后重试: %s", self._backoff.next_delay(), e
-                )
-                continue
-            self._backoff.record_success()
-            self._pending_removed |= removed_hashes
+                log.exception("qB 状态同步轮次失败，下一轮继续")
+            else:
+                self._backoff.record_success()
 
-            try:
-                tracked_items = await store.list(
-                    status=_SYNC_ACTIVE_STATUSES,
-                    limit=_MAX_STORE_ITEMS,
+    async def _sync_round(self, qbit: QBitSyncClient, store: ItemStore) -> None:
+        snapshot, removed_hashes = await qbit.poll_torrent_snapshot_with_removed()
+        tracked_items = await store.list(
+            status=_SYNC_ACTIVE_STATUSES,
+            limit=_MAX_STORE_ITEMS,
+        )
+        if len(tracked_items) >= _MAX_STORE_ITEMS:
+            log.error(
+                "tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items)
+            )
+            await self._bus.emit(
+                Event(
+                    EventType.ERROR,
+                    {
+                        "error": "store_limit_reached",
+                        "message": (
+                            f"tracked items 达到截断上限 {_MAX_STORE_ITEMS}，"
+                            "超过上限的 item 将不被同步"
+                        ),
+                        "count": len(tracked_items),
+                    },
                 )
-            except Exception as e:
-                self._backoff.record_failure()
-                log.warning(
-                    "qB 状态同步读取本地条目失败，将退避到 %.1fs 后重试: %s",
-                    self._backoff.next_delay(),
-                    e,
-                )
-                continue
-            if len(tracked_items) >= _MAX_STORE_ITEMS:
-                log.error(
-                    "tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items)
-                )
-                await self._bus.emit(
-                    Event(
-                        EventType.ERROR,
-                        {
-                            "error": "store_limit_reached",
-                            "message": (
-                                f"tracked items 达到截断上限 {_MAX_STORE_ITEMS}，"
-                                "超过上限的 item 将不被同步"
-                            ),
-                            "count": len(tracked_items),
-                        },
-                    )
-                )
-            # qB 会报出大量我们没在追踪的种子（用户在 qB 侧自己删的、别的工具加的），
-            # 没人认领的移除必须丢掉，否则保留集随运行时长无界增长。
-            self._pending_removed &= {item.hash.lower() for item in tracked_items}
+            )
+        if not tracked_items:
+            return
 
-            if not tracked_items:
-                continue
-
-            progress = _ReconcileProgress()
-            try:
-                await asyncio.wait_for(
-                    self._reconcile_batch(tracked_items, snapshot, progress),
-                    timeout=60.0,
-                )
-            except asyncio.TimeoutError:
-                remaining = max(len(tracked_items) - progress.processed, 0)
-                log.warning(
-                    "同步轮次超时（60s），已处理 %d 条，跳过剩余 %d 条",
-                    progress.processed,
-                    remaining,
-                )
+        progress = _ReconcileProgress()
+        try:
+            await asyncio.wait_for(
+                self._reconcile_batch(tracked_items, snapshot, removed_hashes, progress),
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            remaining = max(len(tracked_items) - progress.processed, 0)
+            log.warning(
+                "同步轮次超时（60s），已处理 %d 条，跳过剩余 %d 条",
+                progress.processed,
+                remaining,
+            )
 
     async def _reconcile_batch(
         self,
         tracked_items: list,
         snapshot: dict,
+        removed_hashes: set[str],
         progress: _ReconcileProgress | None = None,
     ):
-        """逐条 reconcile tracked items，每次 reconcile 前后检查 stop 信号。
-
-        待处理的移除直接读 ``self._pending_removed``，且**只在 reconcile 成功之后**
-        才消费掉：批次超时或中途 break 时没被看过的条目，下一轮仍会被判 removed。
-        """
+        """逐条 reconcile tracked items，每次 reconcile 前后检查 stop 信号。"""
         for item in tracked_items:
             if self._stop_event.is_set():
                 break
 
             hash_key = item.hash
             torrent = snapshot.get(hash_key.lower())
-            is_removed = hash_key.lower() in self._pending_removed
+            is_removed = hash_key.lower() in removed_hashes
 
             try:
                 await self._downloads.reconcile_snapshot(
@@ -232,11 +220,6 @@ class QBitSyncLoop:
                     hash_key,
                     e,
                 )
-            else:
-                if is_removed:
-                    # 不消费就会每轮重发 removed 事件：store.update 每次都写新的
-                    # updated_at，transitions.removed() 没有幂等守卫。
-                    self._pending_removed.discard(hash_key.lower())
 
             if progress is not None:
                 progress.processed += 1

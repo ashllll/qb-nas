@@ -19,24 +19,16 @@ import urllib.parse
 from collections.abc import Iterable
 from typing import Dict, List, Optional, Set
 
+from magnet_harvester.utils.infohash import normalize_infohash as _normalize_infohash
+
 log = logging.getLogger(__name__)
 
 # ── 正则表达式 ──────────────────────────────
 
 BTIH_VALUE_PATTERN = r"(?:[a-fA-F0-9]{40}|[a-zA-Z2-7]{32})"
 
-# xt 允许出现在任意参数位置：magnet URI 不要求 xt 首发，钉死位置会整条漏采
-# （见 test_xt_not_first_parameter_is_still_extracted）。前缀用非贪婪匹配定位到
-# xt，尾部沿用原有的终止字符集。
-#
-# 前缀必须设上限：无界前缀会让该正则在"含大量 magnet:? 但没有 xt"的文本上退化成
-# O(n^2)（病态输入 64KB 实测 1.4s，1MB 外推约 400s），且因为全程持有 GIL，
-# asyncio.to_thread 挡不住 —— 单个被爬页面即可让 API/WS/同步循环全停摆。
-# 512 对真实链接足够（xt 通常在前 ~100 字符内），实测正常输入结果完全一致。
-MAGNET_LEADING_MAX = 512
 MAGNET_RE = re.compile(
-    rf"magnet:\?[^\s\'\"<>\)]{{0,{MAGNET_LEADING_MAX}}}?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])"
-    rf"(?:[^\s\'\"<>\)]+)?",
+    rf'magnet:\?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])(?:[^\s\'"<>\)]+)?',
     re.IGNORECASE,
 )
 
@@ -70,6 +62,19 @@ BASE64_MAX_LENGTH = 300
 BASE64_VALID_RE = re.compile(r"^[a-zA-Z0-9+/]+={0,2}$")
 
 
+# ── infohash 归一化 ──────────────────────
+
+# 归一化只有一份实现（magnet_parser 与采集入口必须用同一套规则，否则同一磁力会入库两次）。
+def normalize_infohash(value: str) -> Optional[str]:
+    """把一个 infohash 统一成 40 位大写 hex（实现见 ``utils.infohash``）。
+
+    - hex（40 位）：统一大写；
+    - base32（32 位，BTIH 的另一种写法）：解码成 20 字节再转 hex；
+    - 32 位全 hex 的歧义串、其他写法：返回 None。
+    """
+    return _normalize_infohash(value)
+
+
 # ── 核心解析函数 ──────────────────────────
 
 
@@ -77,8 +82,14 @@ def parse_magnet(raw_raw: str) -> Optional[dict]:
     """将单个磁力链接字符串解析为结构化数据"""
     raw = _clean_raw_magnet(raw_raw)
     decoded = urllib.parse.unquote(raw)
-    btih = _hash_from_raw(decoded)
-    if not btih:
+    m = HASH_RE.search(decoded)
+    if not m:
+        return None
+    # 归一化不出来的 btih（如 32 位全 hex 的歧义串）不能拿来当主键：宁可判为无效磁力，
+    # 也不要用一个不存在的 hash 入库。
+    btih = normalize_infohash(m.group(1))
+    if btih is None:
+        log.warning("磁力里的 btih 无法归一化，按无效磁力处理: %r", m.group(1)[:64])
         return None
 
     dn_match = re.search(r"[?&]dn=([^&]+)", decoded)
@@ -231,17 +242,7 @@ def _iter_json_magnets(text_sources: Iterable[str]):
                 yield raw
 
 
-def _hash_from_raw(raw: str) -> Optional[str]:
-    """返回未解码原文中直接可见的 btih（parse_magnet 所用同一正则），否则 None。"""
-    match = HASH_RE.search(raw)
-    return match.group(1).upper() if match else None
-
-
 def _append_unique_magnet(items: List[dict], seen: Set[str], raw: str) -> None:
-    # parse_magnet 前先用同一正则短路：重复 hash 不必再做 unquote、二次匹配和
-    # dict 构造。raw 中直读的 hash 与 parse_magnet 解码后的结果一致。
-    if _hash_from_raw(raw) in seen:
-        return
     item = parse_magnet(raw)
     if item and item["hash"] not in seen:
         seen.add(item["hash"])

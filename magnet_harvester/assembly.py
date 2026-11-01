@@ -29,7 +29,8 @@ from magnet_harvester.transitions import (
 )
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.qbit_client import QBittorrentClient
-from magnet_harvester.services.clipboard_monitor import ClipboardMonitor
+from magnet_harvester.jobs import JobStore
+from magnet_harvester.services.ingest import IngestService
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.observability import ObservabilitySnapshot
 from magnet_harvester.services.qbit_sync import QBitSyncLoop
@@ -53,7 +54,26 @@ class AppRuntime:
             await self.ctx.core.crawler.start()
         except Exception as e:
             log.error("crawler 启动失败（降级模式，爬取功能不可用）: %s", e)
+
+        # 上次进程在「加入 qB」的中途没了：那批条目停在 adding，界面没有任何重试入口。
+        # 先退回可重试状态，再起同步循环（同步认得 error，qB 里真有的会长回去）。
+        pipeline = self.ctx.core.pipeline
+        if pipeline is not None and hasattr(pipeline, "recover_interrupted"):
+            try:
+                recovered = await pipeline.recover_interrupted()
+                if recovered:
+                    log.warning("回收 %d 条被中断的「加入 qB」记录", recovered)
+            except Exception as e:
+                log.error("回收被中断的「加入 qB」记录失败: %s", e)
+
         await self.sync_loop.start()
+        # 上次没干完的抓取任务接着做（重启不丢活）
+        ingest = self.ctx.app_services.ingest
+        if ingest is not None:
+            try:
+                await ingest.resume_pending()
+            except Exception as e:
+                log.error("续跑未完成的抓取任务失败: %s", e)
 
     async def stop(self):
         try:
@@ -61,12 +81,12 @@ class AppRuntime:
         except Exception as e:
             log.error("sync_loop 关闭失败: %s", e)
 
-        # 剪贴板监控先于任务管理器关闭：残留 _running 状态会被正确清理
-        if self.ctx.app_services.clipboard_monitor is not None:
+        # 抓取任务先退回 queued 并让出，任务管理器随后关闭
+        if self.ctx.app_services.ingest is not None:
             try:
-                await self.ctx.app_services.clipboard_monitor.shutdown()
+                await self.ctx.app_services.ingest.shutdown()
             except Exception as e:
-                log.error("clipboard_monitor 关闭失败: %s", e)
+                log.error("ingest 关闭失败: %s", e)
 
         if self.ctx.runtime.bg_manager is not None:
             try:
@@ -104,6 +124,15 @@ def _build_store():
         backend = InMemoryItemStore()
         log.info("使用内存存储")
     return AsyncItemStore(backend)
+
+
+def _build_job_store() -> JobStore:
+    """抓取任务与上报事件的持久化（和资源库共用同一个 SQLite 文件）。
+
+    内存存储模式下任务也落 SQLite（默认路径），保证「重启后未完成的活能接着做」；
+    测试/临时实例通过 STORE_DB_PATH 指到临时库。
+    """
+    return JobStore(db_path=settings.STORE_DB_PATH)
 
 
 def _build_core():
@@ -156,8 +185,10 @@ def _build_services(
     classification,
     downloads,
     stats,
+    crawler=None,
+    jobs=None,
 ):
-    """Application services: observability, actions, sync, clipboard."""
+    """Application services: observability, actions, sync, ingest."""
     broadcaster = WSBroadcaster(bus=bus, store=store)
     observability = ObservabilitySnapshot(
         store=store,
@@ -183,16 +214,22 @@ def _build_services(
         downloads=downloads,
         poll_interval=settings.QBIT_SYNC_INTERVAL,
     )
-    clipboard_monitor = ClipboardMonitor(
-        bus=bus,
-        store=store,
-        classifier=classifier,
-        pipeline=pipeline,
-        action_executor=action_executor,
-        discovery=discovery,
-        task_manager=bg_manager,
-    )
-    return observability, action_executor, sync_loop, clipboard_monitor, broadcaster
+    ingest = None
+    if crawler is not None and jobs is not None:
+        ingest = IngestService(
+            store=store,
+            jobs=jobs,
+            classifier=classifier,
+            crawler=crawler,
+            bus=bus,
+            discovery=discovery,
+            classification=classification,
+            task_manager=bg_manager,
+            job_depth=settings.CRAWLER_MAX_DEPTH,
+            job_concurrency=settings.INGEST_JOB_CONCURRENCY,
+            max_attempts=settings.INGEST_JOB_MAX_ATTEMPTS,
+        )
+    return observability, action_executor, sync_loop, ingest, broadcaster
 
 
 # ── Public API ──────────────────────────────────
@@ -218,7 +255,8 @@ def build_runtime() -> AppRuntime:
     )
 
     stats = SystemStats()
-    observability, action_executor, sync_loop, clipboard_monitor, broadcaster = _build_services(
+    jobs = _build_job_store()
+    observability, action_executor, sync_loop, ingest, broadcaster = _build_services(
         store=store,
         bus=bus,
         pipeline=pipeline,
@@ -229,6 +267,8 @@ def build_runtime() -> AppRuntime:
         classification=classification,
         downloads=downloads,
         stats=stats,
+        crawler=crawler,
+        jobs=jobs,
     )
 
     ctx = AppContext(
@@ -244,12 +284,11 @@ def build_runtime() -> AppRuntime:
             action_executor=action_executor,
             observability=observability,
             item_queries=queries,
-            clipboard_monitor=clipboard_monitor,
+            ingest=ingest,
             broadcaster=broadcaster,
         ),
         runtime=RuntimeState(
             api_key=settings.API_KEY,
-            allow_insecure_write_api=settings.ALLOW_INSECURE_WRITE_API,
             stats=stats,
             bg_manager=bg_manager,
             error_handler=error_handler,

@@ -69,7 +69,7 @@ async def _check_qbit(host: str, user: str, password: str, submit: bool) -> None
         categories = await client.get_categories()
         _record("qB 分类 API", True, f"读取到 {len(categories)} 个分类")
 
-        snapshot, _removed = await client.poll_torrent_snapshot_with_removed()
+        snapshot = await client.poll_torrent_snapshot()
         _record("qB torrent 列表", True, f"当前 {len(snapshot)} 个 torrent")
 
         if not submit:
@@ -93,7 +93,7 @@ async def _check_qbit(host: str, user: str, password: str, submit: bool) -> None
         observed_hash = ""
         for _ in range(10):
             await asyncio.sleep(2)
-            snapshot, _removed = await client.poll_torrent_snapshot_with_removed()
+            snapshot = await client.poll_torrent_snapshot()
             for torrent_hash, torrent in snapshot.items():
                 # 占位 hash 被 qB 截断显示，按名称前缀匹配
                 name = str(torrent.get("name", ""))
