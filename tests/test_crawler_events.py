@@ -309,4 +309,6 @@ async def test_result_extraction_does_not_block_event_loop():
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-    assert heartbeat >= 15
+    # 阈值只用来抓「整段解析卡在事件循环里」：真阻塞时心跳会停在 0–1；
+    # 机器负载高时 2ms 心跳本身也会抖，留出余量避免假红。
+    assert heartbeat >= 5
