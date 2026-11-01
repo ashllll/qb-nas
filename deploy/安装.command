@@ -44,11 +44,11 @@ printf '  docker 可用\n'
 
 if [ -n "${QB_NAS_SRC:-}" ]; then
   printf '  用本机代码：%s\n' "$QB_NAS_SRC"
-  "${SSH[@]}" "mkdir -p /tmp/qb-nas-src" || fail "NAS 上建临时目录失败"
+  "${SSH[@]}" "mkdir -p /vol3/1000/qb-nas-bootstrap/src" || fail "NAS 上建临时目录失败"
   RSYNC=(rsync -a --delete --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude 'tests/' --exclude 'docs/' --exclude 'doc/' --exclude '.env' --exclude '.env.*')
-  "${RSYNC[@]}" "$QB_NAS_SRC/" "$NAS_USER@$NAS_HOST:/tmp/qb-nas-src/" || fail "传代码失败"
-  rsync -a "./" "$NAS_USER@$NAS_HOST:/tmp/qb-nas-src/deploy/" || fail "传安装脚本失败"
-  "${SSH[@]}" "bash /tmp/qb-nas-src/deploy/install.sh --source /tmp/qb-nas-src --prefix '$PREFIX'" 2>&1
+  "${RSYNC[@]}" "$QB_NAS_SRC/" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/" || fail "传代码失败"
+  rsync -a "./" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/deploy/" || fail "传安装脚本失败"
+  "${SSH[@]}" "bash /vol3/1000/qb-nas-bootstrap/src/deploy/install.sh --source /vol3/1000/qb-nas-bootstrap/src --prefix '$PREFIX'" 2>&1
   rc=$?
 else
   # 代码从 NAS 仓库取：优先 stage/resident，退到本次分支，再退到当前分支
