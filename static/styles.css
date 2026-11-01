@@ -1520,3 +1520,153 @@ svg {
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================
+   失败说得清 / 暂停不是失败 —— 状态筛选、暂停配色、通知收敛、危险操作
+   ============================================================ */
+
+/* ---- 统计卡 = 状态筛选（暂停=琥珀：成功路径上的等待，不是失败） ---- */
+.stat {
+  display: block;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) ease,
+    background var(--dur-fast) ease;
+}
+.stat:hover {
+  border-color: var(--border-strong);
+  background: var(--space-2);
+}
+.stat:focus-visible {
+  outline: 2px solid var(--pole-south);
+  outline-offset: 2px;
+}
+.stat[aria-pressed="true"] {
+  border-color: var(--pole-north);
+  background: var(--north-muted);
+}
+.stat-wide {
+  grid-column: 1 / -1;
+}
+.badge-paused {
+  color: var(--warning);
+  background: var(--warning-muted);
+}
+
+/* ---- 状态筛选生效时的可视提示：表格变短不是"丢了" ---- */
+.status-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 8px 12px 0;
+  padding: 4px 10px;
+  color: var(--text-primary);
+  background: var(--north-muted);
+  border: 1px solid var(--pole-north);
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.status-filter-chip[hidden] {
+  display: none;
+}
+.status-filter-chip:focus-visible {
+  outline: 2px solid var(--pole-south);
+  outline-offset: 2px;
+}
+
+/* ---- 通知：一条动作一条；重复折叠成 ×N，带"下一步" ---- */
+.toast-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.toast-text {
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.toast-count {
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.toast-count[hidden] {
+  display: none;
+}
+.toast-hint {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* ---- 连接设置：原因 + 下一步分两行，错误不再只剩 4 秒 ---- */
+.connection-result {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  line-height: 1.5;
+}
+.connection-hint {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.connection-result.error .connection-hint {
+  color: var(--text-secondary);
+}
+.auth-state {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.auth-state.ok {
+  color: var(--success);
+}
+.auth-state.error {
+  color: var(--danger);
+}
+.auth-state.muted {
+  color: var(--text-tertiary);
+}
+
+/* ---- 危险操作弹窗：作用域、分类计数、必勾确认、失败留在原地 ---- */
+.dialog-breakdown {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.dialog-safe {
+  color: var(--text-tertiary);
+}
+.dialog-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.dialog-check .checkbox {
+  margin-top: 2px;
+}
+.dialog-error {
+  margin: 10px 0 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.dialog-error[hidden] {
+  display: none;
+}

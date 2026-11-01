@@ -150,22 +150,61 @@
           <section class="section">
             <h2 class="section-heading">任务概览</h2>
             <div class="stats-grid">
-              <div class="stat">
-                <div class="stat-value" id="totalCount">0</div>
-                <div class="stat-label">发现资源</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value" id="activeCount">0</div>
-                <div class="stat-label">活动下载</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value" id="successCount">0</div>
-                <div class="stat-label">已完成</div>
-              </div>
-              <div class="stat">
-                <div class="stat-value" id="errorCount">0</div>
-                <div class="stat-label">异常</div>
-              </div>
+              <button
+                class="stat active"
+                type="button"
+                data-status="all"
+                aria-pressed="true"
+                onclick="setStatusFilter('all')"
+                title="显示全部状态"
+              >
+                <span class="stat-value" id="totalCount">0</span>
+                <span class="stat-label">全部资源</span>
+              </button>
+              <button
+                class="stat"
+                type="button"
+                data-status="active"
+                aria-pressed="false"
+                onclick="setStatusFilter('active')"
+                title="只看正在提交/排队的条目"
+              >
+                <span class="stat-value" id="activeCount">0</span>
+                <span class="stat-label">进行中</span>
+              </button>
+              <button
+                class="stat"
+                type="button"
+                data-status="paused"
+                aria-pressed="false"
+                onclick="setStatusFilter('paused')"
+                title="只看已加入 qB、当前暂停的条目"
+              >
+                <span class="stat-value" id="pausedCount">0</span>
+                <span class="stat-label">已暂停</span>
+              </button>
+              <button
+                class="stat"
+                type="button"
+                data-status="done"
+                aria-pressed="false"
+                onclick="setStatusFilter('done')"
+                title="只看已完成"
+              >
+                <span class="stat-value" id="successCount">0</span>
+                <span class="stat-label">已完成</span>
+              </button>
+              <button
+                class="stat stat-wide"
+                type="button"
+                data-status="failed"
+                aria-pressed="false"
+                onclick="setStatusFilter('failed')"
+                title="只看失败（带原因）"
+              >
+                <span class="stat-value" id="errorCount">0</span>
+                <span class="stat-label">失败</span>
+              </button>
             </div>
           </section>
         </div>
@@ -236,15 +275,19 @@
             <i data-lucide="download"></i><span>下载</span>
           </button>
           <button
-            class="button danger icon-only"
+            class="button danger"
+            id="clearBtn"
             type="button"
             onclick="openClearDialog()"
-            title="清空资源"
-            aria-label="清空资源"
+            title="清空资源库（需要二次确认）"
           >
-            <i data-lucide="trash-2"></i>
+            <i data-lucide="trash-2"></i><span>清空</span>
           </button>
         </div>
+        <div class="status-filter-chip" id="statusFilterChip" hidden
+             role="button" tabindex="0"
+             onclick="setStatusFilter('all')"
+             onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setStatusFilter('all'); }"></div>
         <nav class="filter-tabs" aria-label="资源分类">
           <button
             class="filter-tab active"
@@ -458,7 +501,8 @@
               </button>
             </div>
             <div class="connection-result" id="cfgResult">
-              尚未测试连接（密码仅保存在服务端，不会回显）
+              <span id="cfgResultText">尚未测试连接（密码仅保存在服务端，不会回显）</span>
+              <span class="connection-hint" id="cfgHint" hidden></span>
             </div>
           </section>
           <section class="section">
@@ -471,9 +515,12 @@
               autocomplete="off"
               placeholder="未配置时留空"
             />
+            <p class="auth-state" id="authState">正在确认服务端鉴权状态…</p>
+            <p class="security-note connection-hint" id="authHint" hidden></p>
             <p class="security-note">
-              密钥仅保存在当前浏览器会话中，用于需要授权的写操作。
+              密钥仅保存在当前浏览器会话中，用于需要授权的写操作；不会写进 URL 或日志。
             </p>
+
           </section>
           <section class="section">
             <h2 class="section-heading">运行状态</h2>
@@ -527,24 +574,38 @@
     </main>
 
     <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-    <dialog id="clearDialog">
+    <dialog id="clearDialog" aria-labelledby="clearTitle">
       <div class="dialog-body">
-        <h2 class="dialog-title">清空资源库？</h2>
+        <h2 class="dialog-title" id="clearTitle">
+          清空资源库里的全部 <span id="clearCount">0</span> 条记录？
+        </h2>
         <p class="dialog-copy">
-          这会移除当前界面中的全部资源记录，但不会删除 qBittorrent
-          中已有的任务。
+          作用范围是 NAS 上的<strong>整个资源库</strong>，不是当前筛选结果。
+          删除后无法恢复。
         </p>
+        <p class="dialog-breakdown" id="clearBreakdown"></p>
+        <p class="dialog-copy dialog-safe">
+          只删这里的记录：qBittorrent 里已有的种子不会被删除，也不会被暂停。
+        </p>
+        <label class="dialog-check">
+          <input class="checkbox" type="checkbox" id="clearConfirmCheck"
+                 onchange="syncClearConfirm()" />
+          <span>我明白这会清空上面列出的全部记录，且不可撤销</span>
+        </label>
+        <p class="dialog-error" id="clearError" hidden></p>
       </div>
       <div class="dialog-actions">
         <button class="button" type="button" onclick="closeClearDialog()">
           取消
         </button>
-        <button class="button danger" type="button" onclick="clearAll()">
-          清空
+        <button class="button danger" type="button" id="clearConfirmBtn"
+                onclick="clearAll()" disabled>
+          清空全部
         </button>
       </div>
     </dialog>
 
+    <script src="/static/time_format.js"></script>
     <script src="/static/api_client.js"></script>
     <script src="/static/item_state.js"></script>
     <script src="/static/app.js"></script>

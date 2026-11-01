@@ -35,6 +35,30 @@ async def _qbit_ok(ctx: AppContext) -> bool:
     return await _qbit_probe.read(ctx.core.qbit.ping)
 
 
+async def _qbit_status(ctx: AppContext) -> dict:
+    """qB 可用性 + 失败原因。
+
+    只回一个 ``ok: bool`` 时，界面只能写「qB 离线」——用户不知道是地址错、
+    密码错还是网络不通。这里把客户端记录的 last_error 一起给出（不含凭据）。
+    """
+    ok = await _qbit_ok(ctx)
+    reason = ""
+    if not ok:
+        try:
+            reason = str(getattr(ctx.core.qbit, "last_error", "") or "")
+        except Exception:
+            reason = ""
+        reason = reason.strip()[:200]
+    return {
+        "ok": ok,
+        "reason": reason or None,
+        # 客户端没留下具体原因时，给一句"该查什么"，不编造原因
+        "hint": None
+        if ok
+        else "检查右侧「连接设置」里的地址与账号，以及 NAS 能否访问 qB（默认 8085 端口）。",
+    }
+
+
 def _ingest_service(ctx: AppContext):
     service = getattr(ctx.app_services, "ingest", None)
     if service is None:
@@ -83,12 +107,11 @@ async def health_v1(ctx: AppContext = Depends(get_context)):
         await ctx.core.store.count()
     except Exception:
         store_ok = False
-    qbit_ok = await _qbit_ok(ctx)
     return {
         "ok": store_ok,
         "version": SERVICE_VERSION,
         "store": {"backend": _store_backend_label(), "ok": store_ok},
-        "qbit": {"ok": qbit_ok},
+        "qbit": await _qbit_status(ctx),
         "crawler": {"ok": _crawler_ready(ctx)},
     }
 
@@ -102,12 +125,11 @@ async def status_v1(
     """最近结果：条目/任务/上报事件 + qB、爬虫可用性。"""
     service = _ingest_service(ctx)
     snapshot = await service.status_snapshot(jobs_limit=jobs)
-    qbit_ok = await _qbit_ok(ctx)
     snapshot.update(
         {
             "version": SERVICE_VERSION,
             "store": {"backend": _store_backend_label()},
-            "qbit": {"ok": qbit_ok},
+            "qbit": await _qbit_status(ctx),
             "crawler": {"ok": _crawler_ready(ctx)},
             "items_total": await ctx.core.store.count(),
         }

@@ -301,22 +301,91 @@ async def update_config(
         )
     except ValueError as exc:
         log.error("配置验证失败: %s", exc)
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "detail": f"qBittorrent 配置不合法：{exc}",
+                "code": "invalid_config",
+                "hint": "地址要写成 http(s)://主机:端口（qB 5.x 默认 8085），用户名/密码与 qB 里的一致。",
+            },
+        ) from exc
     except RuntimeError as exc:
+        # 连接失败：原因留在 detail 里，hint 指向用户真正能改的东西
         log.error("qBittorrent 连接失败: %s", exc)
-        raise HTTPException(status_code=503, detail=f"qBittorrent 连接失败: {exc}") from exc
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "detail": f"连不上 qBittorrent：{exc}",
+                "code": "qbit_connect_failed",
+                "hint": "检查 qB 是否在运行、地址端口是否正确、用户名密码是否匹配，以及 NAS 能否访问这台 qB。",
+            },
+        ) from exc
     except OSError as exc:
+        # 根因（如 Permission denied '/app/.env.tmp'）必须原样给出来，
+        # 否则用户只看到"持久化失败"却不知道是权限/挂载问题。
         log.error("qBittorrent 配置持久化失败: %s", exc)
-        raise HTTPException(status_code=500, detail="qBittorrent 配置持久化失败") from exc
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "detail": f"qBittorrent 配置写入失败：{exc}",
+                "code": "config_persist_failed",
+                "hint": "这次修改没有生效。NAS 上的配置目录不可写（权限或挂载问题），请让部署侧检查该目录的属主与权限后重试。",
+            },
+        ) from exc
+
+
+@router.get("/api/auth")
+async def auth_status(ctx: AppContext = Depends(get_context)):
+    """公开接口：只回答"服务端是否启用了 API Key 校验"，不含任何凭据。
+
+    界面据此说清三种情况：服务端未配 key（任何人可写）/ 已启用（要填 key）/
+    key 不对（401 由错误处理器说明）。
+    """
+    required = bool((getattr(ctx.runtime, "api_key", "") or "").strip())
+    return {
+        "required": required,
+        "scheme": "X-API-Key" if required else None,
+        "websocket": "first-message" if required else None,
+    }
 
 
 @router.delete("/api/items")
-async def clear_items(ctx: AppContext = Depends(get_context), _=Depends(require_api_key)):
+async def clear_items(
+    scope: str = Query(
+        "",
+        description="危险操作必须显式声明作用域；清空整个资源库用 scope=all",
+    ),
+    ctx: AppContext = Depends(get_context),
+    _=Depends(require_api_key),
+):
+    """清空资源库。
+
+    缺陷 ⑥：不带参数就清空全部，一次误触（脚本、curl、UI 双击）就可能清库。
+    现在必须显式写 ``?scope=all``，否则 400 且不执行任何删除。
+    """
+    if scope != "all":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "detail": "DELETE /api/items 需要显式声明作用域，本次没有删除任何记录",
+                "code": "delete_scope_required",
+                "hint": "清空整个资源库请用 DELETE /api/items?scope=all；界面上的「清空」会自动带上这个参数。",
+            },
+        )
     try:
-        return await _actions(ctx).clear_items()
-    except Exception:
+        result = await _actions(ctx).clear_items()
+        log.warning("资源库被清空（scope=all）：%s", result)
+        return result
+    except Exception as exc:
         log.exception("清空 items 失败")
-        raise HTTPException(status_code=503, detail="清空 items 失败")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "detail": f"清空资源库失败：{exc}",
+                "code": "clear_items_failed",
+                "hint": "资源库没有被清空。稍后重试；持续失败请查 NAS 日志。",
+            },
+        ) from exc
 
 
 @router.get("/api/categories")

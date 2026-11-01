@@ -377,7 +377,7 @@ def test_search_clear_health_categories_and_config_routes():
         health = client.get("/api/health")
         categories = client.get("/api/categories")
         config = client.get("/api/config")
-        cleared = client.delete("/api/items")
+        cleared = client.delete("/api/items", params={"scope": "all"})
 
     assert search.status_code == 200
     assert search.json()["count"] == 1
@@ -572,7 +572,12 @@ def test_update_config_returns_500_when_persist_fails():
         )
 
     assert resp.status_code == 500
-    assert resp.json()["detail"] == "qBittorrent 配置持久化失败"
+    detail = resp.json()["detail"]
+    # 缺陷 ⑤：根因（OSError 原文）必须原样给出来，不能被"持久化失败"一句话吞掉
+    assert detail["code"] == "config_persist_failed"
+    assert "qBittorrent 配置写入失败" in detail["detail"]
+    assert "disk full" in detail["detail"]
+    assert detail["hint"]
     assert ctx.core.qbit is old_qbit
     assert old_qbit.closed is False
 

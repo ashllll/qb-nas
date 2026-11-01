@@ -125,9 +125,14 @@ class WSBroadcaster:
             self._active_ws.add(ws)
             return
 
-    async def handle_connection(self, ws: WebSocket):
-        """Full WebSocket lifecycle: accept, init, keep-alive, cleanup."""
-        await ws.accept()
+    async def handle_connection(self, ws: WebSocket, already_accepted: bool = False):
+        """Full WebSocket lifecycle: accept, init, keep-alive, cleanup.
+
+        ``already_accepted``：端点需要先 accept 才能把鉴权失败的原因（4401 +
+        reason）送达到浏览器；重复 accept 会抛错，所以这里要认这个标记。
+        """
+        if not already_accepted:
+            await ws.accept()
         self._initializing_ws[ws] = []
         try:
             try:
@@ -182,6 +187,10 @@ class WSBroadcaster:
             return
 
         message_type = str(payload.get("type", "")).lower()
+        if message_type == "auth":
+            # 握手阶段已校验；这里只确认，不回显、不记录 key
+            await self._send_control(ws, {"type": "auth_ok"})
+            return
         if message_type == "ping":
             await self._send_control(ws, {"type": "pong"})
             return
@@ -295,6 +304,37 @@ class WSBroadcaster:
             self._active_ws.difference_update(dead)
 
 
+_AUTH_TIMEOUT_SECONDS = 8.0
+
+
+def _key_matches(supplied: str, expected: str) -> bool:
+    """常量时间比较；非 ASCII 一律按失败处理（与 REST 一致）。"""
+    try:
+        return bool(supplied) and secrets.compare_digest(supplied, expected)
+    except TypeError:
+        return False
+
+
+async def _first_frame_api_key(ws: WebSocket) -> tuple[str, str]:
+    """等第一帧 ``{"type":"auth","api_key":...}``；超时/非法返回 ("", "")。"""
+    try:
+        raw = await asyncio.wait_for(ws.receive_text(), timeout=_AUTH_TIMEOUT_SECONDS)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        return "", ""
+    except Exception:
+        log.debug("等待 WebSocket 认证帧失败", exc_info=True)
+        return "", ""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return "", ""
+    if not isinstance(payload, dict):
+        return "", ""
+    if str(payload.get("type", "")).lower() != "auth":
+        return "", ""
+    return str(payload.get("api_key") or "").strip(), "auth"
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     app = getattr(ws, "app", None)
@@ -323,31 +363,49 @@ async def websocket_endpoint(ws: WebSocket):
         return
 
     # ── API Key 认证（与写接口一致的策略） ──────────────────
-    # API_KEY 为空时保持向后兼容（本地回环部署默认不校验）；
-    # 非空时必须携带匹配的 api_key 查询参数 —— 浏览器 WebSocket
-    # API 无法自定义请求头，因此走 query param（见 static/app.js）。
-    expected_key = getattr(getattr(ctx, "runtime", None), "api_key", "") or ""
-    # 与 REST（utils/auth.py）一致：strip 后为空视为未配置认证（兼容模式）
-    if expected_key.strip():
-        # 与 REST（utils/auth.py）一致：两侧 strip 后比较
-        supplied = ws.query_params.get("api_key", "").strip()
-        expected = expected_key.strip()
-        # compare_digest 对非 ASCII 字符串会抛 TypeError，统一按认证失败处理
-        try:
-            authorized = supplied and secrets.compare_digest(supplied, expected)
-        except TypeError:
-            authorized = False
+    # API_KEY 为空时保持向后兼容（本地回环部署默认不校验）。
+    # 非空时两种凭据都接受：
+    #   1) 旧客户端：?api_key=... 查询参数（仍兼容，但会进 URL/代理日志）；
+    #   2) 新客户端：握手后的第一帧 {"type":"auth","api_key":"..."}，
+    #      Key 不进 URL、不进访问日志（见 static/app.js）。
+    expected = (getattr(getattr(ctx, "runtime", None), "api_key", "") or "").strip()
+    # 必须先 accept：握手阶段直接 close 会被浏览器当成 1006/403，
+    # 界面就分不清「没带 key」「key 不对」「服务端没配 key」。
+    await ws.accept()
+    if expected:
+        supplied = (ws.query_params.get("api_key") or "").strip()
+        # 是否"带过 key"决定原因是 api_key_invalid 还是 api_key_missing
+        supplied_any = bool(supplied)
+        authorized = _key_matches(supplied, expected)
+        if not authorized and not supplied_any:
+            # 旧客户端把 key 放在 URL；带了但不对就不必再等帧，直接说 key 不对
+            frame_key, _frame_type = await _first_frame_api_key(ws)
+            supplied_any = supplied_any or bool(frame_key)
+            authorized = _key_matches(frame_key, expected)
         if not authorized:
-            log.warning("WebSocket 连接因缺少或错误的 API Key 被拒绝")
+            reason = "api_key_invalid" if supplied_any else "api_key_missing"
+            # 只记原因，绝不记 key
+            log.warning("WebSocket 鉴权失败：%s", reason)
             try:
-                await ws.close(code=4401, reason="unauthorized")
+                await ws.close(code=4401, reason=reason)
             except Exception:
                 log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
             return
+    # 明确告诉界面服务端是否启用鉴权（不含凭据），界面据此显示"未启用/已启用"
+    try:
+        await ws.send_text(
+            json.dumps(
+                {"type": "hello", "auth_required": bool(expected)},
+                ensure_ascii=False,
+            )
+        )
+    except Exception:
+        log.debug("hello 发送失败（连接可能已断开）", exc_info=True)
+        return
     app_services = getattr(ctx, "app_services", None)
     broadcaster = getattr(app_services, "broadcaster", None)
     if broadcaster:
-        await broadcaster.handle_connection(ws)
+        await broadcaster.handle_connection(ws, already_accepted=True)
     else:
         log.error("WebSocket 连接被拒绝：broadcaster 未初始化")
         try:
