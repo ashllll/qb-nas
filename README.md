@@ -40,7 +40,7 @@ Magnet Harvester（`qb-nas`）是一套**自托管的磁力采集 → 分类 →
 
 ![Magnet Harvester 架构图](docs/assets/architecture.png)
 
-- **可交互动效版**：[`docs/assets/architecture.html`](docs/assets/architecture.html)（带数据流动效，本地打开或下载后浏览器查看）
+- **可交互动效版**：[`docs/assets/architecture.html`](docs/assets/architecture.html)（单文件，浏览器打开即播数据流动效；GitHub 文件页只预览源码，不执行脚本）
 
 一条磁力的完整路径：
 
