@@ -15,16 +15,12 @@
          不解析内容（片段本来就不会发给服务器，但也不该留在历史里）。 */
       (function dropLegacySecrets() {
         try {
+          /* 旧版本只写过 localStorage/sessionStorage；cookie 与 IndexedDB 从未用过，
+             这里也就不碰，免得「清理」本身变成一次存储写入。 */
           window.localStorage.removeItem("magnet-api-key");
           window.sessionStorage.removeItem("magnet-api-key");
         } catch (error) {
           /* 存储不可用：本来也没打算写 */
-        }
-        try {
-          // 只写一个过期指令，不读 cookie 内容：即使旧版本从没写过，也只是无害的一句。
-          document.cookie = "magnet-api-key=; Max-Age=0; path=/; SameSite=Lax";
-        } catch (error) {
-          /* 忽略 */
         }
         try {
           if (window.location.hash) {
