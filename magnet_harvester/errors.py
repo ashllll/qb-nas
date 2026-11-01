@@ -12,6 +12,8 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
+from magnet_harvester.utils.timeutil import utc_now
+
 log = logging.getLogger(__name__)
 
 
@@ -40,7 +42,7 @@ class ErrorRecord:
     severity: ErrorSeverity
     message: str
     details: dict[str, object]
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=utc_now)
     traceback: Optional[str] = None
     count: int = 1
     resolved: bool = False
@@ -88,7 +90,7 @@ class ErrorHandler:
                 record = self._errors[error_id]
                 record.count += 1
                 record.details.update(details or {})
-                record.timestamp = datetime.now()
+                record.timestamp = utc_now()
                 # BUG-26: 只在第一次出现时记录 traceback，重复时不覆盖
                 if exc and record.traceback is None:
                     record.traceback = traceback.format_exc()
