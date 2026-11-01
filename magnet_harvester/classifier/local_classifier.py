@@ -13,6 +13,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, List
 
+from magnet_harvester.classifier.limits import clip_name
 from magnet_harvester.classifier.rule import (
     ClassificationRule,
     FallbackRule,
@@ -54,7 +55,12 @@ class LocalClassificationEngine:
         self._cache_lock = threading.Lock()
 
     def classify_name(self, name: str) -> dict:
-        """分类单个名称：按规则链优先级匹配，返回统一结果格式。"""
+        """分类单个名称：按规则链优先级匹配，返回统一结果格式。
+
+        先截到 ``MAX_CLASSIFY_CHARS`` 再查缓存：超长名字既不改变判类结果，还会让
+        规则里的惰性量词退化成平方级、把整条事件循环钉住（见 limits.py）。
+        """
+        name = clip_name(name)
         if self._cache_enabled:
             with self._cache_lock:
                 cached = self._cache.get(name)
@@ -77,6 +83,7 @@ class LocalClassificationEngine:
 
     def _classify_uncached(self, name: str) -> dict:
         """走完整规则链分类（不经过缓存）。"""
+        name = clip_name(name)
         for rule in self._rule_chain:
             try:
                 result = rule.apply(name)
