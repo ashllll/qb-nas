@@ -1,5 +1,5 @@
 """
-测试爬虫分辨率过滤 — 爬取结果必须只保留 2160p / 4k
+测试分辨率过滤开关：默认不过滤（多条全收），显式配置时才过滤。
 """
 
 import sys
@@ -23,7 +23,7 @@ def test_keep_2160p():
             "magnet:?xt=urn:btih:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB&dn=Test+Movie+1080p+BluRay"
         ),
     ]
-    filtered = filter_resolution_items(items)
+    filtered = filter_resolution_items(items, allowed=("2160p", "4k"))
     assert len(filtered) == 1
     assert "2160p" in filtered[0]["name"]
 
@@ -34,7 +34,7 @@ def test_keep_4k():
             "magnet:?xt=urn:btih:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC&dn=Test+Movie+4K+BluRay"
         ),
     ]
-    filtered = filter_resolution_items(items)
+    filtered = filter_resolution_items(items, allowed=("2160p", "4k"))
     assert len(filtered) == 1
 
 
@@ -47,7 +47,7 @@ def test_drop_non_preferred_resolutions():
             "magnet:?xt=urn:btih:EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE&dn=Test+Movie+720p+WEB"
         ),
     ]
-    filtered = filter_resolution_items(items)
+    filtered = filter_resolution_items(items, allowed=("2160p", "4k"))
     assert len(filtered) == 0
 
 
@@ -66,7 +66,7 @@ def test_mixed():
             "magnet:?xt=urn:btih:4444444444444444444444444444444444444444&dn=Some.Movie.4K.UHD"
         ),
     ]
-    filtered = filter_resolution_items(items)
+    filtered = filter_resolution_items(items, allowed=("2160p", "4k"))
     assert len(filtered) == 2
     hashes = {f["hash"] for f in filtered}
     assert "FFFFFFFFFFF11111111111111111111111111111" in hashes

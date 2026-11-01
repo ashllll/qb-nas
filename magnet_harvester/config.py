@@ -26,7 +26,8 @@ class CrawlerConfig:
     http_first: bool = True
     disable_resources: bool = True
     block_ads: bool = True
-    allowed_resolutions: tuple[str, ...] = ("2160p", "4k")
+    # 默认不做分辨率过滤：产品要求「多条全收」，1080p/720p 也是有效资源。
+    allowed_resolutions: tuple[str, ...] = ()
     wait_until: str = "load"
     delay_before_return_html: float = 1.0
     scan_full_page: bool = True
@@ -39,6 +40,13 @@ class CrawlerConfig:
     # — v0.9.0 新增 —
     max_retries: int = 1
     check_robots_txt: bool = False
+    # — HTTP 优先取页（v3.1） —
+    browser_fallback: bool = True
+    http_impersonate: str = "chrome"
+    retry_backoff: float = 0.4
+    per_host_min_interval: float = 0.15
+    per_host_concurrency: int = 4
+    browser_max_pages: int = 2
     # mihomo/Clash fake-IP (198.18.0.0/15) 放行开关，开启后 SSRF 检查豁免该网段
     allow_fake_ip: bool = False
 
@@ -51,6 +59,10 @@ class CrawlerConfig:
         self.scroll_delay = max(0.0, float(self.scroll_delay))
         self.max_scroll_steps = max(0, int(self.max_scroll_steps))
         self.max_retries = max(0, int(self.max_retries))
+        self.retry_backoff = max(0.0, float(self.retry_backoff))
+        self.per_host_min_interval = max(0.0, float(self.per_host_min_interval))
+        self.per_host_concurrency = max(1, int(self.per_host_concurrency))
+        self.browser_max_pages = max(1, int(self.browser_max_pages))
         if self.wait_until not in {"load", "networkidle"}:
             self.wait_until = "load"
 
@@ -90,7 +102,7 @@ class Settings(BaseSettings):
     CRAWLER_HTTP_FIRST: bool = True
     CRAWLER_DISABLE_RESOURCES: bool = True
     CRAWLER_BLOCK_ADS: bool = True
-    CRAWLER_ALLOWED_RESOLUTIONS: str = "2160p,4k"
+    CRAWLER_ALLOWED_RESOLUTIONS: str = ""  # 空 = 不做分辨率过滤（多条全收）
     CRAWLER_WAIT_UNTIL: str = "load"
     CRAWLER_DELAY_BEFORE_HTML: float = 1.0
     CRAWLER_SCAN_FULL_PAGE: bool = True
@@ -101,7 +113,13 @@ class Settings(BaseSettings):
     CRAWLER_REMOVE_OVERLAYS: bool = True
     CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
     CRAWLER_MAX_RETRIES: int = 1
+    CRAWLER_RETRY_BACKOFF: float = 0.4
     CRAWLER_CHECK_ROBOTS_TXT: bool = False
+    CRAWLER_BROWSER_FALLBACK: bool = True
+    CRAWLER_HTTP_IMPERSONATE: str = "chrome"
+    CRAWLER_PER_HOST_MIN_INTERVAL: float = 0.15
+    CRAWLER_PER_HOST_CONCURRENCY: int = 4
+    CRAWLER_BROWSER_MAX_PAGES: int = 2
     CRAWLER_ALLOW_FAKE_IP: bool = False  # mihomo/Clash fake-IP(198.18.0.0/15) SSRF 豁免
 
     FS_BASE_PATH: str = ""  # 脚本可创建目录的真实路径（如 Z:\downloads），为空则跳过 mkdir
@@ -169,7 +187,13 @@ class Settings(BaseSettings):
                 remove_overlay_elements=self.CRAWLER_REMOVE_OVERLAYS,
                 remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
                 max_retries=self.CRAWLER_MAX_RETRIES,
+                retry_backoff=self.CRAWLER_RETRY_BACKOFF,
                 check_robots_txt=self.CRAWLER_CHECK_ROBOTS_TXT,
+                browser_fallback=self.CRAWLER_BROWSER_FALLBACK,
+                http_impersonate=self.CRAWLER_HTTP_IMPERSONATE,
+                per_host_min_interval=self.CRAWLER_PER_HOST_MIN_INTERVAL,
+                per_host_concurrency=self.CRAWLER_PER_HOST_CONCURRENCY,
+                browser_max_pages=self.CRAWLER_BROWSER_MAX_PAGES,
                 allow_fake_ip=self.CRAWLER_ALLOW_FAKE_IP,
             )
         return self._crawler_config

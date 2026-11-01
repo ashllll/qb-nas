@@ -86,7 +86,8 @@ def test_extract_base32_btih_magnet():
     items = extract_from_text(text)
 
     assert len(items) == 1
-    assert items[0]["hash"] == "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    # 归一化：base32 解码成 40 位大写 hex，和 hex 写法共用同一个去重键
+    assert items[0]["hash"] == "00443214C74254B635CF84653A56D7C675BE77DF"
     assert items[0]["name"] == "Base32.Movie.2160p"
 
 
