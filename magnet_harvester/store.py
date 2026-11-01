@@ -117,6 +117,12 @@ class ItemStore(Protocol):
     async def add(self, item: MagnetItem) -> bool: ...
     async def get(self, hash_key: str) -> Optional[MagnetItem]: ...
     async def update(self, hash_key: str, **fields) -> bool: ...
+    async def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool: ...
     async def remove(self, hash_key: str) -> bool: ...
     async def list(
         self,
@@ -171,6 +177,20 @@ class AsyncItemStore:
 
     async def update(self, hash_key: str, **fields) -> bool:
         return await self._invoke(self._backend.update, hash_key, **fields)
+
+    async def update_if_status(
+        self,
+        hash_key: str,
+        expected_statuses: set[TaskStatus],
+        **fields,
+    ) -> bool:
+        """仅当当前状态匹配时更新；比较与写入在同一把锁/同一条 SQL 里完成。"""
+        return await self._invoke(
+            self._backend.update_if_status,
+            hash_key,
+            expected_statuses,
+            **fields,
+        )
 
     async def remove(self, hash_key: str) -> bool:
         return await self._invoke(self._backend.remove, hash_key)
