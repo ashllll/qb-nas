@@ -1,0 +1,23 @@
+# 构建上下文只需要：requirements.txt、magnet_harvester/、static/
+.git/
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+tests/
+docs/
+doc/
+config/
+scripts/
+node_modules/
+*.md
+.env
+.env.*
+data/
+logs/
+deploy/
+*.log
+.DS_Store
