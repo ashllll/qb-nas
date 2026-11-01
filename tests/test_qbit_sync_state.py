@@ -134,3 +134,17 @@ if __name__ == "__main__":
     test_take_recently_removed_returns_and_clears()
     asyncio.run(test_poll_passes_current_rid_to_fetch())
     print("=== qB sync state tests passed! ===")
+
+
+@pytest.mark.asyncio
+async def test_recently_removed_cache_is_bounded():
+    """take_recently_removed 只是兼容缓存；长期运行不能无限累积。"""
+    state = QBitSyncState()
+
+    async def fetch(rid):
+        return {"rid": rid + 1, "torrents_removed": [f"{i:040x}" for i in range(500)]}
+
+    for _ in range(20):
+        await state.poll(fetch)
+
+    assert len(state._recently_removed) <= 4096
