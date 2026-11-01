@@ -47,3 +47,20 @@ def test_is_valid_infohash_only_accepts_canonical_form():
     assert not is_valid_infohash(HEX_LOWER)
     assert not is_valid_infohash(BASE32)
     assert not is_valid_infohash(None)
+
+
+def test_ambiguous_32_char_hex_like_token_is_rejected():
+    """32 位全是 hex 字符的串：按 base32 解会得到一个不存在的 infohash。
+
+    站点把 40 位 hex 截断成 32 位很常见，而 base32 infohash 恰好全由 hex 字符
+    组成的概率约 2^-32。宁可判为无法识别，也不能用错误的 hash 入库/去重。
+    """
+    truncated_hex = "abcdef234567abcdef234567abcdef23"
+    assert len(truncated_hex) == 32
+    assert normalize_infohash(truncated_hex) is None
+    assert normalize_infohash(f"magnet:?xt=urn:btih:{truncated_hex}&dn=x") is None
+
+
+def test_real_base32_with_non_hex_letters_still_decodes():
+    # BASE32 里含 G/N 等非 hex 字符，不会被歧义规则误伤
+    assert normalize_infohash(BASE32) == HEX_UPPER
