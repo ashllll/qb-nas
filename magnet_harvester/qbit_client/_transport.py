@@ -231,7 +231,8 @@ class QBitTransport:
                     # 最后一次重试仍失败，跳出由底部统一记录+抛出
                     break
 
-                if r.status_code == 200:
+                if 200 <= r.status_code < 300:
+                    # qB 5.x 部分端点从 200 改成 204（空 body），2xx 一律算成功
                     self._record_success()
                     return r
 

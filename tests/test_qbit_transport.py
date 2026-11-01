@@ -150,3 +150,21 @@ async def test_successful_request_resets_consecutive_failures():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+@pytest.mark.asyncio
+async def test_request_accepts_2xx_no_content():
+    """qB 5.x 部分端点从 200 改成 204（空 body），不能当成失败。"""
+    client = FakeAsyncClient()
+
+    async def respond(method, url, **kw):
+        return FakeResponse(text="", status_code=204)
+
+    client._request = respond
+    stats = QBittorrentStats()
+    transport = _make_transport(client, stats)
+
+    r = await transport.request("POST", "/torrents/add")
+
+    assert r.status_code == 204
+    assert stats.consecutive_failures == 0
