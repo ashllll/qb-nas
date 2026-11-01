@@ -106,8 +106,7 @@ class QBittorrentClient:
                 # 「qB 离线」。这里把「没有回应」这件事本身记成原因，再让取消继续传播。
                 log.info("qBittorrent ping 探测被取消（超时或调用方取消）")
                 self.stats.error(
-                    "qBittorrent 没有响应：这次探测在超时前没返回（qB 可能离线，"
-                    "或地址/端口不通）"
+                    "qBittorrent 没有响应：这次探测在超时前没返回（qB 可能离线，或地址/端口不通）"
                 )
                 raise
             except httpx.TimeoutException as e:

@@ -107,9 +107,7 @@ async def test_58_error_items_stay_in_sync_through_three_deltas_without_state():
     # 缺 state 的就是它们：旧实现会把它们判成「无法识别: 空」。
     delta = {
         "rid": 2,
-        "torrents": {
-            h.lower(): {"progress": 0.0, "dlspeed": 0, "eta": 120} for h in hashes[31:]
-        },
+        "torrents": {h.lower(): {"progress": 0.0, "dlspeed": 0, "eta": 120} for h in hashes[31:]},
     }
     qbit = ScriptedQbit(
         [

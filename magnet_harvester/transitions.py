@@ -147,7 +147,9 @@ class ClassificationTransitions(_TransitionBase):
             error_msg=None,
         )
         if not changed:
-            log.warning("classified 跳过 %s（不在 classifying，可能已被并发删除或转入下载）", hash_key)
+            log.warning(
+                "classified 跳过 %s（不在 classifying，可能已被并发删除或转入下载）", hash_key
+            )
             return
         # 重新读取以拿到 update 后的 updated_at（作为事件版本号）
         item = await self._store.get(hash_key)

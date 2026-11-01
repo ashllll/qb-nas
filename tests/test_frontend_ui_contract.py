@@ -70,9 +70,7 @@ class ApiMock:
                 body = json.loads(request.post_data)
             except json.JSONDecodeError:
                 body = request.post_data
-        self.requests.append(
-            {"url": request.url, "method": request.method, "body": body}
-        )
+        self.requests.append({"url": request.url, "method": request.method, "body": body})
         path = request.url.split("?")[0]
         for key, response in self.status_overrides.items():
             if path.endswith(key):
@@ -132,9 +130,7 @@ async def _open(
 async def test_server_time_is_utc_not_browser_local(static_server_url):
     """缺陷 ①：UTC 容器的裸时间戳被当成本地时间 → 8 分钟前显示成 8 小时前。"""
     async with async_playwright() as playwright:
-        browser, page, _ = await _open(
-            playwright, static_server_url, timezone_id="Asia/Shanghai"
-        )
+        browser, page, _ = await _open(playwright, static_server_url, timezone_id="Asia/Shanghai")
         result = await page.evaluate(
             """
             () => {
@@ -274,7 +270,9 @@ async def test_repeated_identical_failures_collapse_into_one_toast(static_server
         )
         toasts = page.locator("#toastStack .toast")
         count = await toasts.count()
-        collapsed = page.locator('#toastStack .toast[data-toast-key="error:qBittorrent 配置持久化失败"]')
+        collapsed = page.locator(
+            '#toastStack .toast[data-toast-key="error:qBittorrent 配置持久化失败"]'
+        )
         collapsed_count = await collapsed.locator(".toast-count").inner_text()
         await browser.close()
     assert count == 3, "通知最多 3 条并存"
@@ -367,9 +365,7 @@ async def test_clear_dialog_states_scope_and_needs_explicit_confirmation(static_
     """缺陷 ⑥：清空必须说清作用域（整个库，不是当前筛选），且要点两下加勾选。"""
     api = ApiMock()
     async with async_playwright() as playwright:
-        browser, page, _ = await _open(
-            playwright, static_server_url, api=api
-        )
+        browser, page, _ = await _open(playwright, static_server_url, api=api)
         await page.evaluate(
             """
             () => handleMsg({type: 'init', items: [
@@ -394,9 +390,7 @@ async def test_clear_dialog_states_scope_and_needs_explicit_confirmation(static_
         await page.locator("#clearConfirmCheck").check()
         await page.locator("#clearConfirmBtn").click()
         await page.wait_for_timeout(200)
-        delete_requests = [
-            request for request in api.requests if request["method"] == "DELETE"
-        ]
+        delete_requests = [request for request in api.requests if request["method"] == "DELETE"]
         dialog_closed = await page.locator("#clearDialog").evaluate("(el) => el.open")
         await browser.close()
 

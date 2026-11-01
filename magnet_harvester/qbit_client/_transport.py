@@ -126,8 +126,10 @@ class QBitTransport:
                     # 只要没有 401/403、会话 cookie 已下发，就当登录成功。
                     body = r.text.strip().lower()
                     session_cookie = any("SID" in name for name in r.cookies.keys())
-                    if r.status_code in (200, 204) and body in ("", "ok.", "ok") and (
-                        session_cookie or body in ("ok.", "ok")
+                    if (
+                        r.status_code in (200, 204)
+                        and body in ("", "ok.", "ok")
+                        and (session_cookie or body in ("ok.", "ok"))
                     ):
                         client.cookies.update(r.cookies)
                         self._authenticated = True
@@ -182,9 +184,7 @@ class QBitTransport:
         lowered = body.lower()
         if "banned" in lowered:
             return "qBittorrent 封禁了这台 NAS 的 IP（失败登录次数过多），等一会或到 qB 里解封"
-        return (
-            f"qBittorrent 拒绝了登录（HTTP {response.status_code}）：用户名或密码不对"
-        )
+        return f"qBittorrent 拒绝了登录（HTTP {response.status_code}）：用户名或密码不对"
 
     async def _handle_auth_retry(self, client, auth_retry_count: int, max_auth_retries: int) -> int:
         """Handle 403 response by re-authenticating. Returns new retry count or raises."""
@@ -225,9 +225,7 @@ class QBitTransport:
                 if needs_auth:
                     ok = await self._login()
                     if not ok:
-                        raise RuntimeError(
-                            self.last_login_error or "qBittorrent 登录失败"
-                        )
+                        raise RuntimeError(self.last_login_error or "qBittorrent 登录失败")
 
                 client = await self._get_client()
 

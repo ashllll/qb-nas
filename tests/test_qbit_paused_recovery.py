@@ -65,10 +65,7 @@ async def test_legacy_error_items_recover_to_paused(tmp_path):
     backend = SQLiteItemStore(tmp_path / "items.db")
     store = AsyncItemStore(backend)
     hashes = _seed_error_items(backend, 58)
-    snapshot = {
-        hash_key.lower(): {"state": "stoppedDL", "progress": 0.0}
-        for hash_key in hashes
-    }
+    snapshot = {hash_key.lower(): {"state": "stoppedDL", "progress": 0.0} for hash_key in hashes}
 
     bus = MessageBus()
     downloads = DownloadTransitions(store=store, bus=bus)

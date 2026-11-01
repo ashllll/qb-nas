@@ -158,9 +158,7 @@ class QBitSyncLoop:
             limit=_MAX_STORE_ITEMS,
         )
         if len(tracked_items) >= _MAX_STORE_ITEMS:
-            log.error(
-                "tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items)
-            )
+            log.error("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items))
             await self._bus.emit(
                 Event(
                     EventType.ERROR,

@@ -67,12 +67,8 @@ def test_concurrent_writes_across_item_and_job_stores(tmp_path):
             errors.append(exc)
 
     threads = [
-        threading.Thread(target=item_writer, args=(worker,))
-        for worker in range(WORKERS)
-    ] + [
-        threading.Thread(target=job_writer, args=(worker,))
-        for worker in range(WORKERS)
-    ]
+        threading.Thread(target=item_writer, args=(worker,)) for worker in range(WORKERS)
+    ] + [threading.Thread(target=job_writer, args=(worker,)) for worker in range(WORKERS)]
     for thread in threads:
         thread.start()
     for thread in threads:

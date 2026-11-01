@@ -85,8 +85,6 @@ def test_status_rejects_dns_rebinding_host(monkeypatch):
 def test_status_treats_non_ascii_key_as_invalid_not_500(monkeypatch):
     app = _client(monkeypatch, mode="strict", api_key=NON_ASCII_KEY)
     with asgi_client(app) as client:
-        resp = client.get(
-            "/api/auth", headers={"X-API-Key": NON_ASCII_KEY.encode("latin-1")}
-        )
+        resp = client.get("/api/auth", headers={"X-API-Key": NON_ASCII_KEY.encode("latin-1")})
     assert resp.status_code == 200
     assert resp.json()["key"] == "invalid"

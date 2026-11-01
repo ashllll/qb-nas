@@ -127,7 +127,9 @@ class TestAPIKeyAuth:
         assert {"qbit_host", "qbit_username", "qbit_password_configured"} <= set(body)
         # 密码（含掩码）绝不回显；写仍要 key
         assert "qbit_password" not in body
-        assert client.put("/api/config", json={"qbit_host": "http://new.host:8080"}).status_code == 401
+        assert (
+            client.put("/api/config", json={"qbit_host": "http://new.host:8080"}).status_code == 401
+        )
 
     def test_config_get_with_valid_key_succeeds(self, client):
         r = client.get("/api/config", headers={"X-API-Key": "test-secret-key-123"})

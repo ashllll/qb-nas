@@ -21,6 +21,7 @@ services:
       args:
         PYPI_INDEX: "@@PYPI_INDEX@@"
         WITH_BROWSER: "@@WITH_BROWSER@@"
+        GIT_COMMIT: "@@GIT_COMMIT@@"
     image: @@IMAGE@@
     container_name: @@CONTAINER@@
     restart: unless-stopped

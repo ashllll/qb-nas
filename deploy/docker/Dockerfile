@@ -3,6 +3,12 @@
 #   构建上下文 = 代码根目录；镜像内以 uid 1000 运行，数据和日志走 /vol3 的 bind mount。
 FROM python:3.11-slim
 
+# 构建来源：install.sh 传入 --git-ref 的短 SHA 或 --commit；镜像标签与容器环境都带它，
+# 线上镜像因此能对回确切 commit（docker image inspect / printenv GIT_COMMIT）。
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
+
 # 容器 TZ 只影响日志与容器内本地钟，不参与数据语义：数据/接口时间戳一律
 # UTC-aware（约定 §1）。日志用 UTC，便于和宿主机 `date -u` 逐条对账。
 ENV PYTHONUNBUFFERED=1 \

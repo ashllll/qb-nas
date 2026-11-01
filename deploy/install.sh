@@ -31,6 +31,7 @@ IMAGE=qb-nas-center:local
 MODE_NAME=production
 SOURCE=""
 GIT_REF=""
+GIT_COMMIT_ARG=""
 GIT_REPO=/vol1/1000/github/qb-nas
 API_KEY=""
 ROTATE_KEY=0
@@ -69,6 +70,7 @@ usage() {
   --image TAG         镜像标签（默认 qb-nas-center:local）
   --source DIR        用这个目录的代码（默认=本脚本所在仓库）
   --git-ref REF       从 --git-repo 的 git 对象取代码
+  --commit SHA        记录本次构建对应的 commit（--source 时用，写进镜像标签）
   --git-repo DIR      NAS 上的代码仓库（默认 /vol1/1000/github/qb-nas）
   --api-key KEY       指定 API Key（默认首次随机生成，之后保留）
   --rotate-key        重新生成 API Key
@@ -94,6 +96,7 @@ while [ $# -gt 0 ]; do
     --image) IMAGE=${2:?}; shift 2 ;;
     --source) SOURCE=${2:?}; shift 2 ;;
     --git-ref) GIT_REF=${2:?}; shift 2 ;;
+    --commit) GIT_COMMIT_ARG=${2:?}; shift 2 ;;
     --git-repo) GIT_REPO=${2:?}; shift 2 ;;
     --api-key) API_KEY=${2:?}; shift 2 ;;
     --rotate-key) ROTATE_KEY=1; shift ;;
@@ -227,6 +230,14 @@ find "$STAGE" -type f -name '*.sh' -exec chmod 755 {} +
 
 [ -f "$STAGE/magnet_harvester/main.py" ] || die "代码里没有 magnet_harvester/main.py"
 [ -f "$STAGE/requirements.txt" ] || die "代码里没有 requirements.txt"
+
+# --source 默认记 local；要给镜像留下可追溯的 commit 就显式 --commit（或用 --git-ref 自动取）
+if [ -n "$GIT_COMMIT_ARG" ]; then
+  printf '%s' "$GIT_COMMIT_ARG" | grep -Eq '^[0-9a-f]{7,40}$' \
+    || die "--commit 需要 7–40 位十六进制 commit SHA，收到：$GIT_COMMIT_ARG"
+  COMMIT=$GIT_COMMIT_ARG
+fi
+printf '%s\n' "$COMMIT" > "$STAGE/COMMIT"
 
 # ── 2. 落地目录与代码 ────────────────────────────────────────────────────────
 step "2/8 落地代码与目录"
@@ -426,6 +437,7 @@ sed -e "s|@@PROJECT@@|$PROJECT|g" \
     -e "s|@@LOG_DIR@@|$LOGS|g" \
     -e "s|@@PYPI_INDEX@@|$PYPI_INDEX|g" \
     -e "s|@@WITH_BROWSER@@|$WITH_BROWSER|g" \
+    -e "s|@@GIT_COMMIT@@|$COMMIT|g" \
     "$SELF_DIR/compose.yaml.tpl" > "$COMPOSE"
 chmod 640 "$COMPOSE"
 # 备用 compose（界面不能构建时用）：官方镜像 + 首次启动装依赖

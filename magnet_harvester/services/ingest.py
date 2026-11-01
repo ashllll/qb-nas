@@ -103,7 +103,9 @@ class IngestService:
 
         lock = await self._event_lock(event_id)
         async with lock:
-            return await self._handle_event_once(req, event_id=event_id, value_hash=value_hash, source=source)
+            return await self._handle_event_once(
+                req, event_id=event_id, value_hash=value_hash, source=source
+            )
 
     async def _event_lock(self, event_id: str) -> asyncio.Lock:
         """按 event_id 取一把串行锁（有上限，满了先清掉没人持有的）。"""
