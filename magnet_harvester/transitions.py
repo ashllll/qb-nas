@@ -384,6 +384,20 @@ class DownloadTransitions(_TransitionBase):
 
         fields: dict = {}
 
+        if mapped["status"] is None:
+            # 增量里 state 还没到（字段未到 ≠ 状态未知）：只同步进度，
+            # 不动 status / torrent_state / error_msg，更不许把正在下载的种子说成失败。
+            if item.progress != mapped["progress"]:
+                fields["progress"] = mapped["progress"]
+            if fields:
+                await self.status_changed(
+                    hash_key,
+                    fields=fields,
+                    previous_status=item.status,
+                )
+                return True
+            return False
+
         if item.status != mapped["status"]:
             fields["status"] = mapped["status"]
         if item.progress != mapped["progress"]:

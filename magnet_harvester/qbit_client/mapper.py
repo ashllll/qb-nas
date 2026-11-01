@@ -58,6 +58,17 @@ class TorrentStatusMapper:
         downloaded = float(torrent.get("downloaded") or 0)
         total_size = float(torrent.get("total_size") or 0)
 
+        # 「字段还没到」不是「状态无法识别」：qB 增量只带变化字段，合并后的快照里
+        # 若仍没有 state（首次见到、全量也还没补到），状态保持不动，别把用户正在
+        # 下载的种子说成失败。status=None 表示本轮不判状态，只同步进度。
+        if not state:
+            return {
+                "status": None,
+                "progress": round(progress * 100, 1),
+                "torrent_state": None,
+                "error_msg": None,
+            }
+
         # qB 侧异常状态时给出可读原因，供前端区分「文件缺失」与「状态未知」，
         # 避免笼统的「暂时异常」误导（同步层只报告状态，不存在自动重试）
         error_msg: str | None = None
@@ -85,8 +96,8 @@ class TorrentStatusMapper:
             status = TaskStatus.downloading
         else:
             status = TaskStatus.error
-            error_msg = f"qB 种子状态无法识别: {raw_state or '空'}"
-            log.warning("qB 种子状态无法识别，按失败处理（原始状态=%r）", raw_state or "")
+            error_msg = f"qB 种子状态无法识别: {raw_state}"
+            log.warning("qB 种子状态无法识别，按失败处理（原始状态=%r）", raw_state)
 
         return {
             "status": status,

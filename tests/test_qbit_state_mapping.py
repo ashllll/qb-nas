@@ -121,11 +121,23 @@ def test_error_states_carry_readable_reason(state):
     assert result["error_msg"] == f"qB 种子状态异常: {state}"
 
 
-def test_empty_state_is_error_and_logs_warning(caplog):
+def test_missing_state_is_not_reported_as_failure():
+    """B8：增量只带变化字段时快照里可能还没有 state——「字段还没到」不是失败。
+
+    这里 status=None 表示本轮不判状态（reconcile 只同步进度、状态保持不动），
+    绝不能写成 error，否则用户一在 qB 里恢复下载，资源库就整片红字。
+    """
+    for torrent in ({"progress": 0.4}, {"state": "", "progress": 0.4}, {"state": "   "}):
+        result = TorrentStatusMapper.map(torrent)
+        assert result["status"] is None, torrent
+        assert result["error_msg"] is None, torrent
+        assert result["torrent_state"] is None, torrent
+
+
+def test_empty_state_does_not_log_failure_warning(caplog):
     with caplog.at_level(logging.WARNING, logger="magnet_harvester.qbit_client.mapper"):
-        result = TorrentStatusMapper.map({"state": "", "progress": 0.0})
-    assert result["status"] == TaskStatus.error
-    assert result["error_msg"] == "qB 种子状态无法识别: 空"
+        TorrentStatusMapper.map({"state": "", "progress": 0.0})
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_unknown_state_keeps_raw_string_and_warns(caplog):
