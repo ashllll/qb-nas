@@ -19,7 +19,7 @@ B="$WORK/qb-nas"
 mkdir -p "$B/app" "$B/data" "$B/logs" "$B/backup"
 
 echo "▶ 收代码"
-rsync -a --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' \
+rsync -a --exclude '.git/' --exclude '.venv' --exclude 'node_modules/' --exclude '__pycache__/' \
   --exclude '.pytest_cache/' --exclude '.ruff_cache/' --exclude '.blueprint-tmp/' --exclude 'tests/' \
   --exclude 'mac_agent/' --exclude 'scripts/' --exclude 'docs/' --exclude 'doc/' --exclude '.env' \
   --exclude '.env.*' --exclude 'data/' --exclude 'logs/' --exclude '.DS_Store' --exclude '导出/' \
