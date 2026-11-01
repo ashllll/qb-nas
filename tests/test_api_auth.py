@@ -138,6 +138,7 @@ class TestAPIKeyAuth:
         client.app.state.ctx.core.bus.subscribe(EventType.ITEMS_CLEARED, capture)
         r = client.delete(
             "/api/items",
+            params={"scope": "all"},
             headers={"X-API-Key": "test-secret-key-123"},
         )
 

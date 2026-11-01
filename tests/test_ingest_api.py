@@ -193,7 +193,8 @@ def test_health_needs_no_key_and_hides_credentials(tmp_path):
     assert body["ok"] is True
     assert body["version"]
     assert body["store"]["ok"] is True
-    assert body["qbit"] == {"ok": False}
+    assert body["qbit"]["ok"] is False
+    assert "reason" in body["qbit"]
     assert set(body) == {"ok", "version", "store", "qbit", "crawler"}
     assert API_KEY not in resp.text
 
