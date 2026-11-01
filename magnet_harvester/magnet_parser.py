@@ -60,6 +60,35 @@ BASE64_MAX_LENGTH = 300
 BASE64_VALID_RE = re.compile(r"^[a-zA-Z0-9+/]+={0,2}$")
 
 
+# ── infohash 归一化 ──────────────────────
+
+_HEX40_RE = re.compile(r"[0-9a-fA-F]{40}")
+_BASE32_RE = re.compile(r"[A-Za-z2-7]{32}")
+
+
+def normalize_infohash(value: str) -> Optional[str]:
+    """把一个 infohash 统一成 40 位大写 hex。
+
+    - hex（40 位）：统一大写；
+    - base32（32 位，BTIH 的另一种写法）：解码成 20 字节再转 hex；
+    - 其他：返回 None（调用方自行决定怎么处理）。
+
+    ``magnet:?xt=urn:btih:`` 允许这两种写法混用；不归一化就会出现
+    「同一个种子两条记录」，去重直接失效。
+    """
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
+    if _HEX40_RE.fullmatch(candidate):
+        return candidate.upper()
+    if _BASE32_RE.fullmatch(candidate):
+        try:
+            return base64.b32decode(candidate.upper()).hex().upper()
+        except (binascii.Error, ValueError):
+            return None
+    return None
+
+
 # ── 核心解析函数 ──────────────────────────
 
 
@@ -70,7 +99,7 @@ def parse_magnet(raw_raw: str) -> Optional[dict]:
     m = HASH_RE.search(decoded)
     if not m:
         return None
-    btih = m.group(1).upper()
+    btih = normalize_infohash(m.group(1)) or m.group(1).upper()
 
     dn_match = re.search(r"[?&]dn=([^&]+)", decoded)
     name = urllib.parse.unquote(dn_match.group(1)) if dn_match else f"Unknown_{btih[:8]}"
