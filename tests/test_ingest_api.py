@@ -101,7 +101,10 @@ def post_ingest(client, kind, value, event_id="evt-1", key=API_KEY):
     )
 
 
-def test_ingest_requires_api_key(tmp_path):
+def test_ingest_requires_api_key(tmp_path, monkeypatch):
+    from magnet_harvester.config import settings
+
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     app, _ctx = make_app(tmp_path)
 
     with asgi_client(app) as client:
@@ -199,8 +202,11 @@ def test_health_needs_no_key_and_hides_credentials(tmp_path):
     assert API_KEY not in resp.text
 
 
-def test_status_read_is_public_but_ingest_write_requires_key(tmp_path):
-    """页面首屏要读真实状态（qB/采集/Mac 上报）；写入口仍必须带钥匙。"""
+def test_status_read_is_public_but_ingest_write_requires_key(tmp_path, monkeypatch):
+    """严格模式：读公开；写入口仍必须带钥匙（N23 默认 trusted 见信任模型测试）。"""
+    from magnet_harvester.config import settings
+
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     app, _ctx = make_app(tmp_path)
 
     with asgi_client(app) as client:

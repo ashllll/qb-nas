@@ -39,8 +39,15 @@ BAD_KEY = "wrong" + "-k"
 
 
 @pytest.fixture
-def app_ctx():
-    """Create test app and yield (app, ctx) with cleanup."""
+def app_ctx(monkeypatch):
+    """Create test app and yield (app, ctx) with cleanup.
+
+    这一组锁的是 strict（必须 key）语义；N23 默认的 trusted 直连见
+    tests/test_auth_trust_model.py。
+    """
+    from magnet_harvester.config import settings
+
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     app, ctx, _ = make_test_app()
     yield app, ctx
     if ctx.runtime.bg_manager:

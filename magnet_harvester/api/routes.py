@@ -5,7 +5,6 @@ REST routes backed by AppContext dependency injection.
 from __future__ import annotations
 
 import logging
-import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -22,7 +21,7 @@ from magnet_harvester.context.app_context import (
 )
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity
 from magnet_harvester.models import CrawlRequest, DownloadRequest, QBitConfigUpdate, TaskStatus
-from magnet_harvester.utils.auth import require_api_key
+from magnet_harvester.utils.auth import require_api_key, resolve_auth
 from magnet_harvester.utils.infohash import normalize_infohash
 
 log = logging.getLogger(__name__)
@@ -281,10 +280,10 @@ async def health_check(ctx: AppContext = Depends(get_context)):
 
 @router.get("/api/config")
 async def get_config():
-    """读取 qB 连接配置：只读开放，写仍要 key（见 update_config）。
+    """读取 qB 连接配置：只读开放，写按 AUTH_MODE 判定（见 update_config）。
 
-    无钥匙的浏览器（手机/别人的电脑）也要看见真实的地址与用户名，否则页面只能
-    显示占位符，用户会以为配置丢了。密码（含掩码）绝不回显，只回答是否已配置。
+    浏览器不保存 key，也要看见真实的地址与用户名，否则页面只能显示占位符，
+    用户会以为配置丢了。密码（含明文/掩码/长度）绝不回显，只回答是否已配置。
     """
     return {
         "qbit_host": settings.QBIT_HOST,
@@ -341,40 +340,21 @@ async def update_config(
         ) from exc
 
 
-def _this_key_state(request: Request, ctx: AppContext) -> tuple[bool, str]:
-    """这份请求的钥匙状态：not_required / missing / valid / invalid。
-
-    页面所有徽章、圆点、按钮都读这一份状态，所以「这个浏览器没钥匙」与
-    「钥匙被拒」必须由服务端一次说清，不能等某个写操作 401 才反推。
-    只回状态，不回声钥匙；非 ASCII 一律按 invalid（与 REST/WS 一致）。
-    """
-    expected = (getattr(ctx.runtime, "api_key", "") or "").strip()
-    if not expected:
-        return False, "not_required"
-    supplied = (request.headers.get("x-api-key") or "").strip()
-    if not supplied:
-        return True, "missing"
-    try:
-        matches = secrets.compare_digest(supplied, expected)
-    except TypeError:
-        matches = False
-    return True, ("valid" if matches else "invalid")
-
-
 @router.get("/api/auth")
 async def auth_status(request: Request, ctx: AppContext = Depends(get_context)):
-    """公开接口：回答服务端是否要求钥匙 + 这份请求的钥匙状态，不含任何凭据。
+    """公开接口：回答这一页现在能不能写，不含任何凭据。
 
-    界面据此说清四种情况：未启用鉴权 / 本浏览器没钥匙（只读）/ 钥匙被拒（只读）/
-    钥匙可用（可写）。不再用「某个接口 401」去猜整体状态。
+    N23 之后页面不再持钥匙，所以这里回答的是「访问模式 + 这份请求的写权限」：
+
+    * ``trusted`` 模式（默认）：局域网内打开就是 ``write:true``，页面无横幅、
+      按钮可用、WS 直连；带不带 key 都不影响。
+    * ``strict`` 模式（未来外网/测试）：``required:true``、``write:false``，
+      页面进入只读并给人话提示；程序用 ``X-API-Key`` 仍可写。
+    * Host/Origin 不可信时：``write:false`` + ``reason`` 说明原因（防 rebinding）。
+
+    判定与写接口共用 ``utils/auth.resolve_auth``，不在这里另算一套。
     """
-    required, key_state = _this_key_state(request, ctx)
-    return {
-        "required": required,
-        "scheme": "X-API-Key" if required else None,
-        "websocket": "first-message" if required else None,
-        "key": key_state,
-    }
+    return resolve_auth(request).as_auth_payload()
 
 
 @router.delete("/api/items")

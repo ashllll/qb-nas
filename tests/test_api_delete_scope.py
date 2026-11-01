@@ -78,8 +78,11 @@ def test_delete_with_explicit_scope_all_clears(client):
     assert _count(ctx) == 0
 
 
-def test_delete_without_key_still_401_and_keeps_everything(client):
+def test_delete_without_key_still_401_and_keeps_everything(client, monkeypatch):
     c, ctx = client
+    from magnet_harvester.config import settings
+
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     ctx.runtime.api_key = SECRET
 
     resp = c.delete("/api/items")

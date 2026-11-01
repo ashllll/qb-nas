@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI
 
 from magnet_harvester.api.error_contract import install_error_handlers
+from magnet_harvester.config import settings
 from tests._client import asgi_client
 from tests.fixtures import make_test_app
 
@@ -20,7 +21,10 @@ SECRET = "unit-test-key-a1"
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    # 这一组锁的是 strict（必须 key）下的错误体；N23 默认 trusted 见
+    # tests/test_auth_trust_model.py。
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     app, ctx, _ = make_test_app()
     install_error_handlers(app)
     with asgi_client(app) as c:
@@ -44,8 +48,9 @@ def test_401_without_key_says_key_is_missing(client):
     _assert_contract(body)
     assert body["code"] == "api_key_missing"
     assert "没有带" in body["detail"] or "缺少" in body["detail"]
-    # 下一步指向真实路径：从菜单栏打开会自动交钥匙（不是让用户去翻 .env）
-    assert "菜单栏" in body["hint"]
+    # 下一步指向程序通道（浏览器页面在局域网内不需要 key）
+    assert "X-API-Key" in body["hint"]
+    assert "菜单栏" not in body["hint"]
 
 
 def test_401_with_wrong_key_says_key_is_invalid(client):
@@ -63,7 +68,8 @@ def test_401_with_wrong_key_says_key_is_invalid(client):
     _assert_contract(body)
     assert body["code"] == "api_key_invalid"
     assert "不正确" in body["detail"]
-    assert "退出本机" in body["hint"]
+    assert "API_KEY" in body["hint"]
+    assert "退出本机" not in body["hint"]
 
 
 def test_401_never_echoes_the_supplied_key(client):

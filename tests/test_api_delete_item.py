@@ -37,7 +37,11 @@ def _seed(ctx, hash_key: str, name: str) -> None:
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    # 这组用例锁 strict（必须 key）语义；N23 默认 trusted 见信任模型测试。
+    from magnet_harvester.config import settings
+
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     bus = MessageBus()
     app, ctx, qbit = make_test_app(bus=bus)
     install_error_handlers(app)

@@ -15,11 +15,29 @@ def test_security_posture_allows_loopback_without_api_key():
     settings.validate_security_posture()
 
 
-def test_security_posture_rejects_exposed_unauthenticated_writes():
+def test_security_posture_trusted_mode_allows_lan_writes_without_key():
+    """N23 默认：trusted 模式不再因「非 loopback + 无 key」拒绝启动。
+
+    信任边界交给端口绑定 + Host/Origin 防护；这是用户定下的正式档口径，
+    升级必须不改生产配置就生效。
+    """
     settings = Settings(
         SERVICE_HOST="0.0.0.0",
         API_KEY="",
         ALLOW_INSECURE_WRITE_API=False,
+        AUTH_MODE="trusted",
+    )
+
+    settings.validate_security_posture()
+
+
+def test_security_posture_strict_mode_rejects_exposed_unauthenticated_writes():
+    """显式切到 strict（未来外网）时，Keep 住原来的保守逻辑：没 key 不许对外。"""
+    settings = Settings(
+        SERVICE_HOST="0.0.0.0",
+        API_KEY="",
+        ALLOW_INSECURE_WRITE_API=False,
+        AUTH_MODE="strict",
     )
 
     with pytest.raises(RuntimeError, match="Refusing"):

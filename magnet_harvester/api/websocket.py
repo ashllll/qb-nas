@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketState
 
 from magnet_harvester.bus import Event, MessageBus
 from magnet_harvester.store import ItemStore
+from magnet_harvester.utils.auth import resolve_auth
 from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
@@ -362,22 +363,28 @@ async def websocket_endpoint(ws: WebSocket):
             log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
         return
 
-    # ── API Key 认证（与写接口一致的策略） ──────────────────
-    # API_KEY 为空时保持向后兼容（本地回环部署默认不校验）。
-    # 非空时只接受握手后的第一帧 {"type":"auth","api_key":"..."}：
-    # key 不进 URL、不进代理/访问日志（见 static/app.js）。
-    # 查询串里的 api_key 一律不读——进了 URL 就已经泄露，服务端接受它
-    # 等于奖励这种写法；旧通道随本轮移除（约定第 3 条）。
+    # ── 授权（与写接口共用 utils/auth.resolve_auth） ─────────
+    # trusted（默认）：局域网页面直连，不需要 key；strict：第一帧带
+    # {"type":"auth","api_key":...}。key 不进 URL/查询串/日志。
+    # Host/Origin 已由入口中间件挡过一次，这里再判一次是防御纵深。
+    auth = resolve_auth(ws)
+    if not auth.host_ok or not auth.origin_ok:
+        log.warning("WebSocket 连接被拒绝：%s", auth.reason)
+        try:
+            await ws.close(code=4403, reason=auth.reason)
+        except Exception:
+            log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
+        return
+
     expected = (getattr(getattr(ctx, "runtime", None), "api_key", "") or "").strip()
     # 必须先 accept：握手阶段直接 close 会被浏览器当成 1006/403，
     # 界面就分不清「没带 key」「key 不对」「服务端没配 key」。
     await ws.accept()
-    if expected:
+    if auth.required and not auth.trusted:
         frame_key, _frame_type = await _first_frame_api_key(ws)
         # 是否"带过 key"决定原因是 api_key_invalid 还是 api_key_missing
         supplied_any = bool(frame_key)
-        authorized = _key_matches(frame_key, expected)
-        if not authorized:
+        if not _key_matches(frame_key, expected):
             reason = "api_key_invalid" if supplied_any else "api_key_missing"
             # 只记原因，绝不记 key
             log.warning("WebSocket 鉴权失败：%s", reason)
@@ -386,11 +393,16 @@ async def websocket_endpoint(ws: WebSocket):
             except Exception:
                 log.debug("ws.close 失败（连接可能已断开）", exc_info=True)
             return
-    # 明确告诉界面服务端是否启用鉴权（不含凭据），界面据此显示"未启用/已启用"
+    # 明确告诉界面这个连接要不要 key（不含凭据）；trusted 下即使服务端配了
+    # API_KEY，页面也不需要它，所以 auth_required 跟随 auth.required。
     try:
         await ws.send_text(
             json.dumps(
-                {"type": "hello", "auth_required": bool(expected)},
+                {
+                    "type": "hello",
+                    "auth_required": auth.required,
+                    "mode": auth.mode,
+                },
                 ensure_ascii=False,
             )
         )

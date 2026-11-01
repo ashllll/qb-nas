@@ -61,6 +61,9 @@ class _FakeBroadcaster:
 
 @pytest.fixture
 def client(monkeypatch):
+    # 这一组锁的是「非信任模式（未来外网）」的旧语义：写必须带 key。
+    # 默认的 N23 信任模式见 tests/test_auth_trust_model.py。
+    monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     monkeypatch.setattr(assembly_module, "MagnetCrawler", _FakeCrawler)
     monkeypatch.setattr(assembly_module, "QBittorrentClient", _FakeQbit)

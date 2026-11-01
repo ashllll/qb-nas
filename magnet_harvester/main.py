@@ -14,6 +14,7 @@ from magnet_harvester.api.error_contract import install_error_handlers
 from magnet_harvester.api.ingest_routes import router as ingest_router
 from magnet_harvester.api.pages import STATIC_DIR, router as pages_router
 from magnet_harvester.api.routes import router as api_router
+from magnet_harvester.api.security import install_security_guard
 from magnet_harvester.api.websocket import router as ws_router
 from magnet_harvester.assembly import build_runtime
 from magnet_harvester.config import settings
@@ -84,6 +85,8 @@ app = FastAPI(title="Magnet Harvester v3.0", lifespan=lifespan)
 # 约定第 2 条：非 2xx 一律 {detail, code, hint}（401 要分清缺失/不对）
 install_error_handlers(app)
 _configure_cors(app)
+# Host（DNS rebinding）与跨源写（CSRF）在入口统一挡；详见 api/security.py
+install_security_guard(app)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(pages_router)

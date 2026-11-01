@@ -179,8 +179,15 @@ class Settings(BaseSettings):
     INGEST_JOB_CONCURRENCY: int = 2
     INGEST_JOB_MAX_ATTEMPTS: int = 2
 
-    API_KEY: str = ""  # 为空则禁用 API Key 认证（向后兼容）
+    API_KEY: str = ""  # 程序通道（Mac 代理等）的 X-API-Key；浏览器永远不保存它
     ALLOW_INSECURE_WRITE_API: bool = False
+    # 授权模型（N23）：trusted = 局域网内页面直接读写（默认，升级即用）；
+    # strict = 写接口必须带正确 X-API-Key（给未来暴露到局域网之外的部署）。
+    # 两种模式都校验 Host / Origin / Sec-Fetch-Site，见 utils/auth.py。
+    AUTH_MODE: str = "trusted"
+    # 额外允许的 Host（逗号分隔，例如 nas.example.com）。IP、localhost、
+    # 单标签主机名与 *.local 默认已允许；反向代理/域名访问时把域名填在这里。
+    TRUSTED_HOSTS: str = ""
     CORS_ALLOWED_ORIGINS: str = ""  # 为空则禁用 CORS（只允许同域），逗号分隔多个域名
 
     SITE_COOKIES: str = "{}"  # JSON: {"domain": "cookie1=val1; cookie2=val2"}
@@ -448,8 +455,18 @@ class Settings(BaseSettings):
         self._write_env_values(path, updates)
         log.info("qBittorrent 配置已落盘：%s（600，同目录临时文件 + 原子替换）", path)
 
+    def auth_mode_normalized(self) -> str:
+        """AUTH_MODE 的唯一解释：只认 strict，其余一律 trusted（默认）。"""
+        return "strict" if str(self.AUTH_MODE or "").strip().lower() == "strict" else "trusted"
+
     def validate_security_posture(self) -> None:
-        """启动自检：先报配置事实源，再拒绝无鉴权的对外写接口。"""
+        """启动自检：先报配置事实源，再拒绝无鉴权的对外写接口。
+
+        N23 起默认是 trusted（局域网内写接口直接放行）：这是用户定下的部署口径，
+        不再因「有非 loopback 监听 + 无 API_KEY」拒绝启动；但必须把信任边界喊清楚，
+        让部署的人知道写接口是靠 Host/Origin 防护 + 端口绑定圈住的。
+        strict 模式保持原来的保守逻辑：非 loopback 且没有 API_KEY 时拒绝启动。
+        """
         self.log_config_source()
         host = self.SERVICE_HOST.strip().lower()
         loopback = host == "localhost"
@@ -458,6 +475,15 @@ class Settings(BaseSettings):
                 loopback = ipaddress.ip_address(host).is_loopback
             except ValueError:
                 loopback = False
+
+        if self.auth_mode_normalized() == "trusted":
+            if not loopback and not self.API_KEY.strip():
+                log.warning(
+                    "AUTH_MODE=trusted：写接口在局域网内直接放行（无 API_KEY）。"
+                    "信任边界是端口绑定范围 + Host/Origin/Sec-Fetch-Site 校验；"
+                    "要暴露到局域网之外，请设 AUTH_MODE=strict 并配置 API_KEY 与 TRUSTED_HOSTS。"
+                )
+            return
 
         if loopback or self.API_KEY.strip() or self.ALLOW_INSECURE_WRITE_API:
             return
