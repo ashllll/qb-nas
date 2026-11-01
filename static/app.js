@@ -1842,6 +1842,11 @@ async function ensureWriteAuth(actionLabel) {
     await loadAuthState();
   }
   if (auth.write === true) return true;
+  if (auth.write === null) {
+    // 仍然问不到（服务端 500 / 网络断）：不冒充「只读」，让请求自己失败，
+    // 由发起动作的那一处报真实原因（连不上 / 服务端错误），故障归故障。
+    return true;
+  }
   notifyAuthBlocked(actionLabel);
   return false;
 }

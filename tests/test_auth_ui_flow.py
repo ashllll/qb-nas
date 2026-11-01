@@ -303,6 +303,35 @@ async def test_readonly_mode_is_honest_and_never_sends_writes(static_server_url)
 
 
 @pytest.mark.asyncio
+async def test_auth_probe_failure_is_unknown_not_readonly(static_server_url):
+    """问不到 /api/auth（500）时如实说「无法确认」，不把页面误判成只读、不冒充故障。"""
+    api = UiApiMock(
+        status_override={"/api/auth": (500, {"detail": "boom", "code": "internal_error"})}
+    )
+    async with async_playwright() as playwright:
+        browser, _, page, mock = await _open(playwright, static_server_url, api=api)
+        state = await page.evaluate(
+            """
+            () => ({
+              mode: document.body.dataset.authMode,
+              text: document.getElementById('authState').textContent,
+              saveDisabled: document.getElementById('saveConfigBtn').disabled,
+            })
+            """
+        )
+        await page.locator("#cfgHost").fill("http://192.168.20.193:8085")
+        await page.locator("#saveConfigBtn").click()
+        await page.wait_for_timeout(250)
+        await browser.close()
+
+    puts = [r for r in mock.requests if r["method"] == "PUT"]
+    assert state["mode"] == "unknown"
+    assert "无法确认访问状态" in state["text"]
+    assert state["saveDisabled"] is False
+    assert len(puts) == 1, "问不到授权状态不等于只读：写操作先尝试，交给服务端回答"
+
+
+@pytest.mark.asyncio
 async def test_real_status_failure_is_still_red(static_server_url):
     """真实故障照旧红：状态接口 500 不能被说成「没授权」。"""
     api = UiApiMock(
