@@ -33,15 +33,14 @@ let wsWasConnected = false;
 let wsLastMessageAt = 0;
 let wsWatchdog = null;
 let wsHello = null;
-/* ---- 授权状态：这一页唯一的事实源 ----------------------------------
-   服务端 /api/auth 直接回答两件事：要不要钥匙、这份请求的钥匙算不算数
-   （missing/invalid/valid/not_required）。所有徽章、圆点、按钮、保存并测试
-   都从这里取值：没钥匙 = 只读（不是故障），钥匙被拒 = 只读 + 告知重取，
-   接口/网络失败才是真正的红。 */
-let auth = { probe: "idle", required: null, keyState: "unknown" };
+/* ---- 访问状态：这一页唯一的事实源 ----------------------------------
+   N23：浏览器不保存任何密钥。服务端 /api/auth 直接回答这份请求能不能写
+   （trusted / readonly / unknown）。所有徽章、圆点、按钮、保存并测试都读
+   这一份：局域网内 trusted = 直接可用；严格模式 readonly = 只读 + 人话；
+   接口/网络失败才是真正的红，缺钥匙不再是一种「故障」。 */
+let auth = { probe: "idle", mode: null, trusted: false, write: null, keyState: "unknown", reason: "" };
 let statusSnapshotOk = null; // null=还没读过；false=这次没读到（≠没有上报）
 let lastAuthCode = "";
-let keyChangeTimer = null;
 let itemsRequestSeq = 0;
 let statusRequestSeq = 0;
 let statusInFlight = null;
@@ -154,20 +153,21 @@ function nextReconnectDelay() {
 }
 
 function sendWsAuth(sock) {
-  const key = apiClient.getKey();
+  // N23：浏览器不持钥匙。第一帧只声明「我要订阅实时事件」，不带任何凭据；
+  // 信任模式服务端直接放行，严格模式下页面本来就是只读、不会走到这里。
   try {
-    sock.send(JSON.stringify({ type: "auth", api_key: key }));
+    sock.send(JSON.stringify({ type: "auth" }));
   } catch (error) {
-    addLog(`实时通道认证发送失败：${error.message}`, "error");
+    addLog(`实时通道订阅失败：${error.message}`, "error");
   }
 }
 
 function connectWS() {
   clearTimeout(reconnectTimer);
   const mode = authMode();
-  if (mode === "anonymous" || mode === "rejected") {
-    // 只读浏览器不发起注定 4401 的握手：不刷日志，也不把缺钥匙画成红灯。
-    setRealtimeReadOnly(mode);
+  if (mode === "readonly") {
+    // 只读设备不发起注定 4401 的握手：不刷日志，也不把只读画成红灯。
+    setRealtimeReadOnly();
     return;
   }
   setWsState("checking", "连接中");
@@ -202,14 +202,25 @@ function connectWS() {
     const code = Number(event?.code || 0);
     const reason = String(event?.reason || "");
     if (code === 4401) {
-      // 鉴权失败：停止自动重连（每 2 秒重试只会刷服务端日志，用户也什么都看不到）
-      const missing = reason === "api_key_missing" || (!reason && !apiClient.getKey());
-      auth.required = true;
+      // 严格模式拒绝：停止自动重连（每 2 秒重试只会刷服务端日志）
+      auth.mode = "strict";
+      auth.trusted = false;
+      auth.write = false;
       auth.probe = "ok";
-      auth.keyState = missing ? "missing" : "invalid";
+      auth.keyState = reason === "api_key_invalid" ? "invalid" : "missing";
+      auth.reason = "strict_mode";
       renderAuthState();
-      setRealtimeReadOnly(authMode());
+      setRealtimeReadOnly();
       notifyAuthBlocked("实时事件");
+      return;
+    }
+    if (code === 4403) {
+      // 入口护栏拒绝了 Host/Origin（DNS rebinding / 跨源），不是网络抖动
+      auth.trusted = false;
+      auth.write = false;
+      renderAuthState();
+      setRealtimeReadOnly();
+      addLog("实时通道被服务端拒绝：这个地址不在允许列表里", "error");
       return;
     }
     const delay = nextReconnectDelay();
@@ -252,10 +263,9 @@ function watchWs() {
 function handleMsg(msg) {
   switch (msg.type) {
     case "hello":
-      // 握手完成：服务端告诉界面它是否启用了鉴权（不含任何凭据）
+      // 握手完成：服务端告诉界面这次连接的模式（不含任何凭据）
       wsHello = msg;
-      auth.required = Boolean(msg.auth_required);
-      if (!auth.required) auth.keyState = "not_required";
+      if (typeof msg.mode === "string") auth.mode = msg.mode;
       wsReconnectAttempt = 0;
       setWsState("online", "已连接");
       renderAuthState();
@@ -410,7 +420,12 @@ function handleMsg(msg) {
 async function loadConfig() {
   try {
     const data = await apiClient.fetch("/api/config");
-    document.getElementById("cfgHost").value = data.qbit_host || "";
+    const hostInput = document.getElementById("cfgHost");
+    hostInput.value = data.qbit_host || "";
+    // 没配置时给「例如」而不是一个像真地址的占位符，避免用户以为配置丢了。
+    hostInput.placeholder = data.qbit_host
+      ? ""
+      : "http://主机:端口（例如 http://192.168.20.193:8085）";
     document.getElementById("cfgUser").value = data.qbit_username || "";
     const passwordInput = document.getElementById("cfgPass");
     passwordInput.value = "";
@@ -423,36 +438,29 @@ async function loadConfig() {
     );
   } catch (error) {
     if (error && error.status === 401) {
-      // 老服务端读取配置也要钥匙：这是「没授权」，不是 qB 故障，别报红。
+      // 严格模式把读接口也锁上时：这是「没授权」，不是 qB 故障，别报红。
       setConfigResult(
         "只读模式：连接配置需要授权后读取",
         "muted",
-        "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；写操作在授权前不会发送。"
+        "只读浏览不受影响；配置本身保存在 NAS 服务端。"
       );
     } else {
       reportError(error, { context: "读取连接设置失败", key: "config:load" });
       setConfigResult(error.message, "error", error.hint || "");
     }
   }
-  const savedKey = apiClient.getKey();
-  document.getElementById("apiKeyInput").value = savedKey;
 }
 
 async function saveConfig() {
   if (!(await ensureWriteAuth("保存连接设置"))) {
-    const mode = authMode();
     setConfigResult(
-      "配置没有保存：这台浏览器当前只读",
+      "配置没有保存：这台设备当前只读",
       "muted",
-      mode === "rejected"
-        ? "钥匙没被 NAS 接受。从 Mac 菜单栏「打开 NAS 页面」重新进入，或点「退出本机」后重试。"
-        : "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；也可以在上方填入 API Key。"
+      "只读浏览不受影响；这台设备没有写权限（NAS 要求 API Key）。"
     );
     return;
   }
   const button = document.getElementById("saveConfigBtn");
-  const key = document.getElementById("apiKeyInput").value.trim();
-  apiClient.setKey(key);
   setButtonBusy(button, true, "连接中");
   try {
     const payload = {
@@ -480,8 +488,6 @@ async function saveConfig() {
       "success"
     );
     lastAuthCode = "";
-    auth.keyState = auth.required ? "valid" : "not_required";
-    renderAuthState();
     toast("qBittorrent 配置已保存", "success", { key: "config:save" });
     loadAuthState();
     checkStatus({ force: true });
@@ -490,9 +496,9 @@ async function saveConfig() {
     if (error && error.status === 401) {
       notifyAuthBlocked("保存连接设置");
       setConfigResult(
-        "配置没有保存：钥匙没被 NAS 接受",
+        "配置没有保存：这台设备没有写权限",
         "muted",
-        "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」后重试。"
+        "NAS 当前要求 API Key（严格模式）。只读浏览不受影响。"
       );
     } else {
       setConfigResult(error.message, "error", error.hint || "");
@@ -1108,12 +1114,13 @@ function handleStatusFailure(error) {
   // 读不到状态 ≠ 没有上报：Mac 灯立刻从「没有」改成「未知」，别让旧读数冒充现状。
   renderMacStatus();
   if (error && error.status === 401) {
-    // 老服务端把只读接口也锁着：这是「没授权」，不是 qB/采集服务的故障。
-    auth.required = true;
-    auth.keyState = hasStoredKey() ? "invalid" : "missing";
+    // 严格模式下只读接口也被锁：这是「没授权」，不是 qB/采集服务的故障。
+    auth.write = false;
+    auth.trusted = false;
+    if (!auth.mode) auth.mode = "strict";
     renderAuthState();
-    setQbitState("readonly", "需要授权后查询");
-    setCrawlerState("只读 · 未授权", "unknown");
+    setQbitState("readonly", "只读 · 未授权查询");
+    setCrawlerState("只读 · 未授权查询", "unknown");
     return;
   }
   if (error && error.status) {
@@ -1692,65 +1699,45 @@ function handleNetworkFailure(error) {
    - checking / unknown：还在问或问不到，只读浏览照常
    ---------------------------------------------------------------- */
 const AUTH_COPY = {
-  authorized: {
-    text: "已授权 · 这台浏览器可以做写操作",
+  trusted: {
+    text: "局域网内可直接读写 · 浏览器不保存任何密钥",
     cls: "ok",
     hint: "",
   },
-  anonymous: {
-    text: "只读浏览 · 这台浏览器没有钥匙",
+  readonly: {
+    text: "这台设备当前只读 · NAS 要求 API Key",
     cls: "muted",
     hint:
-      "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；也可以在本面板填入 API Key。手机/别人的电脑保持只读。",
-  },
-  rejected: {
-    text: "⚠ 这台浏览器的钥匙没被 NAS 接受 · 当前只读",
-    cls: "warn",
-    hint:
-      "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」清除后重新进入。",
-  },
-  open: {
-    text: "服务端未启用 API Key（本机/局域网部署）",
-    cls: "muted",
-    hint: "",
+      "只读浏览不受影响；下载、保存配置、清空这些写操作不会发送。API Key 只给 Mac 代理等程序使用，页面上不需要填写。",
   },
   unknown: {
-    text: "无法确认授权状态（服务端没有提供 /api/auth）",
+    text: "无法确认访问状态（服务端没有回答 /api/auth）",
     cls: "muted",
     hint: "只读信息照常显示；写操作会先尝试，失败时说明原因。",
   },
   checking: {
-    text: "正在确认授权状态…",
+    text: "正在确认访问状态…",
     cls: "muted",
     hint: "",
   },
 };
 
-function hasStoredKey() {
-  return Boolean(apiClient.getKey());
-}
-
+/* 页面状态只有三种：trusted（可写）/ readonly（只读，人话）/ unknown（问不到）。
+   缺凭据不是故障；真实故障（接口 500、网络断）仍走各自的红色路径。 */
 function authMode() {
-  if (auth.required === false) return "open";
-  if (auth.required === null) {
-    return auth.probe === "failed" ? "unknown" : "checking";
-  }
-  if (auth.keyState === "valid") return "authorized";
-  if (auth.keyState === "invalid") return "rejected";
-  if (auth.keyState === "missing") return "anonymous";
-  // 老服务端只说「要钥匙」不说钥匙状态：先按可用处理，写操作 401 后再转 rejected。
-  return hasStoredKey() ? "authorized" : "anonymous";
+  if (auth.write === true) return "trusted";
+  if (auth.write === false) return "readonly";
+  return auth.probe === "failed" ? "unknown" : "checking";
 }
 
 function canWriteNow() {
   const mode = authMode();
-  return mode === "authorized" || mode === "open";
+  return mode === "trusted" || mode === "unknown";
 }
 
 function renderAuthState() {
   const state = document.getElementById("authState");
   const hint = document.getElementById("authHint");
-  const forget = document.getElementById("forgetKeyBtn");
   if (!state) return;
   const mode = authMode();
   const copy = AUTH_COPY[mode] || AUTH_COPY.checking;
@@ -1760,13 +1747,19 @@ function renderAuthState() {
     hint.textContent = copy.hint || "";
     hint.hidden = !copy.hint;
   }
-  if (forget) forget.hidden = !hasStoredKey();
+  document.body.dataset.authMode = mode;
+  // 只读时把唯一常驻的写按钮禁掉；其余写操作在点击时由 ensureWriteAuth 说人话。
+  const save = document.getElementById("saveConfigBtn");
+  if (save) {
+    save.disabled = mode === "readonly";
+    save.title =
+      mode === "readonly" ? "这台设备当前只读：NAS 要求 API Key" : "";
+  }
 }
 
-function setRealtimeReadOnly(mode) {
-  const rejected = mode === "rejected";
-  const label = rejected ? "只读 · 实时事件需重新授权" : "只读 · 未订阅实时事件";
-  const detail = rejected ? "钥匙没被接受，实时事件停用" : "未授权，靠 30 秒轮询刷新";
+function setRealtimeReadOnly() {
+  const label = "只读 · 实时事件未连接";
+  const detail = "写操作与实时推送需要授权；只读数据每 30 秒自动刷新";
   document.getElementById("dotWs").className = "dot idle";
   document.getElementById("wsDetailDot").className = "dot idle";
   document.getElementById("wsStatus").textContent = label;
@@ -1777,7 +1770,8 @@ function setRealtimeReadOnly(mode) {
 
 function syncRealtimeChannel() {
   const mode = authMode();
-  const allowed = mode === "authorized" || mode === "open" || mode === "unknown";
+  // unknown/checking 也先连：服务端会按同一套授权决定放不放行。
+  const allowed = mode === "trusted" || mode === "unknown" || mode === "checking";
   if (allowed) {
     if (!ws) {
       wsReconnectAttempt = 0;
@@ -1795,33 +1789,30 @@ function syncRealtimeChannel() {
       /* 已断开 */
     }
   }
-  setRealtimeReadOnly(mode);
+  setRealtimeReadOnly();
 }
 
 let authProbeSeq = 0;
 
 async function loadAuthState() {
   const seq = ++authProbeSeq;
-  const hadKey = hasStoredKey();
   try {
     const data = await apiClient.fetch("/api/auth");
     if (seq !== authProbeSeq) return authMode();
-    auth.required = Boolean(data && data.required);
-    const reported = data && typeof data.key === "string" ? data.key : "";
-    if (!auth.required) {
-      auth.keyState = "not_required";
-    } else if (["valid", "invalid", "missing"].includes(reported)) {
-      auth.keyState = reported;
-    } else {
-      // 老服务端不回答钥匙状态：有钥匙先按可用，写失败后由 401 纠正
-      auth.keyState = hadKey ? "unknown" : "missing";
-    }
+    // write 是服务端的明确结论；mode/required 是给旧响应兜底的。
+    const legacyWritable = data && data.required === false;
+    auth.mode = typeof data.mode === "string" ? data.mode : legacyWritable ? "trusted" : "strict";
+    auth.write = typeof data.write === "boolean" ? data.write : legacyWritable;
+    auth.trusted = typeof data.trusted === "boolean" ? data.trusted : auth.write === true;
+    auth.keyState = typeof data.key === "string" ? data.key : "unknown";
+    auth.reason = typeof data.reason === "string" ? data.reason : "";
     auth.probe = "ok";
   } catch (error) {
     if (seq !== authProbeSeq) return authMode();
-    // 网络不通/老服务端没有 /api/auth：如实说"确认不了"，不编造
+    // 网络不通/服务端 500：如实说「确认不了」，不编造 trusted，也不冒充只读。
     auth.probe = "failed";
-    if (auth.required === null) auth.keyState = hadKey ? "unknown" : "missing";
+    auth.write = null;
+    auth.reason = "";
   }
   renderAuthState();
   syncRealtimeChannel();
@@ -1833,71 +1824,38 @@ function refreshAuthState() {
   loadAuthState();
 }
 
-/* 写操作被授权挡住时，只说「要授权/钥匙被拒」和下一步，绝不把缺钥匙说成故障 */
+/* 只读设备发起写操作时：说清「被什么挡住、只读不影响什么」，不冒充故障 */
 function notifyAuthBlocked(actionLabel = "") {
-  const rejected = hasStoredKey() || auth.keyState === "invalid";
-  const signature = rejected ? "rejected" : "anonymous";
-  if (signature === lastAuthCode) return;
-  lastAuthCode = signature;
-  const title = rejected
-    ? "这台浏览器保存的钥匙没被 NAS 接受，操作没有执行"
-    : "只读模式：这个操作需要授权";
-  const hint = rejected
-    ? "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」清除后重新进入。"
-    : "从 Mac 菜单栏「打开 NAS 页面」进入会自动授权；也可以在本面板填入 API Key。";
+  if (lastAuthCode === "readonly") return;
+  lastAuthCode = "readonly";
+  const title = "只读模式：这个操作没有执行";
+  const hint =
+    "这台设备没有写权限（NAS 要求 API Key）。只读浏览不受影响；要写操作请在局域网内直接打开 NAS 页面。";
   addLog(`${actionLabel ? `${actionLabel}没有执行：` : ""}${title}。${hint}`, "warn");
-  toast(title, rejected ? "warn" : "info", { key: `auth:${signature}`, hint });
+  toast(title, "info", { key: "auth:readonly", hint });
   setMobileView("config");
 }
 
 async function ensureWriteAuth(actionLabel) {
-  let mode = authMode();
-  if (mode === "checking" || (hasStoredKey() && auth.keyState !== "valid")) {
-    // 用户可能刚在面板里填了钥匙：先问一次再决定，别拿旧状态误伤
-    mode = await loadAuthState();
+  if (auth.write === null) {
+    // 还没问过服务端（或上一次探测失败）：先问一次，别拿旧状态误伤
+    await loadAuthState();
   }
-  if (mode === "authorized" || mode === "open") return true;
+  if (auth.write === true) return true;
   notifyAuthBlocked(actionLabel);
   return false;
 }
 
 /* 任何 401 都先更新状态（静默）；真正的提示由发起动作的那一处说一次。 */
-function handleUnauthorized(error) {
-  auth.required = true;
+function handleUnauthorized() {
+  auth.mode = "strict";
+  auth.trusted = false;
+  auth.write = false;
   auth.probe = "ok";
-  auth.keyState = hasStoredKey() ? "invalid" : "missing";
+  auth.keyState = "missing";
+  auth.reason = "strict_mode";
   renderAuthState();
   syncRealtimeChannel();
-}
-
-/* 退出本机：清掉这台浏览器保存的钥匙，回到只读；换设备/公用电脑时用 */
-function forgetDeviceKey() {
-  apiClient.setKey("");
-  document.getElementById("apiKeyInput").value = "";
-  lastAuthCode = "";
-  if (ws) {
-    const old = ws;
-    ws = null;
-    try {
-      old.close(4001, "key cleared");
-    } catch (error) {
-      /* 已断开 */
-    }
-  }
-  auth = {
-    probe: "idle",
-    required: auth.required,
-    keyState: hasStoredKey() ? "unknown" : "missing",
-  };
-  renderAuthState();
-  loadAuthState().then(() => {
-    checkStatus({ force: true });
-    loadItems();
-  });
-  toast("已退出本机：这台浏览器不再保存钥匙", "success", {
-    key: "auth:forgotten",
-    hint: "页面仍可只读浏览；需要写操作时，从 Mac 菜单栏「打开 NAS 页面」重新进入。",
-  });
 }
 
 document.getElementById("urlInput").addEventListener("keydown", (event) => {
@@ -1906,30 +1864,6 @@ document.getElementById("urlInput").addEventListener("keydown", (event) => {
 document.getElementById("searchInput").addEventListener("input", (event) => {
   itemState.setQuery(event.target.value);
   renderTable();
-});
-document.getElementById("apiKeyInput").addEventListener("input", (event) => {
-  // 只记录，不重连：每敲一个字符就握手一次 = 8 个字符 8 次 401（用户看到的
-  // "Invalid or missing API key ×8"）。重连放在 change（回车/失焦）时做一次。
-  apiClient.setKey(event.target.value.trim());
-});
-document.getElementById("apiKeyInput").addEventListener("change", () => {
-  clearTimeout(keyChangeTimer);
-  keyChangeTimer = setTimeout(async () => {
-    if (ws) {
-      const old = ws;
-      ws = null;
-      try {
-        old.close(4001, "key changed");
-      } catch (error) {
-        /* 已断开 */
-      }
-    }
-    wsReconnectAttempt = 0;
-    lastAuthCode = "";
-    await loadAuthState(); // 先问清这把钥匙算不算数，再由它决定连不连实时通道
-    checkStatus({ force: true });
-    loadItems();
-  }, 300);
 });
 document.addEventListener("keydown", (event) => {
   if (
@@ -1955,17 +1889,6 @@ document.addEventListener("visibilitychange", () => {
   checkStatus({ force: true });
   loadItems();
 });
-// 另一个标签页「退出本机」或换了钥匙：这边立刻跟着变，不留两套身份
-window.addEventListener("storage", (event) => {
-  if (event.key !== apiClient.storageKey) return;
-  document.getElementById("apiKeyInput").value = apiClient.getKey();
-  lastAuthCode = "";
-  loadAuthState().then(() => {
-    checkStatus({ force: true });
-    loadItems();
-  });
-});
-
 (async function boot() {
   initIcons();
   renderJobs();
@@ -1974,8 +1897,8 @@ window.addEventListener("storage", (event) => {
   renderTable();
   setStatusFilter("all");
   addLog("工作台已就绪", "info");
-  // 先问清「我是谁」（有没有钥匙、钥匙是否被接受），再决定要不要连实时通道。
-  // 只读浏览器不发起注定 4401 的握手，也不把缺钥匙画成故障。
+  // 先问清「这一页能不能写」（trusted / readonly / unknown），再决定要不要
+  // 连实时通道。只读设备不发起注定 4401 的握手，也不把只读画成故障。
   await loadAuthState();
   loadConfig();
   checkStatus();

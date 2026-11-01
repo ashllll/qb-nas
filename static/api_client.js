@@ -13,11 +13,11 @@
     },
     401: {
       code: "api_key_missing",
-      hint: "写操作需要授权：从 Mac 菜单栏「打开 NAS 页面」进入会自动带上钥匙；也可以在本面板填入 API Key。",
+      hint: "这台设备当前只读（NAS 要求 API Key）。只读浏览不受影响；程序调用请带 X-API-Key。",
     },
     403: {
       code: "forbidden",
-      hint: "这次操作被服务端拒绝；确认 API Key 对应的是这台 NAS。",
+      hint: "这个请求被服务端拒绝了：确认是从 NAS 页面本身发起的、地址是这台 NAS。",
     },
     404: {
       code: "not_found",
@@ -110,50 +110,14 @@
     constructor({ onUnauthorized = () => {}, onNetworkError = () => {} } = {}) {
       this.onUnauthorized = onUnauthorized;
       this.onNetworkError = onNetworkError;
-      this.storageKey = "magnet-api-key";
-      this.memoryKey = ""; // 隐私模式等 localStorage 不可用时的会话内兜底
-      this.migrateLegacyKey();
       this.requestCount = 0;
       this.lastRequestAt = 0;
     }
 
-    /* 旧版本把钥匙放 sessionStorage（刷新即丢）：一次性迁到 localStorage。 */
-    migrateLegacyKey() {
-      try {
-        if (global.localStorage.getItem(this.storageKey)) return;
-        const legacy = global.sessionStorage.getItem(this.storageKey);
-        if (!legacy) return;
-        global.localStorage.setItem(this.storageKey, legacy);
-        global.sessionStorage.removeItem(this.storageKey);
-      } catch (error) {
-        /* 存储不可用：保持会话内兜底 */
-      }
-    }
-
-    getKey() {
-      try {
-        return global.localStorage.getItem(this.storageKey) || this.memoryKey;
-      } catch (error) {
-        return this.memoryKey;
-      }
-    }
-
-    setKey(value) {
-      const key = String(value || "").trim();
-      this.memoryKey = key;
-      try {
-        if (key) global.localStorage.setItem(this.storageKey, key);
-        else global.localStorage.removeItem(this.storageKey);
-      } catch (error) {
-        /* 隐私模式：至少本次会话内可用 */
-      }
-    }
-
+    /* N23：浏览器零密钥。这里没有 getKey/setKey，也不碰任何浏览器存储：
+       授权由服务端按访问模式判定（见 utils/auth.py），key 只属于程序通道。 */
     headers(extra = {}) {
-      const headers = { ...extra };
-      const key = this.getKey();
-      if (key) headers["X-API-Key"] = key;
-      return headers;
+      return { ...extra };
     }
 
     async fetch(url, options = {}) {
@@ -197,19 +161,14 @@
         let code = String(body.code || fallback.code || "");
         let hint = body.hint || fallback.hint;
         if (response.status === 401) {
-          const hasKey = Boolean(this.getKey());
-          // 旧服务端只回 "Invalid or missing API key"：这句话对用户没有信息量，
-          // 换成本地能判断的「没带」/「不对」——两者都是「要授权」，不是故障。
+          // 旧服务端只回 "Invalid or missing API key"：对用户没有信息量，
+          // 换成能说给用户听的「这台设备只读」。这是授权，不是故障。
           const legacy = !body.code && /invalid or missing api key/i.test(bodyDetail);
-          if (!bodyDetail || legacy) {
-            detail = hasKey ? "这台浏览器保存的钥匙没被 NAS 接受" : "这个操作需要授权（当前只读）";
-          }
-          code = body.code || (hasKey ? "api_key_invalid" : "api_key_missing");
+          if (!bodyDetail || legacy) detail = "这台设备当前没有写权限（只读）";
+          code = body.code || "api_key_missing";
           hint =
             body.hint ||
-            (hasKey
-              ? "从 Mac 菜单栏「打开 NAS 页面」重新进入会自动更新钥匙；也可以点「退出本机」清除后重新进入。"
-              : "从 Mac 菜单栏「打开 NAS 页面」进入会自动带上钥匙；也可以在本面板填入 API Key。");
+            "只读浏览不受影响；要写操作请在局域网内直接打开 NAS 页面。";
         }
         const error = new ApiError({
           status: response.status,

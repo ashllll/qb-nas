@@ -190,7 +190,16 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
                     body=json.dumps({"detail": "API key invalid"}),
                 )
                 return
-            if request.url.endswith("/api/config") and request.method == "GET":
+            if request.url.endswith("/api/auth"):
+                payload = {
+                    "mode": "trusted",
+                    "trusted": True,
+                    "write": True,
+                    "required": False,
+                    "key": "not_required",
+                    "reason": "trusted_lan",
+                }
+            elif request.url.endswith("/api/config") and request.method == "GET":
                 payload = {"qbit_host": "http://qbit.test", "qbit_username": "admin"}
             elif request.url.endswith("/api/config") and request.method == "PUT":
                 payload = {"connected": True}
@@ -206,11 +215,11 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
 
         await page.route("**/api/**", handle_api)
         await page.goto(static_server_url, wait_until="domcontentloaded")
-        await page.locator("#apiKeyInput").fill("test-api-key")
         await page.evaluate("() => new MagnetApiClient().fetch('/api/probe')")
 
         probe = next(request for request in requests if request["url"].endswith("/api/probe"))
-        assert probe["headers"]["x-api-key"] == "test-api-key"
+        # N23：浏览器零密钥——客户端不再从任何存储取 key，也不发 X-API-Key。
+        assert "x-api-key" not in probe["headers"]
         assert (
             await page.evaluate(
                 "() => new MagnetApiClient().fetch('/api/error422').catch(error => error.message)"
@@ -254,6 +263,10 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
         assert "New" in await page.locator("#tbody").inner_text()
         assert "Old" not in await page.locator("#tbody").inner_text()
 
+        # 上一步的 401 已把页面按严格模式置为只读；重新问一次服务端，
+        # 回到这台 NAS 的真实模式再继续测下载（trusted 下应立即恢复可写）。
+        await page.evaluate("() => loadAuthState()")
+        await page.wait_for_timeout(150)
         await page.evaluate(
             """
             () => {

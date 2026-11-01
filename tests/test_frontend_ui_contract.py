@@ -87,7 +87,15 @@ class ApiMock:
             "config": {"qbit_host": "", "qbit_username": "", "qbit_password_configured": False},
             "status": {"qbit": {"ok": True}, "jobs": [], "recent_events": []},
             "items": {"items": [], "total": 0},
-            "auth": {"required": True},
+            # N23 默认：局域网内页面可读写（浏览器不持 key）
+            "auth": {
+                "mode": "trusted",
+                "trusted": True,
+                "write": True,
+                "required": False,
+                "key": "not_required",
+                "reason": "trusted_lan",
+            },
             **self.payloads,
         }.get(path.rsplit("/", 1)[-1], {})
         if request.method == "PUT" and path.endswith("/api/config"):
@@ -107,16 +115,12 @@ async def _open(
     *,
     api: ApiMock | None = None,
     timezone_id: str = "Asia/Shanghai",
-    session_key: str | None = "test-key",
 ):
+    """开一个干净浏览器上下文：N23 下页面不再需要往存储里塞任何 key。"""
     browser = await playwright.chromium.launch(headless=True)
     context = await browser.new_context(timezone_id=timezone_id)
     page = await context.new_page()
     await page.add_init_script(WS_STUB)
-    if session_key is not None:
-        await page.add_init_script(
-            f"window.sessionStorage.setItem('magnet-api-key', {json.dumps(session_key)});"
-        )
     mock = api or ApiMock()
     await page.route("**/api/**", mock.handle)
     await page.goto(static_server_url, wait_until="domcontentloaded")
@@ -278,64 +282,54 @@ async def test_repeated_identical_failures_collapse_into_one_toast(static_server
 
 
 @pytest.mark.asyncio
-async def test_typing_api_key_does_not_reconnect_per_keystroke(static_server_url):
-    """缺陷 ④ 的根因之一：每敲一个字符就重连一次 → 8 个字符 = 8 次握手/8 条 401。"""
-    async with async_playwright() as playwright:
-        browser, page, _ = await _open(playwright, static_server_url)
-        urls_before = await page.evaluate("() => window.__ws.urls.length")
-        await page.locator("#apiKeyInput").click()
-        await page.locator("#apiKeyInput").press_sequentially("abcdefgh", delay=25)
-        await page.wait_for_timeout(400)
-        urls_while_typing = await page.evaluate("() => window.__ws.urls.length")
-
-        await page.locator("#apiKeyInput").press("Enter")  # 失焦/确认后才重连一次
-        await page.wait_for_timeout(700)
-        urls_after_commit = await page.evaluate("() => window.__ws.urls.length")
-        await browser.close()
-
-    assert urls_before == 1
-    assert urls_while_typing == 1, "打字过程中不该重连"
-    assert urls_after_commit == 2, "编辑完成只重连一次"
-
-
-@pytest.mark.asyncio
-async def test_auth_failure_says_readonly_not_qb_offline(static_server_url):
-    """401 不能把原因说成「qB 离线」；读接口 401 是只读，不是故障红。"""
+async def test_readonly_mode_says_human_words_and_never_looks_like_qb_failure(
+    static_server_url,
+):
+    """严格模式（未来外网）：页面只读、人话提示；读接口的 401 不是 qB 故障红。"""
     api = ApiMock()
+    api.payloads["auth"] = {
+        "mode": "strict",
+        "trusted": False,
+        "write": False,
+        "required": True,
+        "key": "missing",
+        "reason": "strict_mode",
+    }
+    api.payloads["config"] = {
+        "qbit_host": "http://192.168.20.193:8085",
+        "qbit_username": "qb-user",
+        "qbit_password_configured": True,
+    }
     api.status_overrides = {
-        "/api/config": (401, {"detail": "Invalid or missing API key"}),
         "/api/v1/status": (401, {"detail": "Invalid or missing API key"}),
-        "/api/items": (401, {"detail": "Invalid or missing API key"}),
     }
     async with async_playwright() as playwright:
-        browser, page, _ = await _open(
-            playwright, static_server_url, api=api, session_key="stale-key"
-        )
+        browser, page, _ = await _open(playwright, static_server_url, api=api)
         qbit_text = await page.locator("#qbitStatus").inner_text()
         qbit_dot = await page.locator("#dotQbit").get_attribute("class")
         toast_count = await page.locator("#toastStack .toast").count()
         auth_text = await page.locator("#authState").inner_text()
         auth_class = await page.locator("#authState").get_attribute("class")
-        cfg_text = await page.locator("#cfgResult").inner_text()
+        page_text = await page.locator("body").inner_text()
+        cfg_host = await page.locator("#cfgHost").input_value()
         await browser.close()
 
+    assert "只读" in auth_text
+    assert "muted" in (auth_class or "")
+    assert "请求缺少 API Key" not in page_text
     assert "需要授权" in qbit_text
-    assert "API Key" not in qbit_text
     assert "离线" not in qbit_text
-    assert "offline" not in (qbit_dot or ""), "缺授权不该点红"
-    assert toast_count == 0, "页面加载时的 401 不该弹错误提示"
-    assert "钥匙没被 NAS 接受" in auth_text
-    assert "warn" in auth_class
-    assert "只读模式" in cfg_text
+    assert "offline" not in (qbit_dot or ""), "只读不该点红"
+    assert toast_count == 0, "页面加载时的只读状态不该弹错误提示"
+    # 读开放：只读设备也能看见真实 qB 地址（不是占位符），写才被挡住。
+    assert cfg_host == "http://192.168.20.193:8085"
 
 
 @pytest.mark.asyncio
-async def test_ws_key_never_in_url_and_close_reason_is_specific(static_server_url):
-    """⑤/鉴权边界：key 不进 URL；4401 的 reason 要让界面说清"不对"并停止空转重连。"""
+async def test_ws_frame_carries_no_key_and_4401_stops_reconnect(static_server_url):
+    """实时通道：浏览器不发 key、URL 不带凭据；严格模式 4401 后停止空转重连。"""
     async with async_playwright() as playwright:
-        browser, page, _ = await _open(
-            playwright, static_server_url, session_key="my-secret"
-        )
+        browser, page, _ = await _open(playwright, static_server_url)
         capture = await page.evaluate(
             """
             () => ({
@@ -347,7 +341,7 @@ async def test_ws_key_never_in_url_and_close_reason_is_specific(static_server_ur
         await page.evaluate(
             """
             () => {
-              window.__ws.last.onclose({code: 4401, reason: 'api_key_invalid'});
+              window.__ws.last.onclose({code: 4401, reason: 'api_key_missing'});
             }
             """
         )
@@ -359,15 +353,13 @@ async def test_ws_key_never_in_url_and_close_reason_is_specific(static_server_ur
         await browser.close()
 
     assert all("api_key" not in url for url in capture["urls"]), "key 不能进 URL"
-    auth_frames = [json.loads(item) for item in capture["sent"] if item.startswith("{")]
-    assert any(
-        frame.get("type") == "auth" and frame.get("api_key") == "my-secret"
-        for frame in auth_frames
-    )
+    frames = [json.loads(item) for item in capture["sent"] if item.startswith("{")]
+    assert any(frame.get("type") == "auth" for frame in frames)
+    assert all("api_key" not in frame for frame in frames), "浏览器帧里不许出现 key"
     assert "只读" in status_text
-    assert "offline" not in (status_dot or ""), "钥匙被拒也只读，不点故障红"
-    assert urls_after == 1, "鉴权失败后不该继续每 2 秒重连"
-    assert "钥匙没被 NAS 接受" in toast_text
+    assert "offline" not in (status_dot or ""), "只读不点故障红"
+    assert urls_after == 1, "只读后不该继续每 2 秒重连"
+    assert "只读模式" in toast_text
 
 
 @pytest.mark.asyncio
@@ -427,9 +419,7 @@ async def test_save_config_reports_one_outcome_with_reason(static_server_url):
     api = ApiMock()
     api.payloads["config_put"] = {"status": "failed", "connected": False}
     async with async_playwright() as playwright:
-        browser, page, _ = await _open(
-            playwright, static_server_url, api=api, session_key="k"
-        )
+        browser, page, _ = await _open(playwright, static_server_url, api=api)
         await page.evaluate("() => saveConfig()")
         await page.wait_for_timeout(150)
         fail_text = await page.locator("#cfgResult").inner_text()

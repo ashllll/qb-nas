@@ -9,38 +9,33 @@
     <meta name="color-scheme" content="light dark" />
     <title>Magnet Harvester</title>
     <script>
-      /* 钥匙只从 URL 片段进入：先落地到本机存储，立刻用 replaceState 把地址栏
-         与当前历史项里的 key 清掉（片段本来就不会发给服务器）。必须是同步脚本：
-         放进 app.js 就太晚了。任何日志/错误里都不出现 key。 */
-      (function consumeKeyFragment() {
+      /* N23：浏览器零密钥。进入页面的第一件事是清掉旧版本可能留下的钥匙：
+         只清不读（不 getItem、不解析），之后整页不再写任何浏览器存储。
+         旧版的 #key= 片段交接已作废：地址栏里若还带着片段，整段去掉，
+         不解析内容（片段本来就不会发给服务器，但也不该留在历史里）。 */
+      (function dropLegacySecrets() {
         try {
-          var hash = window.location.hash || "";
-          if (hash.length > 1) {
-            var params = new URLSearchParams(hash.slice(1));
-            if (params.has("key")) {
-              var key = params.get("key");
-              if (key) window.localStorage.setItem("magnet-api-key", key);
-              params.delete("key");
-              var rest = params.toString();
-              window.history.replaceState(
-                null,
-                "",
-                window.location.pathname +
-                  window.location.search +
-                  (rest ? "#" + rest : "")
-              );
-            }
-          }
-          // 旧版本把钥匙放在 sessionStorage：一次性迁到 localStorage（刷新/重启仍在）
-          if (!window.localStorage.getItem("magnet-api-key")) {
-            var legacy = window.sessionStorage.getItem("magnet-api-key");
-            if (legacy) {
-              window.localStorage.setItem("magnet-api-key", legacy);
-              window.sessionStorage.removeItem("magnet-api-key");
-            }
+          window.localStorage.removeItem("magnet-api-key");
+          window.sessionStorage.removeItem("magnet-api-key");
+        } catch (error) {
+          /* 存储不可用：本来也没打算写 */
+        }
+        try {
+          // 只写一个过期指令，不读 cookie 内容：即使旧版本从没写过，也只是无害的一句。
+          document.cookie = "magnet-api-key=; Max-Age=0; path=/; SameSite=Lax";
+        } catch (error) {
+          /* 忽略 */
+        }
+        try {
+          if (window.location.hash) {
+            window.history.replaceState(
+              null,
+              "",
+              window.location.pathname + window.location.search
+            );
           }
         } catch (error) {
-          /* 隐私模式等存储不可用时，退化为本次会话可用 */
+          /* 忽略 */
         }
       })();
     </script>
@@ -543,30 +538,12 @@
           </section>
           <section class="section">
             <h2 class="section-heading">访问安全</h2>
-            <label class="field-label" for="apiKeyInput">API Key</label>
-            <input
-              class="input"
-              id="apiKeyInput"
-              type="password"
-              autocomplete="off"
-              placeholder="未配置时留空"
-            />
-            <p class="auth-state" id="authState">正在确认授权状态…</p>
+            <p class="auth-state" id="authState">正在确认访问状态…</p>
             <p class="security-note connection-hint" id="authHint" hidden></p>
-            <button
-              class="button full"
-              id="forgetKeyBtn"
-              type="button"
-              onclick="forgetDeviceKey()"
-              hidden
-            >
-              <i data-lucide="trash-2"></i><span>退出本机（清除本机钥匙）</span>
-            </button>
             <p class="security-note">
-              密钥只保存在这台浏览器里（刷新、新开标签、重启浏览器后仍在），只用于写操作；
-              不会写进 URL、历史或日志。换设备或公用电脑时点「退出本机」清除。
+              浏览器不保存任何密钥；API Key 只保存在 NAS 的 config/.env，供 Mac 代理等
+              程序调用，页面上不需要填写。清空这类危险操作仍需二次确认。
             </p>
-
           </section>
           <section class="section">
             <h2 class="section-heading">运行状态</h2>
