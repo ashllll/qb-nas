@@ -32,7 +32,7 @@ _STATUS_META: dict[int, tuple[str, str]] = {
     ),
     401: (
         "api_key_missing",
-        "在页面右侧「连接设置」填入与 NAS 上 .env 里 API_KEY 相同的值，再保存。",
+        "写操作需要授权：从 Mac 菜单栏「打开 NAS 页面」会自动带上钥匙；也可以在本面板填入 API Key。",
     ),
     403: (
         "forbidden",
@@ -138,10 +138,11 @@ def _http_exception_payload(request: Request, exc: StarletteHTTPException) -> di
         if not detail or detail.strip().lower() in _LEGACY_401_DETAILS:
             detail = "API Key 不正确" if has_key else "请求缺少 API Key"
         hint = hint or (
-            "当前保存的 API Key 与服务端不一致。到页面右侧「连接设置」核对 NAS 上 .env 里的 "
-            "API_KEY 后重新保存。"
+            "这台浏览器保存的钥匙没被 NAS 接受：从 Mac 菜单栏重新打开页面会自动更新；"
+            "也可以点「退出本机」后重新进入。"
             if has_key
-            else "在页面右侧「连接设置」填入 NAS 上 .env 里 API_KEY 的值，再保存。"
+            else "写操作需要授权：从 Mac 菜单栏「打开 NAS 页面」会自动带上钥匙；"
+            "也可以在本面板填入 API Key。"
         )
     return _payload(status_code, detail, code=code, hint=hint)
 

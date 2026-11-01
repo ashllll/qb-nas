@@ -44,6 +44,8 @@ def test_401_without_key_says_key_is_missing(client):
     _assert_contract(body)
     assert body["code"] == "api_key_missing"
     assert "没有带" in body["detail"] or "缺少" in body["detail"]
+    # 下一步指向真实路径：从菜单栏打开会自动交钥匙（不是让用户去翻 .env）
+    assert "菜单栏" in body["hint"]
 
 
 def test_401_with_wrong_key_says_key_is_invalid(client):
@@ -61,6 +63,7 @@ def test_401_with_wrong_key_says_key_is_invalid(client):
     _assert_contract(body)
     assert body["code"] == "api_key_invalid"
     assert "不正确" in body["detail"]
+    assert "退出本机" in body["hint"]
 
 
 def test_401_never_echoes_the_supplied_key(client):
