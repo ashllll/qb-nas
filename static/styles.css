@@ -1642,10 +1642,6 @@ svg {
 .auth-state.muted {
   color: var(--text-tertiary);
 }
-#forgetKeyBtn {
-  margin-top: 8px;
-}
-
 /* ---- 危险操作弹窗：作用域、分类计数、必勾确认、失败留在原地 ---- */
 .dialog-breakdown {
   margin: 8px 0 0;
