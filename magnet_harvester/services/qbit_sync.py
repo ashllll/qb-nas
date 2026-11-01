@@ -139,53 +139,57 @@ class QBitSyncLoop:
                 log.error("qB 同步跳过：store 为 None，数据持久化不可用")
                 continue
 
+            # 一轮里的任何异常都只影响这一轮：循环本身死了不会自动重启，
+            # 用户从此看不到状态更新（qB 重启、SQLite 偶发 locked 都能触发）。
             try:
-                snapshot, removed_hashes = await qbit.poll_torrent_snapshot_with_removed()
-            except Exception as e:
+                await self._sync_round(qbit, store)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
                 self._backoff.record_failure()
-                log.debug(
-                    "qB 状态同步失败，将退避到 %.1fs 后重试: %s", self._backoff.next_delay(), e
-                )
-                continue
-            self._backoff.record_success()
+                log.exception("qB 状态同步轮次失败，下一轮继续")
+            else:
+                self._backoff.record_success()
 
-            tracked_items = await store.list(
-                status=_SYNC_ACTIVE_STATUSES,
-                limit=_MAX_STORE_ITEMS,
+    async def _sync_round(self, qbit: QBitSyncClient, store: ItemStore) -> None:
+        snapshot, removed_hashes = await qbit.poll_torrent_snapshot_with_removed()
+        tracked_items = await store.list(
+            status=_SYNC_ACTIVE_STATUSES,
+            limit=_MAX_STORE_ITEMS,
+        )
+        if len(tracked_items) >= _MAX_STORE_ITEMS:
+            log.error(
+                "tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items)
             )
-            if len(tracked_items) >= _MAX_STORE_ITEMS:
-                log.error(
-                    "tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items)
+            await self._bus.emit(
+                Event(
+                    EventType.ERROR,
+                    {
+                        "error": "store_limit_reached",
+                        "message": (
+                            f"tracked items 达到截断上限 {_MAX_STORE_ITEMS}，"
+                            "超过上限的 item 将不被同步"
+                        ),
+                        "count": len(tracked_items),
+                    },
                 )
-                await self._bus.emit(
-                    Event(
-                        EventType.ERROR,
-                        {
-                            "error": "store_limit_reached",
-                            "message": (
-                                f"tracked items 达到截断上限 {_MAX_STORE_ITEMS}，"
-                                "超过上限的 item 将不被同步"
-                            ),
-                            "count": len(tracked_items),
-                        },
-                    )
-                )
-            if not tracked_items:
-                continue
+            )
+        if not tracked_items:
+            return
 
-            progress = _ReconcileProgress()
-            try:
-                await asyncio.wait_for(
-                    self._reconcile_batch(tracked_items, snapshot, removed_hashes, progress),
-                    timeout=60.0,
-                )
-            except asyncio.TimeoutError:
-                remaining = max(len(tracked_items) - progress.processed, 0)
-                log.warning(
-                    "同步轮次超时（60s），已处理 %d 条，跳过剩余 %d 条",
-                    progress.processed,
-                    remaining,
-                )
+        progress = _ReconcileProgress()
+        try:
+            await asyncio.wait_for(
+                self._reconcile_batch(tracked_items, snapshot, removed_hashes, progress),
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            remaining = max(len(tracked_items) - progress.processed, 0)
+            log.warning(
+                "同步轮次超时（60s），已处理 %d 条，跳过剩余 %d 条",
+                progress.processed,
+                remaining,
+            )
 
     async def _reconcile_batch(
         self,
