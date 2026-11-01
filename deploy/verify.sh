@@ -7,7 +7,7 @@
 # 全部 PASS 才算立住；任何 FAIL 退出码非 0。
 # ============================================================================
 set -uo pipefail
-PREFIX=/vol3/1000/qb-nas
+PREFIX=${QB_NAS_PREFIX:-/vol3/1000/qb-nas}
 CONTAINER=qb-nas-center
 HOST_PORT=8899
 CRASH=0

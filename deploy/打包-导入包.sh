@@ -81,6 +81,8 @@ cat > "$B/导入说明.md" <<'DOC'
    - 有 `qb-nas-center-*.tar`：先在「镜像 → 导入」里导入它；
    - 「项目 / Compose」→ 新建项目，名称 `qb-nas`，粘贴 `compose.yaml` 内容；
    - 若界面不支持 `build`：确认 `image:` 指向已导入的镜像，删掉 `build:` 段；
+   - 若只能用官方 python 镜像：先 `mkdir -p /vol3/1000/qb-nas/venv`（属主 llll），
+     再用 `compose.nobuild.yaml`（首次启动在 /venv 装依赖，2–4 分钟，只一次）；
    - 端口 `8899:8899`，重启策略 `unless-stopped`，数据目录 `/vol3/1000/qb-nas/data`。
 4. 启动后访问 `http://<NAS>:8899/api/health`，返回 `{"ok":true,...}` 就成。
 5. API Key 在 `.env` 里；Mac 代理第一次配置时填 `http://<NAS>:8899` + 这串 Key。

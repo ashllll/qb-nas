@@ -200,7 +200,7 @@ fi
 
 # ── 2. 落地目录与代码 ────────────────────────────────────────────────────────
 step "2/8 落地代码与目录"
-mkdir -p "$APP" "$DATA" "$LOGS" "$RUN" "$PREFIX/backup"
+mkdir -p "$APP" "$DATA" "$LOGS" "$RUN" "$PREFIX/backup" "$PREFIX/venv"
 chmod 700 "$DATA" "$RUN"; chmod 750 "$LOGS"
 cp -p "$SELF_DIR/docker/Dockerfile" "$APP/Dockerfile"
 cp -p "$SELF_DIR/docker/dockerignore" "$APP/.dockerignore"
