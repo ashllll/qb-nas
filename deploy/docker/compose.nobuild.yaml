@@ -1,0 +1,51 @@
+# 备用：NAS Docker 界面不能构建镜像、又只有官方镜像可用时，用这份。
+# 与 compose.yaml 的差别：不 build，直接用 python:3.11-slim；首次启动在
+# /vol3/1000/qb-nas/venv 里装依赖（只需一次，之后启动很快）。
+# 用法：在 fnOS Docker 界面「项目/Compose」新建，粘贴本文件全部内容。
+name: qb-nas
+
+services:
+  center:
+    image: python:3.11-slim
+    container_name: qb-nas-center
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /vol3/1000/qb-nas/.env
+    environment:
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: "8899"
+      STORE_DB_PATH: /data/magnet_items.db
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      HOME: /tmp
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ ! -x /venv/bin/python ]; then
+          echo "首次启动：在 /venv 安装依赖（约 2–4 分钟，只做一次）"
+          python -m venv /venv
+          /venv/bin/pip install --no-cache-dir --index-url https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
+        fi
+        exec /venv/bin/python -m magnet_harvester.main
+    ports:
+      - "8899:8899"
+    volumes:
+      - /vol3/1000/qb-nas/app:/app:ro
+      - /vol3/1000/qb-nas/venv:/venv
+      - /vol3/1000/qb-nas/data:/data
+    user: "1000:1001"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "/venv/bin/python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8899/api/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 6s
+      start_period: 300s
+      retries: 3
