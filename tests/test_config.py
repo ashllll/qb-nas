@@ -2,12 +2,15 @@
 测试配置派生对象
 """
 
+import stat
 import sys
 import os
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.config import CrawlerConfig, QBitConfig, Settings
+from magnet_harvester.config import ConfigPersistError, CrawlerConfig, QBitConfig, Settings
 
 
 def test_crawler_allowed_resolutions_parse_csv():
@@ -146,6 +149,123 @@ def test_allow_fake_ip_config_wires_to_crawler():
     default_cfg = Settings(CRAWLER_ALLOW_FAKE_IP=False)
     assert default_cfg.CRAWLER_ALLOW_FAKE_IP is False
     assert default_cfg.crawler.allow_fake_ip is False
+
+
+def test_qbit_keys_in_config_file_win_over_process_env(tmp_path, monkeypatch):
+    """唯一事实源：文件里的 qB 配置压过进程环境。
+
+    容器若用 compose 的 env_file / -e 注入 QBIT_*（旧部署就是这样），pydantic 默认
+    「环境 > 文件」会让界面刚写入的值在重启时被旧值盖回去。这条测试锁住反过来的优先级。
+    """
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "QBIT_HOST=http://from-file:8085\n"
+        "QBIT_USERNAME=file-user\n"
+        'QBIT_PASSWORD="file-pass"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("QBIT_HOST", "http://from-process-env:8080")
+    monkeypatch.setenv("QBIT_USERNAME", "env-user")
+    monkeypatch.setenv("QBIT_PASSWORD", "env-pass")
+
+    cfg = Settings(_env_file=str(env_path))
+
+    assert cfg.QBIT_HOST == "http://from-file:8085"
+    assert cfg.QBIT_USERNAME == "file-user"
+    assert cfg.QBIT_PASSWORD == "file-pass"
+
+
+def test_qbit_keys_fall_back_to_process_env_when_file_has_none(tmp_path, monkeypatch):
+    """文件里没有这个键时，环境变量仍然有效（迁移期/首次启动）。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text("LOG_LEVEL=INFO\n", encoding="utf-8")
+    monkeypatch.setenv("QBIT_HOST", "http://from-process-env:8080")
+
+    cfg = Settings(_env_file=str(env_path))
+
+    assert cfg.QBIT_HOST == "http://from-process-env:8080"
+
+
+def test_deployment_keys_stay_pinned_by_process_env(tmp_path, monkeypatch):
+    """部署键由 compose 钉死：.env 里写错端口不会让端口映射对不上。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "SERVICE_HOST=127.0.0.1\nSERVICE_PORT=9999\nSTORE_DB_PATH=/tmp/wrong.db\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SERVICE_HOST", "0.0.0.0")
+    monkeypatch.setenv("SERVICE_PORT", "8899")
+    monkeypatch.setenv("STORE_DB_PATH", "/data/magnet_items.db")
+
+    cfg = Settings(_env_file=str(env_path))
+
+    assert cfg.SERVICE_HOST == "0.0.0.0"
+    assert cfg.SERVICE_PORT == 8899
+    assert cfg.STORE_DB_PATH == "/data/magnet_items.db"
+
+
+def test_persist_qbit_config_keeps_file_private_and_leaves_no_residue(tmp_path):
+    """界面保存后文件仍是 600，临时文件不残留（旧实现 rename 出来是 644）。"""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    env_path = config_dir / ".env"
+    env_path.write_text("API_KEY=secret-key\nQBIT_HOST=http://old:8080\n", encoding="utf-8")
+    env_path.chmod(0o600)
+    cfg = Settings(_env_file=str(env_path))
+
+    cfg.persist_qbit_config(
+        QBitConfig(host="http://new:8080", username="u", password="p"),
+        env_path=env_path,
+    )
+
+    assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
+    assert list(config_dir.glob("*.tmp")) == []
+    text = env_path.read_text(encoding="utf-8")
+    assert "API_KEY=secret-key" in text
+    assert 'QBIT_HOST="http://new:8080"' in text
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root 不受目录权限限制")
+def test_persist_qbit_config_error_names_path_uid_and_directory_mode(tmp_path):
+    """写不进去时，错误里带路径/uid/目录权限——不用再猜 Permission denied 出在哪一层。"""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    env_path = config_dir / ".env"
+    env_path.write_text("QBIT_HOST=http://old:8080\n", encoding="utf-8")
+    env_path.chmod(0o600)
+    cfg = Settings(_env_file=str(env_path))
+
+    config_dir.chmod(0o500)
+    try:
+        with pytest.raises(ConfigPersistError) as excinfo:
+            cfg.persist_qbit_config(
+                QBitConfig(host="http://new:8080", username="u", password="p"),
+                env_path=env_path,
+            )
+    finally:
+        config_dir.chmod(0o700)
+
+    message = str(excinfo.value)
+    assert str(env_path) in message
+    assert f"uid={os.getuid()}" in message
+    assert "目录" in message
+
+
+def test_config_source_report_points_at_file_without_leaking_values(tmp_path):
+    """启动自检报告：指出读的是哪个文件、每个键来自哪里，但不含任何密钥值。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        'QBIT_HOST="http://file:8085"\nQBIT_USERNAME=file-user\nQBIT_PASSWORD="sup3r-secret"\n',
+        encoding="utf-8",
+    )
+    cfg = Settings(_env_file=str(env_path))
+
+    report = cfg.describe_config_source()
+
+    assert report["file"] == str(env_path)
+    assert report["sources"]["QBIT_PASSWORD"] == "file"
+    assert report["sources"]["QBIT_HOST"] == "file"
+    assert "sup3r-secret" not in repr(report)
 
 
 if __name__ == "__main__":
