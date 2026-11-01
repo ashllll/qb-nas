@@ -16,13 +16,13 @@ import sqlite3
 import threading
 from contextlib import closing
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol
 
 from pydantic import ValidationError
 
 from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.utils.timeutil import iso_utc, parse_iso_utc, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def _validated_update(item: MagnetItem, fields: dict) -> MagnetItem | None:
         return None
     data = item.model_dump()
     data.update(fields)
-    data["updated_at"] = datetime.now()
+    data["updated_at"] = utc_now()
     try:
         return MagnetItem.model_validate(data)
     except ValidationError:
@@ -561,8 +561,8 @@ class SQLiteItemStore:
             "progress": item.progress,
             "torrent_state": item.torrent_state or "",
             "error_msg": item.error_msg or "",
-            "created_at": item.created_at.isoformat(),
-            "updated_at": item.updated_at.isoformat(),
+            "created_at": iso_utc(item.created_at),
+            "updated_at": iso_utc(item.updated_at),
         }
 
     @staticmethod
@@ -582,10 +582,14 @@ class SQLiteItemStore:
             ):
                 if field_name in d and d[field_name] == "":
                     d[field_name] = None
-            if "created_at" in d and isinstance(d["created_at"], str):
-                d["created_at"] = datetime.fromisoformat(d["created_at"])
-            if "updated_at" in d and isinstance(d["updated_at"], str):
-                d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+            # 时间列：老行是 naive（当年容器 TZ=UTC，按 UTC 解释），新行带 +00:00。
+            # 解析不了的脏值不丢整行——丢掉等于用户看不见、同步也修不回来。
+            for field_name in ("created_at", "updated_at"):
+                parsed = parse_iso_utc(d.get(field_name))
+                if parsed is not None:
+                    d[field_name] = parsed
+                else:
+                    d.pop(field_name, None)
             return MagnetItem(**d)
         except (ValidationError, ValueError, TypeError) as e:
             hash_val = d.get("hash", "unknown")

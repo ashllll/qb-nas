@@ -5,7 +5,7 @@ P2-16: 时间戳字段测试
 修复: 添加 created_at 和 updated_at 字段，default_factory=datetime.now
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from magnet_harvester.models import MagnetItem
 
 
@@ -22,13 +22,13 @@ def test_magnet_item_has_timestamp_fields():
 
 def test_magnet_item_timestamps_are_set_on_creation():
     """验证创建时自动设置时间戳"""
-    before = datetime.now()
+    before = datetime.now(timezone.utc)
     item = MagnetItem(
         hash="abc123",
         name="Test",
         magnet="magnet:?xt=urn:btih:abc123",
     )
-    after = datetime.now()
+    after = datetime.now(timezone.utc)
 
     assert before <= item.created_at <= after
     assert before <= item.updated_at <= after

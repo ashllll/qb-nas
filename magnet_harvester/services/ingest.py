@@ -20,7 +20,6 @@ import hashlib
 import logging
 import time
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from magnet_harvester.bus import Event, EventType, MessageBus
@@ -33,6 +32,7 @@ from magnet_harvester.models import IngestKind, IngestRequest, MagnetItem, TaskS
 from magnet_harvester.store import ItemStore
 from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
 from magnet_harvester.utils.infohash import normalize_infohash
+from magnet_harvester.utils.timeutil import iso_utc, utc_now
 from magnet_harvester.utils.url_validator import URLValidationError, validate_crawl_url
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
@@ -316,7 +316,7 @@ class IngestService:
                 self._jobs.update(
                     job_id,
                     status=JobStatus.running,
-                    started_at=datetime.now().isoformat(),
+                    started_at=iso_utc(utc_now()),
                     reason="",
                     message="正在找磁力…",
                     finished_at="",
@@ -428,7 +428,7 @@ class IngestService:
                     elapsed_ms=elapsed_ms,
                     browser_used=browser_used,
                     errors=errors,
-                    finished_at=datetime.now().isoformat(),
+                    finished_at=iso_utc(utc_now()),
                     **counters,
                 )
             if final is not None:

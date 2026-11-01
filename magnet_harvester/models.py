@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from magnet_harvester.utils.timeutil import to_utc, utc_now
 from magnet_harvester.utils.url_validator import URLValidationError, validate_crawl_url
 
 
@@ -45,8 +46,9 @@ class MagnetItem(BaseModel):
     progress: float = 0.0
     torrent_state: Optional[str] = None
     error_msg: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    # 带时区的 UTC（《约定》第 1 条）：naive 时间戳不许进库、不许进响应。
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("progress")
     @classmethod
@@ -56,6 +58,12 @@ class MagnetItem(BaseModel):
         if v != v:  # NaN check
             return 0.0
         return max(0.0, min(v, 100.0))
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def ensure_utc(cls, v: datetime) -> datetime:
+        """naive 时间按 UTC 解释并补上时区，保证进库/进响应的时间戳都带 tzinfo。"""
+        return to_utc(v)
 
 
 class CrawlRequest(BaseModel):

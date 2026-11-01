@@ -7,7 +7,7 @@
 - ``crawl_jobs``：一个网址 = 一个任务。任务状态落盘，服务重启后未完成的任务
   会被重新排上（见 ``JobStore.claim_resumable``），所以「没干完的活能接着做」。
 
-时间戳沿用项目不变量：naive-local ``datetime.now()`` ISO 字符串，字典序即时间序。
+时间戳一律 UTC ISO-8601（带 ``+00:00``），见 ``utils.timeutil``；字典序即时间序。
 """
 
 from __future__ import annotations
@@ -18,9 +18,10 @@ import sqlite3
 import threading
 from contextlib import closing
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+
+from magnet_harvester.utils.timeutil import iso_utc, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ class IngestRecord:
 
 
 def _now() -> str:
-    return datetime.now().isoformat()
+    return iso_utc(utc_now())
 
 
 _JOB_COLUMNS = (
