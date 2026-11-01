@@ -100,6 +100,16 @@ class QBittorrentClient:
                 ok = r.status_code == 200
                 if not ok:
                     self.stats.error(f"qBittorrent 返回 HTTP {r.status_code}")
+            except asyncio.CancelledError:
+                # 菜单栏/页面走的是 1.5 秒超时的探针：qB 不可达时登录重试要 2~3 秒，
+                # 探测被取消时根本走不到下面的失败分支，原因就成了空的——界面只能写
+                # 「qB 离线」。这里把「没有回应」这件事本身记成原因，再让取消继续传播。
+                log.info("qBittorrent ping 探测被取消（超时或调用方取消）")
+                self.stats.error(
+                    "qBittorrent 没有响应：这次探测在超时前没返回（qB 可能离线，"
+                    "或地址/端口不通）"
+                )
+                raise
             except httpx.TimeoutException as e:
                 log.warning(f"qBittorrent ping 超时: {e or type(e).__name__}")
                 ok = False
@@ -111,9 +121,18 @@ class QBittorrentClient:
             except Exception as e:
                 log.warning(f"qBittorrent ping 失败: {type(e).__name__}: {e}")
                 ok = False
-                # 登录失败/HTTP 状态等由 transport 抛 RuntimeError，原因要留给界面
-                if "登录" in str(e):
-                    self.stats.error("qBittorrent 认证失败：用户名或密码不对")
+                # transport 抛的 RuntimeError 已经带真实原因（连不上 / 凭据被拒 /
+                # 服务不可用），原样留给界面；这里不再按「含登录两个字」猜成认证失败。
+                message = str(e).strip()
+                if message.startswith("qBittorrent") and "登录失败" not in message:
+                    self.stats.error(message)
+                elif "登录失败" in message:
+                    # 老版本的 transport 只抛这句笼统的话，连不上的时候也是它。
+                    # 不能据此断定是密码错（那会让用户白改一通密码），两种可能都摆出来。
+                    self.stats.error(
+                        "qBittorrent 登录没有成功：可能是地址/端口不通或 qB 离线，"
+                        "也可能是用户名或密码不对（NAS 日志里有同一刻的具体原因）"
+                    )
                 else:
                     self.stats.error(f"qBittorrent 不可用：{type(e).__name__}: {e}")
             else:

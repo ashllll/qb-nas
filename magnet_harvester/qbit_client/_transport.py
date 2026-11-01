@@ -51,6 +51,9 @@ class QBitTransport:
         self._closing = asyncio.Event()
         self._client_factory = client_factory or self._build_client
         self._max_auth_retries = 2
+        # 登录失败的**真实**原因（给界面看）：连不上 / 服务不可用 / 凭据被拒
+        # 是三条不同的处置路径，混成一句「登录失败」时，页面只能猜成密码错。
+        self.last_login_error: str | None = None
         self._retry_config = {
             "max_retries": 3,
             "base_delay": 1.0,
@@ -128,6 +131,7 @@ class QBitTransport:
                     ):
                         client.cookies.update(r.cookies)
                         self._authenticated = True
+                        self.last_login_error = None
                         self._record_success()
                         log.info("qBittorrent 登录成功")
                         return True
@@ -138,6 +142,7 @@ class QBitTransport:
                         r.status_code,
                         r.text[:100],
                     )
+                    self.last_login_error = self._describe_login_rejection(r)
                     self._record_failure()
                     return False
 
@@ -160,9 +165,26 @@ class QBitTransport:
                             self._max_auth_retries,
                             e,
                         )
+                        self.last_login_error = (
+                            f"连接不上 qBittorrent（{type(e).__name__}: {e}）："
+                            "检查「连接设置」里的地址与端口，以及 NAS 到 qB 的网络"
+                        )
 
             self._record_failure()
+            if self.last_login_error is None:
+                self.last_login_error = "qBittorrent 登录没有成功（未知原因，查看 NAS 日志）"
             return False
+
+    @staticmethod
+    def _describe_login_rejection(response) -> str:
+        """把 qB 的拒绝回答翻成用户能照着做的一句话。"""
+        body = (response.text or "").strip()
+        lowered = body.lower()
+        if "banned" in lowered:
+            return "qBittorrent 封禁了这台 NAS 的 IP（失败登录次数过多），等一会或到 qB 里解封"
+        return (
+            f"qBittorrent 拒绝了登录（HTTP {response.status_code}）：用户名或密码不对"
+        )
 
     async def _handle_auth_retry(self, client, auth_retry_count: int, max_auth_retries: int) -> int:
         """Handle 403 response by re-authenticating. Returns new retry count or raises."""
@@ -203,7 +225,9 @@ class QBitTransport:
                 if needs_auth:
                     ok = await self._login()
                     if not ok:
-                        raise RuntimeError("qBittorrent 登录失败")
+                        raise RuntimeError(
+                            self.last_login_error or "qBittorrent 登录失败"
+                        )
 
                 client = await self._get_client()
 

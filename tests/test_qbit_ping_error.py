@@ -42,7 +42,14 @@ async def test_ping_timeout_records_reason():
     assert "超时" in (client.last_error or "")
 
 
-async def test_ping_auth_failure_records_reason():
+async def test_ping_legacy_login_failure_does_not_blame_the_password_alone():
+    """「登录失败」这句笼统话不能直接当成密码错。
+
+    回归（独立复查实测）：transport 在 qB **连不上** 时抛的也是这句
+    ``qBittorrent 登录失败``，以前按「含登录两个字」归成「用户名或密码不对」，
+    用户照着改密码越改越乱。现在 transport 分得清三种原因；只剩这句无信息量
+    的老消息时，两种可能都摆出来，别替用户下错结论。
+    """
     client = make_client()
 
     async def auth(method, path, **kw):
@@ -50,7 +57,9 @@ async def test_ping_auth_failure_records_reason():
 
     client._req = auth  # type: ignore[method-assign]
     assert await client.ping() is False
-    assert "认证失败" in (client.last_error or "")
+    reason = client.last_error or ""
+    assert "用户名或密码不对" in reason
+    assert "离线" in reason or "不通" in reason
 
 
 async def test_ping_http_status_records_reason():
