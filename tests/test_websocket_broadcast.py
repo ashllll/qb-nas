@@ -98,19 +98,21 @@ async def test_broadcast_skips_disconnected_clients():
     assert ws_disconnected not in broadcaster._active_ws
 
 
+def _seed(backend, prefix: str, count: int = 501) -> None:
+    for index in range(count):
+        backend.add(
+            MagnetItem(
+                hash=f"{prefix}-{index:04d}",
+                name=f"Item {prefix} {index:04d}",
+                magnet=f"magnet:?xt=urn:btih:{prefix}-{index:04d}",
+            )
+        )
+
+
 @pytest.mark.asyncio
 async def test_initial_snapshot_delivers_every_item_beyond_first_page():
     backend = InMemoryItemStore()
-    backend.add_batch(
-        [
-            MagnetItem(
-                hash=f"INIT-{index:04d}",
-                name=f"Item {index:04d}",
-                magnet=f"magnet:?xt=urn:btih:INIT-{index:04d}",
-            )
-            for index in range(501)
-        ]
-    )
+    _seed(backend, "INIT")
     bus = MagicMock()
     bus.subscribe = MagicMock()
     broadcaster = WSBroadcaster(bus, store=AsyncItemStore(backend))
@@ -129,16 +131,7 @@ async def test_initial_snapshot_delivers_every_item_beyond_first_page():
 @pytest.mark.asyncio
 async def test_connection_closes_when_initial_snapshot_is_incomplete():
     backend = InMemoryItemStore()
-    backend.add_batch(
-        [
-            MagnetItem(
-                hash=f"PARTIAL-{index:04d}",
-                name=f"Partial {index:04d}",
-                magnet=f"magnet:?xt=urn:btih:PARTIAL-{index:04d}",
-            )
-            for index in range(501)
-        ]
-    )
+    _seed(backend, "PARTIAL")
     bus = MagicMock()
     bus.subscribe = MagicMock()
     broadcaster = WSBroadcaster(bus, store=AsyncItemStore(backend))
@@ -158,16 +151,7 @@ async def test_connection_closes_when_initial_snapshot_is_incomplete():
 @pytest.mark.asyncio
 async def test_live_events_are_replayed_after_snapshot_pages():
     backend = InMemoryItemStore()
-    backend.add_batch(
-        [
-            MagnetItem(
-                hash=f"ORDER-{index:04d}",
-                name=f"Order {index:04d}",
-                magnet=f"magnet:?xt=urn:btih:ORDER-{index:04d}",
-            )
-            for index in range(501)
-        ]
-    )
+    _seed(backend, "ORDER")
     store = AsyncItemStore(backend)
     second_page_ready = asyncio.Event()
     release_second_page = asyncio.Event()

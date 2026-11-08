@@ -12,24 +12,6 @@ class ItemQueryExecutor:
     def __init__(self, store: ItemStore):
         self._store = store
 
-    async def get_stats(self) -> dict:
-        stats = await self._store.stats()
-        return {
-            "total": stats.total,
-            "by_category": stats.by_category,
-            "by_status": stats.by_status,
-        }
-
-    async def list_items(
-        self,
-        *,
-        category: str | None = None,
-        status: str = "all",
-        limit: int = 20,
-    ) -> dict:
-        items = await self._store.list(category=category, status=status, limit=limit)
-        return {"count": len(items), "items": [item_summary(item) for item in items]}
-
     async def page_items(
         self,
         *,

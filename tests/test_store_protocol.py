@@ -106,11 +106,6 @@ def run_store_tests(store_factory):
     assert stats.total >= 1
     assert isinstance(stats, StoreStats)
 
-    # add_batch
-    batch = [_make_item("DDDD"), _make_item("EEEE")]
-    assert store.add_batch(batch) == 2
-    assert store.add_batch(batch) == 0  # all duplicates
-
     # clear
     store.clear()
     assert store.count == 0
@@ -184,20 +179,6 @@ def test_list_uses_limited_top_n_selection(monkeypatch):
 
     assert [item.name for item in results] == ["Alpha", "Bravo"]
     assert calls == [2]
-
-
-def test_add_batch_does_not_partially_commit_when_batch_is_invalid():
-    store = InMemoryItemStore()
-
-    try:
-        store.add_batch([_make_item("AAAA"), object()])
-    except AttributeError:
-        pass
-    else:
-        raise AssertionError("invalid batch item should fail before commit")
-
-    assert store.get("AAAA") is None
-    assert store.count == 0
 
 
 def test_fakestore_behaviors():

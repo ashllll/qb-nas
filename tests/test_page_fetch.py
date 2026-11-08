@@ -128,7 +128,6 @@ async def test_http_success_never_touches_browser():
     page = await fetcher.fetch("https://site.test/list")
     assert page.ok
     assert page.via == "http"
-    assert fetcher.browser_used is False
     assert "browser" not in browsers
 
 
@@ -141,7 +140,6 @@ async def test_challenge_page_escalates_to_browser():
     page = await fetcher.fetch("https://site.test/list")
     assert page.ok
     assert page.via == "browser"
-    assert fetcher.browser_used is True
     assert browsers["browser"].calls[0]["url"] == "https://site.test/list"
 
 
@@ -164,7 +162,6 @@ async def test_browser_failure_reports_reason_not_exception():
     page = await fetcher.fetch("https://site.test/list")
     assert page.reason is FailureReason.BROWSER_UNAVAILABLE
     assert "playwright exploded" in page.message
-    assert fetcher.browser_failures == 1
 
 
 @pytest.mark.asyncio

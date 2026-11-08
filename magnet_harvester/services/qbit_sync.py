@@ -94,13 +94,11 @@ class QBitSyncLoop:
             if self._task is not None and not self._task.done():
                 return
             self._stop_event.clear()
-            if self._task_manager is not None:
-                self._task = self._task_manager.create(
-                    self._run(),
-                    name="qbit-sync-loop",
-                )
-                return
-            self._task = BGTaskManager.spawn(self._run(), name="qbit-sync-loop")
+            self._task = BGTaskManager.spawn(
+                self._run(),
+                task_manager=self._task_manager,
+                name="qbit-sync-loop",
+            )
 
     async def stop(self):
         self._stop_event.set()
