@@ -1,12 +1,12 @@
 # Magnet Harvester — AGENTS.md
 
-Magnet Harvester is a FastAPI-based async service that crawls web pages for `magnet:` links, classifies them with local rule chains, and submits selected items to qBittorrent via Web API for NAS downloading. It also provides a single-page Web UI, WebSocket real-time push, system clipboard monitoring, and Agent tool interfaces.
+Magnet Harvester is a FastAPI-based async service that crawls web pages for `magnet:` links, classifies them with local rule chains, and submits selected items to qBittorrent via Web API for NAS downloading. It also provides a single-page Web UI, WebSocket real-time push, Mac Agent ingest, and Agent tool interfaces.
 
 **Current version: v3.0.0**
 
 ## Project
 
-- **Stack**: Python 3.11+ · FastAPI · Pydantic v2 · Scrapling + Playwright · httpx · pyperclip
+- **Stack**: Python 3.11+ · FastAPI · Pydantic v2 · Scrapling + Playwright · httpx
 - **Entry point**: `run.py` (invokes `uvicorn` with settings from `magnet_harvester.config.settings`)
 - **Config**: `.env` file (see `.env.example`), parsed by `pydantic-settings` into `Settings` at `magnet_harvester/config.py`
 - **License**: MIT
@@ -62,8 +62,8 @@ npm run check    # lint + test
    └───────────┘    └──────────────┘    └────────────┘  └──────────┘
                            ▲
                     ┌──────────────┐
-                    │ClipboardMon  │
-                    │ pyperclip轮询 │
+                    │  Mac Agent   │
+                    │ /api/v1/ingest│
                     └──────────────┘
 ```
 
@@ -73,18 +73,18 @@ npm run check    # lint + test
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main.py`          | FastAPI app instance, lifespan (single assembly point via `build_runtime()`)                                                                                           |
 | `assembly.py`      | `build_runtime()` wires all services into `AppContext`                                                                                                                 |
-| `config.py`        | `Settings` (pydantic-settings) → `.env`; sub-configs: `CrawlerConfig`, `QBitConfig`, `ServiceConfig`                                                                   |
-| `models.py`        | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus` enum, `MetricSnapshot`                                                                                   |
+| `config.py`        | `Settings` (pydantic-settings) → `.env`; sub-configs: `CrawlerConfig`, `QBitConfig`                                                                   |
+| `models.py`        | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus` enum                                                                                   |
 | `crawler.py`       | `MagnetCrawler` — Scrapling-based async crawler with depth limits, resolution filtering, cookie injection                                                              |
 | `magnet_parser.py` | Regex + Base64 extraction of magnet links from text/markdown/html                                                                                                      |
 | `pipeline.py`      | `HarvestPipeline` — orchestrates crawl → classify → download                                                                                                           |
 | `store.py`         | `ItemStore` protocol + `InMemoryItemStore`                                                                                                                             |
 | `bus.py`           | `MessageBus` event system (pub/sub), `NullBus` for testing                                                                                                             |
-| `transitions.py`   | `MagnetItemTransitions` — state change + event emission                                                                                                                |
+| `transitions.py`   | `DiscoveryTransitions` / `ClassificationTransitions` / `DownloadTransitions` — state change + event emission                                                                                                                |
 | `errors.py`        | `ErrorHandler` — deduplicated structured error aggregation                                                                                                             |
 | `classifier/`      | Local rule-chain classifier (KeywordRule → StudioRule → FallbackRule)                                                                                                  |
 | `qbit_client/`     | qBittorrent WebAPI v2 client (transport, mapper, paths, submitter, sync_state, stats)                                                                                  |
-| `services/`        | Background and user-facing services: `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `ClipboardMonitor`, `SiteAuth`, `SystemStats` |
+| `services/`        | Background and user-facing services: `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `IngestService`, `SiteAuth`, `SystemStats` |
 | `context/`         | `AppContext` (dependency container) + `QBitRuntime` (hot-swap adapter)                                                                                                 |
 | `api/`             | REST routes, WebSocket broadcaster, static page router                                                                                                                 |
 | `utils/`           | `url_validator` (SSRF protection), `auth`, `bg_tasks`, `serializers`                                                                                                   |
@@ -100,7 +100,7 @@ Categories: `电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录�
 ### Data flow
 
 1. User submits URL via UI/API → `MagnetCrawler.crawl()` → magnet links extracted
-2. New items stored via `MagnetItemTransitions.found()` → `InMemoryItemStore` + `MessageBus` event
+2. New items stored via `DiscoveryTransitions.found()` → `InMemoryItemStore` + `MessageBus` event
 3. `HarvestPipeline._stream_classify()` runs rule chain on newly found items
 4. User triggers download (or auto-download) → `QBittorrentClient.add_magnet()` with auto category/save path
 5. `QBitSyncLoop` polls qB every 2s → syncs torrent state → emits events on terminal state changes
@@ -134,7 +134,7 @@ qb-nas/
 │   ├── pipeline.py                     # HarvestPipeline orchestration
 │   ├── store.py                        # InMemoryItemStore
 │   ├── bus.py                          # MessageBus
-│   ├── transitions.py                  # MagnetItemTransitions
+│   ├── transitions.py                  # Discovery / Classification / DownloadTransitions
 │   ├── errors.py                       # ErrorHandler
 │   ├── assembly.py                     # build_runtime()
 │   ├── api/
@@ -160,7 +160,7 @@ qb-nas/
 │   ├── services/
 │   │   ├── item_queries.py             # Read-only item query formatting
 │   │   ├── observability.py            # Status/health/stats response snapshots
-│   │   ├── clipboard_monitor.py        # ClipboardMonitor (pyperclip polling)
+│   │   ├── ingest.py                   # IngestService (Mac Agent jobs)
 │   │   ├── qbit_sync.py                # QBitSyncLoop
 │   │   ├── site_auth.py                # Cookie injection helper
 │   │   ├── stats.py                    # SystemStats
@@ -211,7 +211,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 
 - **Framework**: pytest + pytest-asyncio (`asyncio_mode = auto` in `pyproject.toml`)
 - **Test doubles**: `InMemoryItemStore` for store, `NullBus` for bus, manual `AppContext` for DI
-- **80+ test files** covering: URL validation/SSRF, qB client modules (transport, path, submitter, sync, mapper), crawler entry/concurrency, classifier rule chain, state transitions/events, API auth/routes, WebSocket broadcast, clipboard monitor
+- **80+ test files** covering: URL validation/SSRF, qB client modules (transport, path, submitter, sync, mapper), crawler entry/concurrency, classifier rule chain, state transitions/events, API auth/routes, WebSocket broadcast, Mac Agent ingest
 - **生产链路验证**: 自动化测试（pytest 全绿）≠ 生产验收。真实站点/qB/NAS 链路验证用 `scripts/smoke_production.py`（可选，见 `docs/verification.md`），两者不可互相替代
 - **Pre-commit**: `npm run check` runs `ruff check` + `pytest -q`
 

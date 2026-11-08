@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Magnet Harvester is a FastAPI-based async service that crawls web pages for `magnet:` links, classifies them with local rule chains, and submits selected items to qBittorrent via Web API for NAS downloading. It also provides a single-page Web UI, WebSocket real-time push, system clipboard monitoring, and Agent tool interfaces.
+Magnet Harvester is a FastAPI-based async service that crawls web pages for `magnet:` links, classifies them with local rule chains, and submits selected items to qBittorrent via Web API for NAS downloading. It also provides a single-page Web UI, WebSocket real-time push, Mac Agent ingest, and Agent tool interfaces.
 
 **Current version: v3.0.0** — the codebase has been fully refactored into cohesive modules wired by `assembly.build_runtime()`; there are no module-level mutable globals.
 
@@ -24,12 +24,12 @@ Magnet Harvester is a FastAPI-based async service that crawls web pages for `mag
    └───────────┘    └──────────────┘    └────────────┘  └──────────┘
                            ▲
                     ┌──────────────┐
-                    │ClipboardMon  │
-                    │ pyperclip轮询 │
+                    │  Mac Agent   │
+                    │/api/v1/ingest│
                     └──────────────┘
 ```
 
-All components are assembled in one place (`assembly.build_runtime()` → `AppContext`), services receive dependencies via constructors, and state changes flow through `MagnetItemTransitions` → `MessageBus` → `WSBroadcaster` → WebSocket clients.
+All components are assembled in one place (`assembly.build_runtime()` → `AppContext`), services receive dependencies via constructors, and state changes flow through the transitions domains → `MessageBus` → `WSBroadcaster` → WebSocket clients.
 
 ## Key Components
 
@@ -37,10 +37,11 @@ All components are assembled in one place (`assembly.build_runtime()` → `AppCo
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `main.py`                | FastAPI app + lifespan (single assembly point)                                                                                    |
 | `assembly.py`            | `build_runtime()` wires all services into `AppContext`                                                                            |
-| `config.py`              | Pydantic `Settings` from `.env` (sub-configs: CrawlerConfig, QBitConfig, ServiceConfig)                                           |
-| `models.py`              | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus`, `MetricSnapshot`                                                   |
+| `config.py`              | Pydantic `Settings` from `.env` (sub-configs: CrawlerConfig, QBitConfig)                                           |
+| `models.py`              | `MagnetItem`, `CrawlRequest`, `DownloadRequest`, `TaskStatus`                                                   |
 | `crawler.py`             | `MagnetCrawler` — Scrapling Spider event adapter (concurrency, depth, resolution filter, cookie injection)                        |
-| `scrapling_spider.py`    | Scrapling Spider scheduling + browser network admission policy (SSRF guard)                                                       |
+| `page_fetch.py`          | HTTP-first page fetch with browser fallback + SSRF admission                                                                      |
+| `site_walker.py`         | `MagnetPageWalker` — multi-page BFS, throttle, dedup                                                                              |
 | `magnet_parser.py`       | Regex + Base64 extraction of magnet links                                                                                         |
 | `pipeline.py`            | `HarvestPipeline` — crawl → classify → download orchestration                                                                     |
 | `transitions.py`         | State transition domains (Discovery / Classification / Download) + event emission                                                 |
@@ -49,7 +50,7 @@ All components are assembled in one place (`assembly.build_runtime()` → `AppCo
 | `errors.py`              | `ErrorHandler` — deduplicated structured errors                                                                                   |
 | `classifier/`            | Rule chain: `KeywordRule` → `StudioRule` → `FallbackRule`; LRU result cache with real stats                                       |
 | `qbit_client/`           | qBittorrent WebAPI v2 client (transport, mapper, paths, submitter, sync_state, stats)                                             |
-| `services/`              | `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `ClipboardMonitor`, `SiteAuth`, `SystemStats` |
+| `services/`              | `QBitSyncLoop`, `UserActionExecutor`, `ItemQueryExecutor`, `ObservabilitySnapshot`, `IngestService`, `SiteAuth`, `SystemStats` |
 | `context/app_context.py` | `AppContext` (DI container), `QBitRuntime` (hot-swap adapter depending only on `QBitReplacementTarget`)                           |
 | `api/`                   | REST routes, WebSocket broadcaster (API-key handshake auth), static page router                                                   |
 | `utils/`                 | `url_validator` (SSRF), `auth` (API key), `bg_tasks`, `serializers`                                                               |
@@ -68,13 +69,13 @@ qb-nas/
 ├── docs/                               # verification.md, adr/, agents/, specs/
 ├── magnet_harvester/
 │   ├── main.py  assembly.py  config.py  models.py  errors.py
-│   ├── crawler.py  scrapling_spider.py  dynamic_page.py  magnet_sources.py
+│   ├── crawler.py  page_fetch.py  site_walker.py  dynamic_page.py  magnet_sources.py
 │   ├── magnet_parser.py  logger.py  pipeline.py
 │   ├── transitions.py  store.py  bus.py
 │   ├── api/ routes.py  websocket.py  pages.py
 │   ├── classifier/ local_classifier.py  rule.py  keyword_recognizer.py  studio_recognizer.py  fallback.py
 │   ├── qbit_client/ client.py  _transport.py  mapper.py  paths.py  submitter.py  sync_state.py  stats.py
-│   ├── services/ qbit_sync.py  clipboard_monitor.py  site_auth.py  observability.py  user_actions.py  item_queries.py  stats.py
+│   ├── services/ qbit_sync.py  ingest.py  site_auth.py  observability.py  user_actions.py  item_queries.py  stats.py
 │   ├── context/ app_context.py
 │   └── utils/ auth.py  url_validator.py  serializers.py  bg_tasks.py
 └── tests/                              # 80+ files mirroring module structure
@@ -115,9 +116,9 @@ All settings live in `.env` (see `.env.example`). Key categories:
 
 ## Key Implementation Details
 
-**Crawler (`crawler.py` + `scrapling_spider.py`):**
+**Crawler (`crawler.py` + `page_fetch.py` + `site_walker.py`):**
 
-- Scrapling `Spider.stream()` is the sole multi-page scheduling entry (queue, concurrency, per-domain throttle, retry, depth, dedup, robots.txt)
+- `MagnetPageWalker.stream()` is the multi-page scheduling entry (queue, concurrency, per-domain throttle, retry, depth, dedup); `PageFetcher` is HTTP-first with browser fallback
 - `CrawlTargetAdmission` runs at seed URL, followed URLs, and final response URLs; browser navigation/subresource/WebSocket requests are admitted before dispatch, Service Workers disabled
 - `MagnetSourceExtractor` handles magnet business parsing; resolution filtering keeps `CRAWLER_ALLOWED_RESOLUTIONS`
 
