@@ -71,12 +71,7 @@ def _ingest_service(ctx: AppContext):
 
 
 def _crawler_ready(ctx: AppContext) -> bool:
-    crawler = ctx.core.crawler
-    for attr in ("is_ready", "ready", "_started"):
-        value = getattr(crawler, attr, None)
-        if isinstance(value, bool):
-            return value
-    return crawler is not None
+    return bool(getattr(ctx.core.crawler, "_started", False))
 
 
 def _store_backend_label() -> str:

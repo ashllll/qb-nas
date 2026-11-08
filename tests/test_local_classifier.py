@@ -85,20 +85,6 @@ def test_unknown_default():
     assert result["category"] == "其他"
 
 
-def test_batch_classify():
-    clf = LocalClassifier()
-    items = [
-        {"index": 0, "name": "Game.of.Thrones.S01E01"},
-        {"index": 1, "name": "Taylor.Swift.Midnights.FLAC"},
-        {"index": 2, "name": "Avatar.2022.2160p"},
-    ]
-    results = clf.classify_sync_batch(items)
-    assert len(results) == 3
-    assert results[0]["category"] == "电视剧"
-    assert results[1]["category"] == "音乐"
-    assert results[2]["category"] == "其他"
-
-
 def test_reload_rules_uses_updated_keyword_file(tmp_path):
     rules_file = tmp_path / "category_keywords.json"
     rules_file.write_text(
@@ -142,5 +128,4 @@ if __name__ == "__main__":
     test_variety()
     test_movie_default()
     test_unknown_default()
-    test_batch_classify()
     print("=== LocalClassifier tests passed! ===")

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
@@ -140,20 +139,3 @@ class IngestRequest(BaseModel):
             return None
         v = v.strip()
         return v or None
-
-
-# ── Metrics 接口 — 统一指标快照 ──────────────────────────
-
-
-@dataclass
-class MetricSnapshot:
-    """所有指标收集器的统一快照格式。
-
-    每个适配器实现 snapshot() → MetricSnapshot，由 MetricsReport 合并。
-    """
-
-    namespace: str  # e.g. "crawler", "classifier", "qbit"
-    values: dict[str, object] = field(default_factory=dict)
-
-    def as_dict(self) -> dict:
-        return {"namespace": self.namespace, **self.values}

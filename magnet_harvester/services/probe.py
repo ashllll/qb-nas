@@ -27,10 +27,6 @@ class CachedProbe:
         self._reason: str | None = None
 
     @property
-    def last_value(self) -> bool:
-        return self._value
-
-    @property
     def last_reason(self) -> str | None:
         return None if self._value else self._reason
 

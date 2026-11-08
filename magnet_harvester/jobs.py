@@ -36,7 +36,6 @@ class JobStatus:
     # 与台里 工具/投递.py 的判定一致：任务结束只有 done / error 两种
     error = "error"
 
-    ALL = (queued, running, done, error)
     ACTIVE = (queued, running)
 
 
@@ -99,21 +98,16 @@ class CrawlJob:
         return reason_label(self.reason, message)
 
     @property
-    def urls_in_batch(self) -> int:
-        """这一批里有几个网址（当前一次上报一个网址，留作多条上报的接口）。"""
-        return 1
-
-    @property
     def summary(self) -> str:
         """给用户看的一句话：「从 1 个网址收到 8 条」。"""
         if self.status == JobStatus.done:
             if self.added:
-                text = f"从 {self.urls_in_batch} 个网址收到 {self.added} 条"
+                text = f"从 1 个网址收到 {self.added} 条"
                 if self.duplicates:
                     text += f"（{self.duplicates} 条库里已有）"
                 return text
             if self.found:
-                return f"从 {self.urls_in_batch} 个网址找到 {self.found} 条，全部已在库里"
+                return f"从 1 个网址找到 {self.found} 条，全部已在库里"
             label = self.reason_label
             return "没有找到磁力" + (f"：{label}" if label else "")
         if self.status == JobStatus.error:

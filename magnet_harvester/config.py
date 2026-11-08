@@ -61,7 +61,6 @@ class CrawlerConfig:
     headless: bool = True
     http_first: bool = True
     disable_resources: bool = True
-    block_ads: bool = True
     # 默认不做分辨率过滤：产品要求「多条全收」，1080p/720p 也是有效资源。
     allowed_resolutions: tuple[str, ...] = ()
     wait_until: str = "load"
@@ -75,7 +74,6 @@ class CrawlerConfig:
     remove_consent_popups: bool = True
     # — v0.9.0 新增 —
     max_retries: int = 1
-    check_robots_txt: bool = False
     # — HTTP 优先取页（v3.1） —
     browser_fallback: bool = True
     http_impersonate: str = "chrome"
@@ -112,12 +110,6 @@ class QBitConfig:
     auto_create_dirs: bool = True
 
 
-@dataclass
-class ServiceConfig:
-    host: str = "127.0.0.1"
-    port: int = 8899
-
-
 # ── 主配置 ──────────────────────────────
 
 
@@ -137,7 +129,6 @@ class Settings(BaseSettings):
     CRAWLER_HEADLESS: bool = True
     CRAWLER_HTTP_FIRST: bool = True
     CRAWLER_DISABLE_RESOURCES: bool = True
-    CRAWLER_BLOCK_ADS: bool = True
     # 空 = 不做分辨率过滤（详情页 1080p/720p 也要收，多条全收）
     CRAWLER_ALLOWED_RESOLUTIONS: str = ""
     CRAWLER_WAIT_UNTIL: str = "load"
@@ -151,7 +142,6 @@ class Settings(BaseSettings):
     CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
     CRAWLER_MAX_RETRIES: int = 1
     CRAWLER_RETRY_BACKOFF: float = 0.4
-    CRAWLER_CHECK_ROBOTS_TXT: bool = False
     CRAWLER_BROWSER_FALLBACK: bool = True
     CRAWLER_HTTP_IMPERSONATE: str = "chrome"
     CRAWLER_PER_HOST_MIN_INTERVAL: float = 0.15
@@ -234,7 +224,6 @@ class Settings(BaseSettings):
         self._env_file_override = str(env_file_override) if env_file_override else None
         self._qbit_config: Optional[QBitConfig] = None
         self._crawler_config: Optional[CrawlerConfig] = None
-        self._service_config: Optional[ServiceConfig] = None
 
     # ── 配置事实源自检（启动日志 + 证据） ──────────────────────────────
 
@@ -370,7 +359,6 @@ class Settings(BaseSettings):
                 headless=self.CRAWLER_HEADLESS,
                 http_first=self.CRAWLER_HTTP_FIRST,
                 disable_resources=self.CRAWLER_DISABLE_RESOURCES,
-                block_ads=self.CRAWLER_BLOCK_ADS,
                 allowed_resolutions=self._parse_csv_tuple(
                     self.CRAWLER_ALLOWED_RESOLUTIONS, default=()
                 ),
@@ -385,7 +373,6 @@ class Settings(BaseSettings):
                 remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
                 max_retries=self.CRAWLER_MAX_RETRIES,
                 retry_backoff=self.CRAWLER_RETRY_BACKOFF,
-                check_robots_txt=self.CRAWLER_CHECK_ROBOTS_TXT,
                 browser_fallback=self.CRAWLER_BROWSER_FALLBACK,
                 http_impersonate=self.CRAWLER_HTTP_IMPERSONATE,
                 per_host_min_interval=self.CRAWLER_PER_HOST_MIN_INTERVAL,
@@ -394,15 +381,6 @@ class Settings(BaseSettings):
                 allow_fake_ip=self.CRAWLER_ALLOW_FAKE_IP,
             )
         return self._crawler_config
-
-    @property
-    def service(self) -> ServiceConfig:
-        if self._service_config is None:
-            self._service_config = ServiceConfig(
-                host=self.SERVICE_HOST,
-                port=self.SERVICE_PORT,
-            )
-        return self._service_config
 
     def build_qbit_config(
         self,
