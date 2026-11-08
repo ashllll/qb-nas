@@ -75,7 +75,7 @@ async def test_probe_timeout_still_leaves_a_reason():
 
 def test_health_endpoint_reports_a_reason_when_qb_is_silent(tmp_path, short_probe):
     """端到端：/api/v1/health 的 qbit.reason 不能是 null。"""
-    from tests._client import asgi_client
+    from tests.fixtures import asgi_client
     from tests.test_ingest_api import make_app
 
     client = make_client("http://127.0.0.1:9")
@@ -160,7 +160,7 @@ async def test_banned_ip_is_named_as_banned():
 
 def test_health_reason_falls_back_to_the_probe(tmp_path, short_probe):
     """客户端自己没留原因时（例如被别的 ping 挡在锁上），探针也要给出原因。"""
-    from tests._client import asgi_client
+    from tests.fixtures import asgi_client
     from tests.test_ingest_api import make_app
 
     class SilentQbit:

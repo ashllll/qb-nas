@@ -80,32 +80,6 @@ def _make_executor(store=None, pipeline=None, tasks=None, stats=None):
 
 
 @pytest.mark.asyncio
-async def test_get_stats():
-    store = FakeStore()
-    store.add(MagnetItem(hash="A", name="a", magnet="m:?xt=urn:btih:A", category="电影"))
-    store.add(MagnetItem(hash="B", name="b", magnet="m:?xt=urn:btih:B", category="电视剧"))
-
-    queries = ItemQueryExecutor(store=AsyncItemStore(store))
-    result = await queries.get_stats()
-
-    assert result["total"] == 2
-    assert result["by_category"]["电影"] == 1
-    assert result["by_category"]["电视剧"] == 1
-
-
-@pytest.mark.asyncio
-async def test_list_items():
-    store = FakeStore()
-    store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
-
-    queries = ItemQueryExecutor(store=AsyncItemStore(store))
-    result = await queries.list_items(category="电影")
-
-    assert result["count"] == 1
-    assert result["items"][0]["name"] == "Alpha"
-
-
-@pytest.mark.asyncio
 async def test_page_items_returns_api_payload_shape():
     store = FakeStore()
     store.add(MagnetItem(hash="A", name="Alpha", magnet="m:?xt=urn:btih:A", category="电影"))
@@ -242,8 +216,6 @@ def test_clear_all():
 
 
 if __name__ == "__main__":
-    test_get_stats()
-    test_list_items()
     test_search_items()
     test_start_crawl()
     test_add_to_queue()

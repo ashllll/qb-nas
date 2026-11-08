@@ -11,7 +11,7 @@ from __future__ import annotations
 from magnet_harvester.api.error_contract import install_error_handlers
 from magnet_harvester.api.security import install_security_guard
 from magnet_harvester.config import settings
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 from tests.fixtures import make_test_app
 
 TEST_KEY = "demo-test-key-b2"

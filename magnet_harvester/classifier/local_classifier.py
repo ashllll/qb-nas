@@ -183,11 +183,6 @@ class LocalClassifier:
         return results
 
     # ── 便捷方法 ──────────────────────────
-
-    def classify_sync_batch(self, items: list[dict]) -> list[dict]:
-        """同步批量分类（非协程版本）"""
-        return [self._engine.classify_name(item.get("name", "")) for item in items]
-
     def classify_one(self, name: str) -> dict:
         """单条分类"""
         return self._engine.classify_name(name)

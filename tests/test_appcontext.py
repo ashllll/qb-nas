@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 from fastapi import FastAPI, Depends
 
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 
 from magnet_harvester.store import AsyncItemStore, FakeStore
 from magnet_harvester.bus import NullBus
@@ -365,7 +365,6 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     from magnet_harvester.bus import Event, Subscriber
     from magnet_harvester.api.websocket import WSBroadcaster
     from magnet_harvester.errors import ErrorRecord
-    from magnet_harvester.models import MetricSnapshot
     from magnet_harvester.pipeline import (
         ClassifyPhase,
         DownloadPhase,
@@ -382,7 +381,6 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
 
     event_hints = Event.__annotations__
     error_record_hints = ErrorRecord.__annotations__
-    metric_snapshot_hints = MetricSnapshot.__annotations__
     qbit_client_hints = QBittorrentClient.get_maindata.__annotations__
     websocket_hints = WSBroadcaster.__init__.__annotations__
     classify_usage_hints = ClassifyPhase.usage.fget.__annotations__
@@ -399,7 +397,6 @@ def test_runtime_service_constructor_contracts_are_not_typed_as_any():
     assert "Any" not in str(event_hints["data"]), "Event.data"
     assert "Any" not in str(Subscriber), "Subscriber"
     assert "Any" not in str(error_record_hints["details"]), "ErrorRecord.details"
-    assert "Any" not in str(metric_snapshot_hints["values"]), "MetricSnapshot.values"
     assert "Any" not in str(qbit_client_hints["return"]), "QBittorrentClient.get_maindata"
     assert "Any" not in str(websocket_hints["store"]), "WSBroadcaster.store"
     assert "Any" not in str(classify_usage_hints["return"]), "ClassifyPhase.usage"

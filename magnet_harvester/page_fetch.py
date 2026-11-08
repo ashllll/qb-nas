@@ -158,10 +158,6 @@ class PageFetcher:
         self._limiter = HostRateLimiter(config.per_host_min_interval)
         self._host_slots: dict[str, asyncio.Semaphore] = {}
 
-        self.browser_used = False
-        self.browser_failures = 0
-        self.requests_sent = 0
-
     # ── 会话生命周期 ─────────────────────────
 
     def _default_http_factory(self) -> Any:
@@ -290,7 +286,6 @@ class PageFetcher:
             started = time.monotonic()
             try:
                 session = await self._ensure_http()
-                self.requests_sent += 1
                 response = await session.get(url, timeout=self._config.timeout)
             except Exception as exc:
                 last = self._failure_from_exception(url, exc, started)
@@ -385,8 +380,6 @@ class PageFetcher:
         started = time.monotonic()
         try:
             browser = await self._ensure_browser()
-            self.browser_used = True
-            self.requests_sent += 1
             kwargs: dict[str, Any] = {
                 "timeout": self._config.timeout * 1000,
                 "network_idle": self._config.wait_until == "networkidle",
@@ -399,7 +392,6 @@ class PageFetcher:
                 kwargs["page_setup"] = self._guard_page_setup
             response = await browser.fetch(url, **kwargs)
         except Exception as exc:
-            self.browser_failures += 1
             elapsed_ms = int((time.monotonic() - started) * 1000)
             log.warning("浏览器取页失败 %s: %s", url, exc)
             return PageFetch(

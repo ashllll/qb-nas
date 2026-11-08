@@ -93,11 +93,6 @@ class _ItemStoreBackend(Protocol):
     def recent(self, limit: int = 10) -> List[MagnetItem]: ...
     @property
     def count(self) -> int: ...
-    def count_items(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> int: ...
     def count_and_page(
         self,
         category: Optional[str] = None,
@@ -107,7 +102,6 @@ class _ItemStoreBackend(Protocol):
         order: str = "name",
     ) -> tuple: ...
     def stats(self) -> StoreStats: ...
-    def add_batch(self, items: List[MagnetItem]) -> int: ...
     def clear(self) -> int: ...
 
 
@@ -135,11 +129,6 @@ class ItemStore(Protocol):
     async def get_hashes_by_prefix(self, prefix: str) -> List[str]: ...
     async def recent(self, limit: int = 10) -> List[MagnetItem]: ...
     async def count(self) -> int: ...
-    async def count_items(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> int: ...
     async def count_and_page(
         self,
         category: Optional[str] = None,
@@ -149,7 +138,6 @@ class ItemStore(Protocol):
         order: str = "name",
     ) -> tuple: ...
     async def stats(self) -> StoreStats: ...
-    async def add_batch(self, items: List[MagnetItem]) -> int: ...
     async def clear(self) -> int: ...
 
 
@@ -225,17 +213,6 @@ class AsyncItemStore:
             return await asyncio.to_thread(getattr, self._backend, "count")
         return self._backend.count
 
-    async def count_items(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> int:
-        return await self._invoke(
-            self._backend.count_items,
-            category=category,
-            status=status,
-        )
-
     async def count_and_page(
         self,
         category: Optional[str] = None,
@@ -255,9 +232,6 @@ class AsyncItemStore:
 
     async def stats(self) -> StoreStats:
         return await self._invoke(self._backend.stats)
-
-    async def add_batch(self, items: List[MagnetItem]) -> int:
-        return await self._invoke(self._backend.add_batch, items)
 
     async def clear(self) -> int:
         return await self._invoke(self._backend.clear)
@@ -414,19 +388,6 @@ class InMemoryItemStore:
         with self._lock:
             return len(self._items)
 
-    def count_items(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> int:
-        with self._lock:
-            return sum(
-                1
-                for item in self._items.values()
-                if (category is None or item.category == category)
-                and (status is None or status == "all" or item.status.value == status)
-            )
-
     def count_and_page(
         self,
         category: Optional[str] = None,
@@ -463,19 +424,6 @@ class InMemoryItemStore:
                 if item.status == TaskStatus.pending:
                     s.pending_count += 1
             return s
-
-    # ── 批量操作 ──────────────────────────────
-
-    def add_batch(self, items: List[MagnetItem]) -> int:
-        """批量添加，返回新增数量"""
-        with self._lock:
-            pending: dict[str, MagnetItem] = {}
-            for item in items:
-                if item.hash in self._items or item.hash in pending:
-                    continue
-                pending[item.hash] = item
-            self._items.update(pending)
-            return len(pending)
 
     def clear(self) -> int:
         with self._lock:
@@ -832,28 +780,6 @@ class SQLiteItemStore:
             row = cursor.fetchone()
             return row[0] if row else 0
 
-    def count_items(
-        self,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> int:
-        conditions: list[str] = []
-        params: list[str] = []
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if status and status != "all":
-            conditions.append("status = ?")
-            params.append(status)
-
-        where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        sql = f"SELECT COUNT(*) FROM magnet_items {where}"
-
-        with self._lock, self._connect() as db:
-            cursor = db.execute(sql, params)
-            row = cursor.fetchone()
-            return row[0] if row else 0
-
     def count_and_page(
         self,
         category: Optional[str] = None,
@@ -921,65 +847,6 @@ class SQLiteItemStore:
             s.pending_count = row[0] if row else 0
 
         return s
-
-    # ── 批量操作 ──────────────────────────────
-
-    def add_batch(self, items: List[MagnetItem]) -> int:
-        if not items:
-            return 0
-        added = 0
-        committed = 0
-        _BATCH_COMMIT = 50
-        with self._lock, self._connect() as db:
-            for i, item in enumerate(items):
-                row = self._item_to_row(item)
-                db.execute("SAVEPOINT add_item")
-                try:
-                    cur = db.execute(
-                        """INSERT OR IGNORE INTO magnet_items
-                           (hash, name, magnet, size, source_url, detail_url, batch_id, source_kind,
-                            category, save_path, status, progress, torrent_state, error_msg,
-                            created_at, updated_at)
-                           VALUES (:hash, :name, :magnet, :size, :source_url, :detail_url,
-                            :batch_id, :source_kind, :category, :save_path, :status, :progress,
-                            :torrent_state, :error_msg, :created_at, :updated_at)""",
-                        row,
-                    )
-                    if cur.rowcount > 0:
-                        added += 1
-                    db.execute("RELEASE SAVEPOINT add_item")
-                except sqlite3.OperationalError:
-                    log.error(
-                        "sqlite: add_batch 条目 %s 数据库损坏",
-                        item.hash[:16] if item.hash else "?",
-                        exc_info=True,
-                    )
-                    db.execute("ROLLBACK TO SAVEPOINT add_item")
-                    db.execute("RELEASE SAVEPOINT add_item")
-                except Exception:
-                    log.exception(
-                        "sqlite: add_batch 条目 %s 未知错误", item.hash[:16] if item.hash else "?"
-                    )
-                    db.execute("ROLLBACK TO SAVEPOINT add_item")
-                    db.execute("RELEASE SAVEPOINT add_item")
-                # 每 _BATCH_COMMIT 条提交一次，防止最终 commit 失败导致全部丢失
-                if (i + 1) % _BATCH_COMMIT == 0:
-                    try:
-                        db.commit()
-                    except sqlite3.Error:
-                        db.rollback()
-                        raise
-                    committed = added
-            # 提交剩余条目
-            if added > committed:
-                try:
-                    db.commit()
-                except sqlite3.Error:
-                    db.rollback()
-                    raise
-        if added < len(items):
-            log.warning("sqlite: add_batch 部分成功 %d/%d", added, len(items))
-        return added
 
     def clear(self) -> int:
         with self._lock, self._connect() as db:

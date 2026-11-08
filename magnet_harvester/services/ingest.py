@@ -38,18 +38,6 @@ from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
-_INGEST_ERROR_REASONS = {
-    "no_magnet",
-    "blocked",
-    "timeout",
-    "http_error",
-    "parse_error",
-    "unsafe_url",
-    "browser_unavailable",
-    # 取页层没给结构化原因时的兜底，UI 直接显示原始消息
-    "crawl_error",
-}
-
 # 一条任务最多留多少条错误明细（站点被限流时错误会成百上千，只留最近的）
 _MAX_JOB_ERRORS = 20
 
@@ -234,13 +222,6 @@ class IngestService:
             }
         await self._classify_one(item.hash, item.name)
         return {"ok": True, "status": "accepted", "item_id": normalized, "reason": ""}
-
-    async def ingest_magnet(self, item: MagnetItem) -> bool:
-        """已在别处解析好的条目入库并分类（供 pipeline.ingest 复用）。"""
-        added = await self._discovery.found(item)
-        if added:
-            await self._classify_one(item.hash, item.name)
-        return added
 
     async def ingest_url(
         self,
@@ -598,8 +579,6 @@ class IngestService:
     def _normalize_reason(cls, reason, message: str = "") -> str:
         """统一失败原因的取值：取页层给了结构化原因就用它，否则按消息猜一个。"""
         text = str(reason or "").strip()
-        if text in _INGEST_ERROR_REASONS:
-            return text
         if text:
             return text
         lowered = (message or "").lower()

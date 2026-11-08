@@ -85,7 +85,7 @@ async def test_legacy_error_items_recover_to_paused(tmp_path):
     assert len(recovered) == 58
     assert all(item.error_msg is None for item in recovered)
     assert all(item.torrent_state == "stoppedDL" for item in recovered)
-    assert await store.count_items(status=TaskStatus.error.value) == 0
+    assert await store.list(status=TaskStatus.error.value, limit=1000) == []
 
 
 @pytest.mark.asyncio

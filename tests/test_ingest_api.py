@@ -21,7 +21,7 @@ from magnet_harvester.models import TaskStatus
 from magnet_harvester.services.ingest import IngestService
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 
 HEX = "0123456789ABCDEF0123456789ABCDEF01234567"
 HEX_B32 = base64.b32encode(bytes.fromhex(HEX)).decode()

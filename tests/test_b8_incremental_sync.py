@@ -121,7 +121,7 @@ async def test_58_error_items_stay_in_sync_through_three_deltas_without_state():
 
     await _sync_rounds(store, loop, qbit, rounds=4)
 
-    error_total = await store.count_items(status=TaskStatus.error.value)
+    error_total = len(await store.list(status=TaskStatus.error.value, limit=1000))
     assert error_total == 0, "增量不带 state 不能把种子打成失败"
     assert qbit.rid_calls == [0, 1, 2, 3], (
         f"整个过程中不应出现额外的全量补取（缓存合并已保留 state）：{qbit.rid_calls}"

@@ -19,7 +19,7 @@ from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.qbit_client.mapper import TorrentStatusMapper
 from magnet_harvester.utils.serializers import item_payload
 from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.store import AsyncItemStore, ItemStore
+from magnet_harvester.store import ItemStore
 
 log = logging.getLogger(__name__)
 
@@ -422,71 +422,3 @@ class DownloadTransitions(_TransitionBase):
             )
             return True
         return False
-
-
-# ── 外观 ──────────────────────────────────────
-
-
-class MagnetItemTransitions:
-    """兼容旧编排接口的生命周期外观，内部委托给三个领域转换器。"""
-
-    def __init__(self, store: ItemStore, bus: MessageBus):
-        self._store = store
-        async_store = store if isinstance(store, AsyncItemStore) else AsyncItemStore(store)
-        self._discovery = DiscoveryTransitions(async_store, bus)
-        self._classification = ClassificationTransitions(async_store, bus)
-        self._download = DownloadTransitions(async_store, bus)
-
-    async def found(self, item: MagnetItem) -> bool:
-        return await self._discovery.found(item)
-
-    async def classification_started(self, hash_key: str):
-        await self._classification.started(hash_key)
-
-    async def classified(self, hash_key: str, result: dict):
-        await self._classification.classified(hash_key, result)
-
-    async def classification_failed(self, hash_key: str, error_msg: str):
-        await self._classification.failed(hash_key, error_msg)
-
-    async def manually_classified(self, hash_key: str, category: str) -> bool:
-        return await self._classification.manually_classified(hash_key, category)
-
-    async def download_submitting(self, hash_key: str) -> bool:
-        return await self._download.submitting(hash_key)
-
-    async def download_submitted(self, hash_key: str):
-        await self._download.submitted(hash_key)
-
-    async def download_failed(self, hash_key: str, error_msg: str):
-        await self._download.failed(hash_key, error_msg)
-
-    async def download_removed(self, hash_key: str, previous_status: TaskStatus | None):
-        await self._download.removed(hash_key, previous_status)
-
-    async def download_status_changed(
-        self, hash_key: str, *, fields: dict, previous_status: TaskStatus | None
-    ):
-        await self._download.status_changed(
-            hash_key, fields=fields, previous_status=previous_status
-        )
-
-    async def download_state_changed(
-        self, hash_key: str, previous_status: TaskStatus | None = None
-    ):
-        await self._download.state_changed(hash_key, previous_status)
-
-    async def reconcile_download_snapshot(
-        self,
-        hash_key: str,
-        item: MagnetItem,
-        torrent: dict | None,
-        *,
-        was_removed: bool = False,
-    ) -> bool:
-        return await self._download.reconcile_snapshot(
-            hash_key, item, torrent, was_removed=was_removed
-        )
-
-    async def cleared(self) -> int:
-        return await self._discovery.cleared()

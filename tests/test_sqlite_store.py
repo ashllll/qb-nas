@@ -289,20 +289,6 @@ class TestSQLiteItemStore:
         assert "ABCDEF123456" in matches
         assert "ABCDEF789012" in matches
 
-    def test_add_batch(self, store):
-        """add_batch should add multiple items and return the count of new additions."""
-        items = [
-            MagnetItem(hash=f"B{i:03d}", name=f"Batch {i}", magnet=f"magnet:?xt=urn:btih:B{i:03d}")
-            for i in range(5)
-        ]
-        added = store.add_batch(items)
-        assert added == 5
-        assert store.count == 5
-
-        # Adding same batch again should add 0
-        added_again = store.add_batch(items)
-        assert added_again == 0
-
     def test_clear(self, store):
         """Clear should remove all items from the database."""
         store.add(MagnetItem(hash="CLR001", name="Clear Me", magnet="magnet:?xt=urn:btih:CLR001"))
