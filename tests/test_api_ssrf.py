@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from magnet_harvester.main import app
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 
 import magnet_harvester.assembly as assembly_module
 

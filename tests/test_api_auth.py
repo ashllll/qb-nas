@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from magnet_harvester.bus import EventType
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 from magnet_harvester.config import settings
 from magnet_harvester.main import app
 

@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 from fastapi import FastAPI
 
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
