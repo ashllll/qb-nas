@@ -120,9 +120,14 @@ def _build_store():
     if settings.STORE_BACKEND == "sqlite":
         backend = SQLiteItemStore(db_path=settings.STORE_DB_PATH)
         log.info("使用 SQLite 持久化存储: %s", settings.STORE_DB_PATH)
-    else:
+    elif settings.STORE_BACKEND == "memory":
         backend = InMemoryItemStore()
         log.info("使用内存存储")
+    else:
+        # 配置层已经用 Literal 拦住非法值；这里再 fail-closed，防止运行时改坏配置后静默丢数据。
+        raise ValueError(
+            f"STORE_BACKEND={settings.STORE_BACKEND!r} 无效，只支持 'sqlite' 或 'memory'"
+        )
     return AsyncItemStore(backend)
 
 

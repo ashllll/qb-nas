@@ -78,3 +78,34 @@ def test_build_runtime_uses_configured_qbit_sync_interval(monkeypatch):
     runtime = assembly_module.build_runtime()
 
     assert runtime.sync_loop._backoff.next_delay() == 7.5
+
+
+@pytest.mark.parametrize(
+    ("backend_name", "backend_type"),
+    [("sqlite", "SQLiteItemStore"), ("memory", "InMemoryItemStore")],
+)
+def test_build_runtime_uses_configured_store_backend(
+    monkeypatch, tmp_path, backend_name, backend_type
+):
+    import magnet_harvester.assembly as assembly_module
+    import magnet_harvester.store as store_module
+    from magnet_harvester.config import Settings
+
+    monkeypatch.setattr(
+        assembly_module,
+        "settings",
+        Settings(STORE_BACKEND=backend_name, STORE_DB_PATH=str(tmp_path / "items.db")),
+    )
+
+    runtime = assembly_module.build_runtime()
+
+    assert isinstance(runtime.ctx.core.store._backend, getattr(store_module, backend_type))
+
+
+def test_build_store_rejects_unknown_backend(monkeypatch):
+    import magnet_harvester.assembly as assembly_module
+
+    monkeypatch.setattr(assembly_module.settings, "STORE_BACKEND", "postgres", raising=False)
+
+    with pytest.raises(ValueError, match="STORE_BACKEND"):
+        assembly_module._build_store()

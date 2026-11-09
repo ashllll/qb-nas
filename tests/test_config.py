@@ -7,10 +7,37 @@ import sys
 import os
 
 import pytest
+from pydantic import ValidationError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import ConfigPersistError, CrawlerConfig, QBitConfig, Settings
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "memory"])
+def test_store_backend_accepts_supported_values(backend):
+    assert Settings(STORE_BACKEND=backend).STORE_BACKEND == backend
+
+
+@pytest.mark.parametrize("backend", ["sqlite3", "SQLite", " sqlite", "sqlite ", ""])
+def test_store_backend_rejects_unknown_values(backend):
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(STORE_BACKEND=backend)
+
+    message = str(excinfo.value)
+    assert "STORE_BACKEND" in message
+    assert "sqlite" in message and "memory" in message
+
+
+def test_store_backend_from_env_file_rejects_unknown_value(tmp_path):
+    """启动时真正读的是 .env，不是构造参数；非法值必须在这里就 abort。"""
+    env_file = tmp_path / ".env"
+    env_file.write_text("STORE_BACKEND=postgres\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=env_file)
+
+    assert "STORE_BACKEND" in str(excinfo.value)
 
 
 def test_crawler_allowed_resolutions_parse_csv():

@@ -8,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings
 
@@ -121,6 +121,9 @@ class ServiceConfig:
 # ── 主配置 ──────────────────────────────
 
 
+StoreBackend = Literal["sqlite", "memory"]
+
+
 class Settings(BaseSettings):
     QBIT_HOST: str = "http://192.168.1.100:8080"
     QBIT_USERNAME: str = "admin"
@@ -170,7 +173,7 @@ class Settings(BaseSettings):
 
     # ── 存储 ──
     # 采集中心默认持久化：重启后资源库、抓取任务、上报幂等记录都还在
-    STORE_BACKEND: str = "sqlite"  # "memory" 或 "sqlite"
+    STORE_BACKEND: StoreBackend = "sqlite"  # 只接受 "sqlite" 或 "memory"
     STORE_DB_PATH: str = "data/magnet_items.db"
 
     # 采集任务：同时最多跑几个网址、被打断后最多自动重试几次
