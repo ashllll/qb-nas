@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import os
+import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -69,6 +70,22 @@ def test_reload_rules_invalidates_cache():
     assert engine.get_cache_stats()["cache"]["size"] == 1
     engine.reload_rules()
     assert engine.get_cache_stats()["cache"]["size"] == 0
+
+
+def test_failed_reload_keeps_cache_and_reports_failed_rules(tmp_path):
+    """重载失败时缓存不能清空（旧规则仍在用），失败规则要透出。"""
+    rules_file = tmp_path / "category_keywords.json"
+    rules_file.write_text(
+        json.dumps({"keywords": [{"keyword": "OldKey", "category": "电影"}]}), encoding="utf-8"
+    )
+    engine = LocalClassificationEngine(keyword_rules_file=rules_file)
+    assert engine.classify_name("OldKey.Release")["category"] == "电影"
+
+    rules_file.write_text("{", encoding="utf-8")
+    result = engine.reload_rules()
+
+    assert result == {"rules_reloaded": 1, "failed_rules": ["KeywordRule"]}
+    assert engine.get_cache_stats()["cache"]["size"] == 1
 
 
 # ── 4. 缓存结果与调用方隔离（返回拷贝） ──

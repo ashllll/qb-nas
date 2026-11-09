@@ -125,7 +125,7 @@ All settings live in `.env` (see `.env.example`). Key categories:
 **Classifier (`classifier/local_classifier.py`):**
 
 - Rule chain: `KeywordRule` (high confidence) → `StudioRule` (medium) → `FallbackRule` (low, always returns)
-- `LocalClassificationEngine` owns a thread-safe LRU cache (max 1024) with real `get_cache_stats()`/`clear_cache()`; `reload_rules()` invalidates cache
+- `LocalClassificationEngine` owns a thread-safe LRU cache (max 1024) with real `get_cache_stats()`/`clear_cache()`; `reload_rules()` invalidates cache only when every reloadable rule succeeded, and reports failed rules
 - Categories: 电影, 电视剧, 动漫, 音乐, 游戏, 软件, 综艺, 纪录片, 其他；StudioRule 命中「厂牌 + 日期」格式时以厂牌名作为分类（已知厂牌规范化，未知厂牌智能大小写，纯数字/过短前缀除外），此时分类为开放集合
 
 **State transitions (`transitions.py`):**
