@@ -75,7 +75,7 @@ def _crawler_ready(ctx: AppContext) -> bool:
 
 
 def _store_backend_label() -> str:
-    return settings.STORE_BACKEND or "memory"
+    return settings.STORE_BACKEND
 
 
 @router.post("/api/v1/ingest")
