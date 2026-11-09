@@ -230,7 +230,8 @@ class Settings(BaseSettings):
             env_values = dict(env_settings() or {})
             file_values = dict(file_settings() or {})
             merged: dict[str, object] = dict(env_values)
-            for key, value in file_values.items():
+            for raw_key, value in file_values.items():
+                key = raw_key.upper()
                 if key in DEPLOYMENT_PINNED_KEYS:
                     merged.setdefault(key, value)  # 环境优先，文件只补缺
                 else:
