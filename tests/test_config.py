@@ -2,11 +2,13 @@
 测试配置派生对象
 """
 
+import io
 import stat
 import sys
 import os
 
 import pytest
+from dotenv import dotenv_values
 from pydantic import ValidationError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -128,6 +130,63 @@ def test_persist_qbit_config_updates_env_without_dropping_other_values(tmp_path)
     assert 'QBIT_PASSWORD="pa\\"ss word"' in text
     assert "OTHER_VALUE=keep-me" in text
     assert "old.example" not in text
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "pa$ss",
+        "pa${HOME}ss",
+        "pa$$word",
+        "  leading and trailing  ",
+        'pa"ss word',
+        "back\\slash",
+        "tab\there",
+    ],
+)
+def test_qbit_password_round_trips_through_env_file(tmp_path, password):
+    """界面保存后重启读回的密码必须逐字符相等：$ / ${HOME} / 首尾空格都不许被改写。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text("QBIT_HOST=http://old.example:8080\n", encoding="utf-8")
+    cfg = Settings(_env_file=str(env_path))
+
+    cfg.persist_qbit_config(
+        QBitConfig(host="http://new.example:8080", username="new-user", password=password),
+        env_path=env_path,
+    )
+    reloaded = Settings(_env_file=str(env_path))
+
+    assert reloaded.QBIT_PASSWORD == password
+    assert reloaded.build_qbit_config().password == password
+
+
+def test_env_file_empty_values_are_not_replaced_by_defaults(tmp_path):
+    """空值必须保持为空：`QBIT_PASSWORD=` 不能被默认 adminadmin 顶掉。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text("QBIT_PASSWORD=\nQBit_Username=\n", encoding="utf-8")
+
+    settings = Settings(_env_file=str(env_path))
+
+    assert settings.QBIT_PASSWORD == ""
+    assert settings.QBIT_USERNAME == ""
+
+
+def test_build_qbit_config_keeps_password_verbatim():
+    """首尾空格属于密码本身，不能 .strip()。"""
+    built = Settings().build_qbit_config(password="  padded  ")
+
+    assert built.password == "  padded  "
+
+
+def test_format_env_value_is_read_back_verbatim():
+    """写出的值只用 dotenv 认识的转义，不靠 `$` 反斜杠这种不存在的语法。"""
+    value = 'pa$ss ${HOME} "q" back\\slash 尾 '
+
+    rendered = Settings._format_env_value(value)
+
+    assert "\\$" not in rendered
+    with io.StringIO(f"A={rendered}\n") as stream:
+        assert dotenv_values(stream=stream, interpolate=False)["A"] == value
 
 
 def test_check_disk_space_reports_configured_path(monkeypatch, tmp_path):

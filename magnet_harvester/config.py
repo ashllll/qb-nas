@@ -10,7 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
+from dotenv import dotenv_values
 from pydantic_settings import BaseSettings
+from pydantic_settings.sources import DotEnvSettingsSource
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +118,23 @@ class QBitConfig:
 StoreBackend = Literal["sqlite", "memory"]
 
 
+class _LiteralEnvFileSource(DotEnvSettingsSource):
+    """读 .env 时关闭 `${VAR}` 展开：配置值（尤其密码）必须逐字符原样读回。
+
+    dotenv 没有关掉 interpolation 的「转义写法」，写 `$` 只能靠读侧别展开。
+    """
+
+    def _read_env_file(self, file_path: Path) -> dict[str, str | None]:
+        values = dotenv_values(
+            file_path, encoding=self.env_file_encoding or "utf8", interpolate=False
+        )
+        if self.env_ignore_empty:
+            values = {key: value for key, value in values.items() if value != ""}
+        if not self.case_sensitive:
+            values = {key.lower(): value for key, value in values.items()}
+        return values
+
+
 class Settings(BaseSettings):
     QBIT_HOST: str = "http://192.168.1.100:8080"
     QBIT_USERNAME: str = "admin"
@@ -209,14 +228,22 @@ class Settings(BaseSettings):
 
         def merged_source() -> dict[str, object]:
             env_values = dict(env_settings() or {})
-            file_values = dict(dotenv_settings() or {})
+            file_values = dict(file_settings() or {})
             merged: dict[str, object] = dict(env_values)
-            for key, value in file_values.items():
+            for raw_key, value in file_values.items():
+                key = raw_key.upper()
                 if key in DEPLOYMENT_PINNED_KEYS:
                     merged.setdefault(key, value)  # 环境优先，文件只补缺
                 else:
                     merged[key] = value  # 文件优先（含界面可写键）
             return merged
+
+        # 只换读法（不展开 ${VAR}），file/encoding 沿用 pydantic 已解析的 _env_file
+        file_settings = _LiteralEnvFileSource(
+            settings_cls,
+            env_file=dotenv_settings.env_file,
+            env_file_encoding=dotenv_settings.env_file_encoding,
+        )
 
         return (init_settings, merged_source, file_secret_settings)
 
@@ -394,7 +421,7 @@ class Settings(BaseSettings):
         """Build a fully validated candidate without mutating live settings."""
         candidate_host = self.QBIT_HOST if host is None else host.strip()
         candidate_username = self.QBIT_USERNAME if username is None else username.strip()
-        candidate_password = self.QBIT_PASSWORD if password is None else password.strip()
+        candidate_password = self.QBIT_PASSWORD if password is None else password
 
         if not candidate_host:
             raise ValueError("qBittorrent 主机地址不能为空")
@@ -613,13 +640,14 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _format_env_value(value: str) -> str:
+        # 只用 python-dotenv 双引号转义表认识的序列（\\ \" \n \r \t）；
+        # `$` 原样写出，读侧由 _LiteralEnvFileSource 关掉 ${VAR} 展开。
         escaped = (
             value.replace("\\", "\\\\")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
             .replace('"', '\\"')
-            .replace("$", "\\$")
         )
         return f'"{escaped}"'
 
