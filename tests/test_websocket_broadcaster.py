@@ -4,6 +4,7 @@ Test WSBroadcaster — WebSocket event broadcast service.
 
 import sys
 import os
+import asyncio
 import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -23,8 +24,16 @@ class FakeWebSocket:
     async def send_text(self, data: str):
         self.sent.append(data)
 
-    async def close(self):
+    async def close(self, code: int = 1000, reason: str = ""):
         self.closed = True
+
+
+async def _wait_for(predicate, timeout: float = 1.0) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not predicate():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("condition not met in time")
+        await asyncio.sleep(0.01)
 
 
 class LifecycleWebSocket(FakeWebSocket):
@@ -63,11 +72,13 @@ async def test_broadcasts_event_to_all_connected_ws():
 
     event = Event(EventType.MAGNET_FOUND, {"item": {"hash": "ABC", "name": "Test"}})
     await bus.emit(event)
+    await _wait_for(lambda: len(ws1.sent) == 1 and len(ws2.sent) == 1)
 
     assert len(ws1.sent) == 1
     assert len(ws2.sent) == 1
     data = json.loads(ws1.sent[0])
     assert data["type"] == "magnet_found"
+    broadcaster.shutdown()
 
 
 @pytest.mark.asyncio
@@ -89,9 +100,12 @@ async def test_removes_dead_ws_on_broadcast_failure():
 
     event = Event(EventType.STORE_CHANGED, {"item": {}})
     await bus.emit(event)
+    await _wait_for(lambda: len(good_ws.sent) == 1 and bad_ws.closed)
 
     # bad_ws should be removed, good_ws should still receive
     assert len(good_ws.sent) == 1
+    assert bad_ws not in broadcaster._active_ws
+    broadcaster.shutdown()
 
 
 @pytest.mark.asyncio
@@ -142,3 +156,4 @@ async def test_remove_disconnects_ws():
     await bus.emit(event)
 
     assert len(ws.sent) == 0
+    broadcaster.shutdown()
