@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 import pytest
@@ -113,23 +114,28 @@ def test_validation_error_names_the_field(client):
     assert "url" in body["detail"]
 
 
-def test_unhandled_exception_becomes_contract_500():
+def test_unhandled_exception_returns_id_without_leaking_details(caplog):
     app = FastAPI()
     install_error_handlers(app)
 
     @app.get("/boom")
     async def boom():
-        raise RuntimeError("disk exploded while writing /app/.env.tmp")
+        raise RuntimeError("disk exploded while writing /tmp/secret.db")
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     client = httpx.AsyncClient(base_url="http://testserver", transport=transport)
-    resp = asyncio.run(client.get("/boom"))
-    asyncio.run(client.aclose())
+    with caplog.at_level(logging.ERROR, logger="magnet_harvester.api.error_contract"):
+        resp = asyncio.run(client.get("/boom"))
+        asyncio.run(client.aclose())
 
     assert resp.status_code == 500
     body = resp.json()
     _assert_contract(body)
     assert body["code"] == "internal_error"
-    # 原因不能被吞掉：异常类型与消息要能帮人定位
-    assert "RuntimeError" in body["detail"]
-    assert "disk exploded" in body["detail"]
+    # 路径与异常文本只进日志；正文只留编号，编号能在日志里找到对应堆栈
+    assert "/tmp/secret.db" not in resp.text
+    assert "RuntimeError" not in resp.text
+    error_id = body["detail"].rsplit("错误编号 ", 1)[-1].rstrip("）")
+    assert error_id in body["hint"]
+    assert error_id in caplog.text
+    assert "RuntimeError" in caplog.text

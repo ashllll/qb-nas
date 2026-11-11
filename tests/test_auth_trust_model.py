@@ -288,8 +288,22 @@ def test_cross_origin_write_is_rejected_even_in_strict_mode(monkeypatch):
 # ── 配置暴露面：只回非敏感字段，密码绝不回显 ────────────────────────────
 
 
-def test_config_is_open_and_never_echoes_password_in_strict_mode(monkeypatch):
+def test_config_read_requires_key_in_strict_mode(monkeypatch):
+    """strict 下配置读也要 key：地址/用户名属于内部拓扑，不能裸给未授权请求。"""
     app, _ = _app(monkeypatch, mode="strict")
+    monkeypatch.setattr(settings, "QBIT_HOST", "http://192.168.20.193:8085")
+    monkeypatch.setattr(settings, "QBIT_USERNAME", "qb-user")
+    monkeypatch.setattr(settings, "QBIT_PASSWORD", "super-secret-pass")
+    with asgi_client(app) as client:
+        resp = client.get("/api/config")
+    assert resp.status_code == 401
+    assert resp.json()["code"] == "api_key_missing"
+    assert "super-secret-pass" not in resp.text
+
+
+def test_config_read_is_open_in_trusted_mode_and_hides_password(monkeypatch):
+    """trusted 局域网里页面没有 key，仍要看见真实地址/用户名；密码只答是否已配置。"""
+    app, _ = _app(monkeypatch, mode="trusted")
     monkeypatch.setattr(settings, "QBIT_HOST", "http://192.168.20.193:8085")
     monkeypatch.setattr(settings, "QBIT_USERNAME", "qb-user")
     monkeypatch.setattr(settings, "QBIT_PASSWORD", "super-secret-pass")

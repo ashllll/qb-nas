@@ -119,23 +119,19 @@ class TestAPIKeyAuth:
         r = client.put("/api/config", json={"qbit_host": "http://new.host:8080"})
         assert r.status_code == 401
 
-    def test_config_get_without_key_reads_non_sensitive_only(self, client):
-        """无钥匙的浏览器也要能看见真实的 qB 地址/用户名（否则只能看到占位符）。"""
+    def test_config_get_without_key_returns_401(self, client):
+        """strict 下读配置也要 key：qB 主机/用户名也是内部拓扑信息。"""
         r = client.get("/api/config")
-        assert r.status_code == 200
-        body = r.json()
-        assert {"qbit_host", "qbit_username", "qbit_password_configured"} <= set(body)
-        # 密码（含掩码）绝不回显；写仍要 key
-        assert "qbit_password" not in body
-        assert (
-            client.put("/api/config", json={"qbit_host": "http://new.host:8080"}).status_code == 401
-        )
+        assert r.status_code == 401
+        assert r.json()["code"] == "api_key_missing"
 
     def test_config_get_with_valid_key_succeeds(self, client):
         r = client.get("/api/config", headers={"X-API-Key": "test-secret-key-123"})
         assert r.status_code == 200
-        assert "qbit_username" in r.json()
-        assert "qbit_password" not in r.json()
+        body = r.json()
+        assert {"qbit_host", "qbit_username", "qbit_password_configured"} <= set(body)
+        # 密码（含掩码）绝不回显
+        assert "qbit_password" not in body
 
     def test_delete_items_without_key_returns_401(self, client):
         r = client.delete("/api/items")
@@ -162,7 +158,8 @@ class TestAPIKeyAuth:
         assert client.get("/api/status").status_code == 200
         assert client.get("/api/items").status_code == 200
         assert client.get("/api/health").status_code == 200
-        assert client.get("/api/config").status_code == 200
+        # 连接配置含内部地址/用户名，strict 下读也要 key（trusted 局域网仍开放）
+        assert client.get("/api/config").status_code == 401
         # 只读开放不等于写开放：PUT/DELETE 仍要 key
         assert client.put("/api/config", json={"qbit_host": "http://x:8080"}).status_code == 401
         assert client.delete("/api/items").status_code == 401
