@@ -33,15 +33,20 @@ final class SelfCheckModel: ObservableObject {
             ("NAS", s.online ? "在线" : "不在线\(s.lastError.map { "（\($0)）" } ?? "")"),
             ("队列", "\(s.queueCount) 条待发"),
             ("API Key", "\(settings.keySourceDescription)\(keychainWorking ? "" : " · 钥匙串当前不可用")"),
-            ("登录项", LaunchAgent.isInstalled()
-                ? (LaunchAgent.isLoaded() ? "已安装并已加载" : "已安装，未加载")
-                : "未安装"),
+            ("登录项", loginItemText()),
             ("已装到", Installer.isInstalled ? LaunchAgent.paths.app.path : "还在临时位置（未安装）"),
             ("数据目录", settings.supportDir.path),
             ("日志", log.url?.path ?? "未写日志"),
         ]
         logTail = log.tail(40)
         copied = false
+    }
+
+    /// 只写「已安装」不算数：plist 可能还指向已被删掉的下载/构建目录。
+    private func loginItemText() -> String {
+        guard LaunchAgent.isInstalled() else { return "未安装" }
+        guard LaunchAgent.plistMatchesBinary() else { return "已安装，但指向的旧路径已失效（重新打开 app 会自动修正）" }
+        return LaunchAgent.isLoaded() ? "已安装并已加载" : "已安装，未加载"
     }
 
     private func keychainUsable() -> Bool {

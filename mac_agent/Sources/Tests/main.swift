@@ -150,6 +150,15 @@ let script = Installer.uninstallScript(paths: paths, uid: 501)
 check(script.contains("bootout gui/501/com.qbnas.macagent"), "卸载脚本摘登录项")
 check(script.contains(paths.plist.path) && script.contains(paths.app.path), "卸载脚本删 plist 与 app")
 check(script.contains(paths.supportDir.path), "卸载脚本删本地数据")
+let stalePlist = tempDir("stale-plist").appendingPathComponent("com.qbnas.macagent.plist")
+try! LaunchAgent.plistData(binaryPath: "/tmp/qbnas-selftest-gone/QBNASAgent")!.write(to: stalePlist)
+check(!LaunchAgent.plistMatchesBinary(at: stalePlist, expected: paths.binary.path),
+      "旧 plist 指向已不存在的下载/构建路径时不算匹配")
+let goodPlist = tempDir("good-plist").appendingPathComponent("com.qbnas.macagent.plist")
+try! LaunchAgent.plistData(binaryPath: paths.binary.path)!.write(to: goodPlist)
+check(LaunchAgent.plistMatchesBinary(at: goodPlist, expected: paths.binary.path), "指向当前安装路径时算匹配")
+check(!LaunchAgent.plistMatchesBinary(at: goodPlist, expected: "/Applications/NAS 剪贴板代理.app/Contents/MacOS/QBNASAgent"),
+      "换安装位置后旧 plist 不再算匹配")
 
 print("== 摘要工具")
 check(Redact.hashPrefix(hex).count == 9, "哈希只露前 8 位")

@@ -27,7 +27,7 @@ enum Installer {
         let target = paths.app
         if isInstalled {
             // 已经在 /Applications 里了，只补登录项，不再复制第二份。
-            guard LaunchAgent.install() else { throw InstallError.plistFailed }
+            guard LaunchAgent.install(binaryPath: LaunchAgent.targetBinaryPath) else { throw InstallError.plistFailed }
             return
         }
         if source.standardizedFileURL.path == target.standardizedFileURL.path {
@@ -44,7 +44,8 @@ enum Installer {
         } catch {
             throw InstallError.copyFailed(error.localizedDescription)
         }
-        guard LaunchAgent.install() else { throw InstallError.plistFailed }
+        // 登录项指向刚复制好的那份；此时 Bundle.main 还是下载/构建目录里的临时副本。
+        guard LaunchAgent.install(binaryPath: paths.binary.path) else { throw InstallError.plistFailed }
     }
 
     /// 卸载脚本：等主进程退出后清掉登录项、plist、app 本体和支持目录。
