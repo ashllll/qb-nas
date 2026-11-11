@@ -13,7 +13,7 @@ from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
-from magnet_harvester.transitions import ClassificationTransitions
+from magnet_harvester.transitions import ClassificationTransitions, DownloadTransitions
 
 HASH = "A" * 40
 
@@ -170,3 +170,101 @@ async def test_reclassify_skips_paused_items():
     assert classification.started == []
     item = await store.get(HASH)
     assert item is not None and item.status == TaskStatus.paused
+
+
+# ── 下载状态迁移 ─────────────────────────────
+
+
+async def _download_setup(status: TaskStatus):
+    store = AsyncItemStore(InMemoryItemStore())
+    store._backend.add(build_item(status))
+    bus = MessageBus()
+    events: list = []
+
+    async def record(event):
+        events.append(event)
+
+    bus.subscribe(None, record)
+    return store, DownloadTransitions(store=store, bus=bus), events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    [
+        TaskStatus.queued,
+        TaskStatus.downloading,
+        TaskStatus.paused,
+        TaskStatus.success,
+        TaskStatus.error,
+    ],
+)
+async def test_submitted_does_not_clobber_advanced_states(status):
+    """qB 提交回调晚到：状态已经不是 adding 了，不能把 queued/error 写回去。"""
+    store, downloads, events = await _download_setup(status)
+
+    await downloads.submitted(HASH)
+
+    item = await store.get(HASH)
+    assert item is not None and item.status == status
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_submitted_moves_adding_to_queued():
+    store, downloads, _ = await _download_setup(TaskStatus.adding)
+
+    await downloads.submitted(HASH)
+
+    item = await store.get(HASH)
+    assert item is not None and item.status == TaskStatus.queued
+
+
+@pytest.mark.asyncio
+async def test_failed_does_not_overwrite_success():
+    """同步循环刚把种子写成 success：失败回调不能把它标回 error，也不发事件。"""
+    store, downloads, events = await _download_setup(TaskStatus.success)
+
+    await downloads.failed(HASH, "qB 超时")
+
+    item = await store.get(HASH)
+    assert item is not None
+    assert item.status == TaskStatus.success
+    assert item.error_msg is None
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_failed_moves_non_terminal_to_error():
+    store, downloads, _ = await _download_setup(TaskStatus.downloading)
+
+    await downloads.failed(HASH, "qB 超时")
+
+    item = await store.get(HASH)
+    assert item is not None
+    assert item.status == TaskStatus.error
+    assert item.error_msg == "qB 超时"
+
+
+@pytest.mark.asyncio
+async def test_removed_does_not_overwrite_success():
+    store, downloads, events = await _download_setup(TaskStatus.success)
+
+    await downloads.removed(HASH, TaskStatus.downloading)
+
+    item = await store.get(HASH)
+    assert item is not None
+    assert item.status == TaskStatus.success
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_removed_marks_paused_as_error_with_reason():
+    store, downloads, _ = await _download_setup(TaskStatus.paused)
+
+    await downloads.removed(HASH, TaskStatus.paused)
+
+    item = await store.get(HASH)
+    assert item is not None
+    assert item.status == TaskStatus.error
+    assert item.torrent_state == "removed"

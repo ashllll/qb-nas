@@ -23,6 +23,15 @@ from magnet_harvester.store import ItemStore
 
 log = logging.getLogger(__name__)
 
+# 下载失败可写入的来源：除终态外的所有状态（以后新增状态默认也允许，别漏）
+_FAILABLE_STATUSES = frozenset(TaskStatus) - {
+    TaskStatus.success,
+    TaskStatus.error,
+    TaskStatus.skipped,
+}
+# qB 里消失只不该覆盖「已成功」，其余状态都可以标成 removed
+_REMOVABLE_STATUSES = frozenset(TaskStatus) - {TaskStatus.success}
+
 
 # ── 共享事件发射辅助 ──────────────────────────
 
@@ -287,12 +296,10 @@ class DownloadTransitions(_TransitionBase):
         return True
 
     async def submitted(self, hash_key: str):
-        item = await self._store.get(hash_key)
-        if item is None or item.status != TaskStatus.adding:
-            return
-        previous_status = item.status
-        if not await self._store.update(
+        # 只从 adding 原子迁移：get 与 update 之间 qB 同步可能已推进状态，不能覆盖
+        if not await self._store.update_if_status(
             hash_key,
+            {TaskStatus.adding},
             status=TaskStatus.queued,
             torrent_state="submitted",
             progress=0.0,
@@ -300,31 +307,31 @@ class DownloadTransitions(_TransitionBase):
         ):
             return
         await self._emit_item_changed(hash_key)
-        await self._emit_download_result(hash_key, previous_status=previous_status)
+        await self._emit_download_result(hash_key, previous_status=TaskStatus.adding)
 
     async def failed(self, hash_key: str, error_msg: str):
-        item = await self._store.get(hash_key)
-        if item is None:
-            return
-        previous_status = item.status
-        # 前置状态检查：只允许从非终态转换到 error，已成功的种子不能被错误标记
-        if item.status in {TaskStatus.success, TaskStatus.error, TaskStatus.skipped}:
-            return
-        if not await self._store.update(hash_key, status=TaskStatus.error, error_msg=error_msg):
+        # 原子条件写入：只允许从非终态转换到 error，已成功的种子不能被错误标记
+        if not await self._store.update_if_status(
+            hash_key,
+            _FAILABLE_STATUSES,
+            status=TaskStatus.error,
+            error_msg=error_msg,
+        ):
             return
         try:
             await self._emit_item_changed(hash_key)
         except Exception:
             log.exception("download failure STORE_CHANGED 发送失败 hash=%s", hash_key)
         try:
-            await self._emit_download_result(hash_key, previous_status=previous_status)
+            await self._emit_download_result(hash_key)
         except Exception:
             log.exception("download failure DOWNLOAD_RESULT 发送失败 hash=%s", hash_key)
 
     async def removed(self, hash_key: str, previous_status: TaskStatus | None):
         """种子已从 qBittorrent 中消失"""
-        if not await self._store.update(
+        if not await self._store.update_if_status(
             hash_key,
+            _REMOVABLE_STATUSES,
             status=TaskStatus.error,
             error_msg="种子已从 qBittorrent 中消失",
             torrent_state="removed",
