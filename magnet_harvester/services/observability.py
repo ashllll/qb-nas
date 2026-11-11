@@ -7,6 +7,7 @@ from typing import Protocol
 
 from magnet_harvester.config import settings
 from magnet_harvester.models import TaskStatus
+from magnet_harvester.services.probe import CachedProbe
 from magnet_harvester.store import ItemStore
 
 
@@ -60,6 +61,7 @@ class ObservabilitySnapshot:
         broadcaster: BroadcasterLike | None = None,
         error_handler: ErrorHandlerLike | None = None,
         classifier: ClassifierLike | None = None,
+        probe: CachedProbe | None = None,
     ):
         self._store = store
         self._qbit = qbit
@@ -67,15 +69,15 @@ class ObservabilitySnapshot:
         self._broadcaster = broadcaster
         self._error_handler = error_handler
         self._classifier = classifier
+        # qB 连不上时 ping 会重试十几秒，而 /api/health 的 healthcheck 只等 4 秒：
+        # 缓存 10 秒、单次最多 1.5 秒，容器不会因为一次探测慢被判 unhealthy。
+        self._probe = probe or CachedProbe(ttl=10.0, timeout=1.5)
 
     def replace_qbit_client(self, new_qbit: QBitLike) -> None:
         self._qbit = new_qbit
 
     async def system_status(self) -> dict:
-        try:
-            qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
-        except (asyncio.TimeoutError, Exception):
-            qbit_ok = False
+        qbit_ok = await self._probe.read(self._qbit.ping)
         by_status = (await self._store.stats()).by_status
         tracked = sum(
             by_status.get(status.value, 0)
@@ -93,10 +95,7 @@ class ObservabilitySnapshot:
         }
 
     async def health(self) -> dict:
-        try:
-            qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
-        except (asyncio.TimeoutError, Exception):
-            qbit_ok = False
+        qbit_ok = await self._probe.read(self._qbit.ping)
         classifier_ok = False
         if self._classifier is not None:
             try:
