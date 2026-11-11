@@ -1,4 +1,4 @@
-# 构建上下文只需要：requirements.txt、magnet_harvester/、static/
+# 构建上下文只需要：requirements.txt、magnet_harvester/、static/、config/category_keywords.json
 .git/
 .gitignore
 .venv/
@@ -10,7 +10,9 @@ __pycache__/
 tests/
 docs/
 doc/
-config/
+config/*
+# 只放行分类关键词规则；目录级排除没法用 ! 救回单个文件，所以按文件排除。
+!config/category_keywords.json
 scripts/
 node_modules/
 *.md
