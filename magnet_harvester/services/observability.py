@@ -75,6 +75,8 @@ class ObservabilitySnapshot:
 
     def replace_qbit_client(self, new_qbit: QBitLike) -> None:
         self._qbit = new_qbit
+        # 旧客户端的探测结果不代表新客户端，别让热换配置后还显示旧的离线状态
+        self._probe.invalidate()
 
     async def system_status(self) -> dict:
         qbit_ok = await self._probe.read(self._qbit.ping)
