@@ -23,7 +23,7 @@ robots.txt、动态浏览器会话和流式结果。项目只保留 URL 安全�
 
 ## 配置映射
 
-- `CRAWLER_CONCURRENCY` -> `Spider.concurrent_requests` 和动态会话 `max_pages`。
+- `CRAWLER_PER_HOST_CONCURRENCY` -> `PageFetcher` 单站点并发上限（Spider 只负责调度，不再有独立并发旋钮）。
 - `CRAWLER_MAX_DETAIL_LINKS` -> Spider 允许调度的详情页上限。
 - `CRAWLER_MAX_RETRIES` -> `Spider.max_blocked_retries` 和浏览器会话网络重试。
 - `CRAWLER_CHECK_ROBOTS_TXT` -> `Spider.robots_txt_obey`。

@@ -24,7 +24,7 @@ class StubFetcher:
     async def close(self) -> None:
         self.closed += 1
 
-    async def fetch(self, url, *, allow_browser=True):  # pragma: no cover
+    async def fetch(self, url, *, allow_browser=True, browser_first=False):  # pragma: no cover
         raise AssertionError("adapter tests do not fetch")
 
 
@@ -83,7 +83,6 @@ def test_crawler_falls_back_to_settings_when_no_config_given():
 
     assert crawler._config.timeout == reference.timeout
     assert crawler._config.max_depth == reference.max_depth
-    assert crawler._config.concurrency == reference.concurrency
     assert crawler._config.allowed_resolutions == ()
 
 

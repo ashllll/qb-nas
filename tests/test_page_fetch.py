@@ -132,6 +132,18 @@ async def test_http_success_never_touches_browser():
 
 
 @pytest.mark.asyncio
+async def test_browser_first_skips_http_entirely():
+    fetcher, https, browsers, _ = make_fetcher(
+        lambda url: FakeResponse(200, "<html>http</html>"),
+        lambda url: FakeResponse(200, "<html>rendered</html>"),
+    )
+    page = await fetcher.fetch("https://site.test/list", browser_first=True)
+    assert page.ok and page.via == "browser"
+    assert https == {}
+    assert browsers["browser"].calls[0]["url"] == "https://site.test/list"
+
+
+@pytest.mark.asyncio
 async def test_challenge_page_escalates_to_browser():
     fetcher, _, browsers, _ = make_fetcher(
         lambda url: FakeResponse(403, "<html>Just a moment...</html>"),

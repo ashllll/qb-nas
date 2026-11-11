@@ -59,7 +59,6 @@ class ConfigPersistError(OSError):
 class CrawlerConfig:
     timeout: int = 30
     max_depth: int = 2
-    concurrency: int = 6
     max_detail_links: int = 200
     headless: bool = True
     http_first: bool = True
@@ -90,7 +89,6 @@ class CrawlerConfig:
     def __post_init__(self) -> None:
         self.timeout = max(1, int(self.timeout))
         self.max_depth = max(1, int(self.max_depth))
-        self.concurrency = max(1, int(self.concurrency))
         self.max_detail_links = max(0, int(self.max_detail_links))
         self.delay_before_return_html = max(0.0, float(self.delay_before_return_html))
         self.scroll_delay = max(0.0, float(self.scroll_delay))
@@ -147,7 +145,6 @@ class Settings(BaseSettings):
 
     CRAWLER_TIMEOUT: int = 30
     CRAWLER_MAX_DEPTH: int = 2
-    CRAWLER_CONCURRENCY: int = 6
     CRAWLER_MAX_DETAIL_LINKS: int = 200
     CRAWLER_HEADLESS: bool = True
     CRAWLER_HTTP_FIRST: bool = True
@@ -385,7 +382,6 @@ class Settings(BaseSettings):
             self._crawler_config = CrawlerConfig(
                 timeout=self.CRAWLER_TIMEOUT,
                 max_depth=self.CRAWLER_MAX_DEPTH,
-                concurrency=self.CRAWLER_CONCURRENCY,
                 max_detail_links=self.CRAWLER_MAX_DETAIL_LINKS,
                 headless=self.CRAWLER_HEADLESS,
                 http_first=self.CRAWLER_HTTP_FIRST,

@@ -56,11 +56,11 @@ def test_crawler_allowed_resolutions_empty_disables_filtering():
     assert Settings().crawler.allowed_resolutions == ()
 
 
-def test_default_crawler_concurrency_is_tuned_for_detail_pages():
+def test_default_crawler_per_host_concurrency_is_tuned_for_detail_pages():
     cfg = Settings()
 
-    assert cfg.CRAWLER_CONCURRENCY == 6
-    assert cfg.crawler.concurrency == 6
+    assert cfg.CRAWLER_PER_HOST_CONCURRENCY == 4
+    assert cfg.crawler.per_host_concurrency == 4
 
 
 def test_default_crawler_uses_scrapling_speed_optimizations():
@@ -83,7 +83,7 @@ def test_crawler_config_normalizes_unsafe_boundaries():
     config = CrawlerConfig(
         timeout=0,
         max_depth=0,
-        concurrency=0,
+        per_host_concurrency=0,
         max_detail_links=-1,
         delay_before_return_html=-1,
         scroll_delay=-1,
@@ -94,7 +94,8 @@ def test_crawler_config_normalizes_unsafe_boundaries():
 
     assert config.timeout == 1
     assert config.max_depth == 1
-    assert config.concurrency == 1
+    assert config.per_host_concurrency == 1
+    assert config.per_host_concurrency == 1
     assert config.max_detail_links == 0
     assert config.delay_before_return_html == 0
     assert config.scroll_delay == 0
@@ -353,7 +354,7 @@ def test_config_source_report_points_at_file_without_leaking_values(tmp_path):
 if __name__ == "__main__":
     test_crawler_allowed_resolutions_parse_csv()
     test_crawler_allowed_resolutions_empty_disables_filtering()
-    test_default_crawler_concurrency_is_tuned_for_detail_pages()
+    test_default_crawler_per_host_concurrency_is_tuned_for_detail_pages()
     test_default_crawler_detail_link_limit_keeps_large_result_sets()
     import tempfile
     from pathlib import Path

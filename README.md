@@ -203,7 +203,7 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 | `API_KEY`                                                       | 程序通道 `X-API-Key`（Mac 代理等）；浏览器不使用            | 空（仅 loopback） |
 | `TRUSTED_HOSTS`                                                 | 额外允许的 Host（域名/反代场景，防 DNS rebinding）          | 空                |
 | `SITE_COOKIES`                                                  | 需要登录站点的 Cookie 注入，JSON `{"domain": "cookie"}`     | `{}`              |
-| `CRAWLER_TIMEOUT` / `CRAWLER_MAX_DEPTH` / `CRAWLER_CONCURRENCY` | 抓取超时 / 最大深度 / 并发                                  | `30` / `2` / `6`  |
+| `CRAWLER_TIMEOUT` / `CRAWLER_MAX_DEPTH` / `CRAWLER_PER_HOST_CONCURRENCY` | 抓取超时 / 最大深度 / 同一站点并发                         | `30` / `2` / `4`  |
 | `CRAWLER_ALLOWED_RESOLUTIONS`                                   | 只保留这些清晰度（逗号分隔）                                | `2160p,4k`        |
 | `CRAWLER_ALLOW_FAKE_IP`                                         | 允许 mihomo/Clash fake-IP 作为抓取目标（SSRF 豁免）         | `false`           |
 | `STORE_BACKEND` / `STORE_DB_PATH`                               | `memory` 或 `sqlite` 及数据库路径                           | `memory` / —      |
