@@ -175,5 +175,7 @@ async def retry_job(
     service = _ingest_service(ctx)
     result = await service.retry_job(job_id)
     if not result.get("ok"):
-        raise HTTPException(status_code=404, detail=result.get("reason") or "任务不存在")
+        # 任务不存在 404；任务在但执行器没起来是 503（可稍后重试）。
+        code = 503 if result.get("status") == "error" else 404
+        raise HTTPException(status_code=code, detail=result.get("reason") or "任务不存在")
     return result

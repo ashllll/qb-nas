@@ -153,7 +153,9 @@ async def start_crawl(
             depth=req.depth,
         )
         if not outcome.get("ok"):
-            raise HTTPException(status_code=422, detail=outcome.get("reason") or "网址不可用")
+            # 排不进后台是服务侧暂时问题（503）；网址/参数不可用才是 422。
+            code = 503 if outcome.get("status") == "error" else 422
+            raise HTTPException(status_code=code, detail=outcome.get("reason") or "网址不可用")
         if ctx.runtime.stats is not None:
             ctx.runtime.stats.record_crawl()
         return {

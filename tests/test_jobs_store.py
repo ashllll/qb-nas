@@ -89,6 +89,35 @@ def test_claim_resumable_requeues_interrupted_jobs(tmp_path):
     assert running is not None and running.status == JobStatus.queued
     assert running.attempts == 1
     assert running.message == "服务重启后继续"
+    # 排队任务从没开始跑，重排不算一次尝试
+    queued = store.get("job-queued")
+    assert queued is not None and queued.attempts == 0
+
+
+def test_claim_resumable_never_gives_up_a_queued_job(tmp_path):
+    """排队任务连着遇到几次重启也还是排队：它一次都没跑，不该被判「多次未完成」。"""
+    store = JobStore(tmp_path / "jobs.db")
+    store.create(_job("job-queued", status=JobStatus.queued, attempts=0))
+
+    for _ in range(3):
+        assert store.claim_resumable(max_attempts=2) == ["job-queued"]
+
+    queued = store.get("job-queued")
+    assert queued is not None
+    assert queued.status == JobStatus.queued
+    assert queued.attempts == 0
+
+
+def test_create_also_triggers_prune(tmp_path, monkeypatch):
+    """页面建的任务不经过 record_event，清理必须由 create 自己触发。"""
+    store = JobStore(tmp_path / "jobs.db")
+    monkeypatch.setattr(store, "_PRUNE_EVERY", 1)
+    pruned = []
+    monkeypatch.setattr(store, "prune", lambda: pruned.append(True))
+
+    store.create(_job())
+
+    assert pruned == [True]
 
 
 def test_claim_resumable_gives_up_after_max_attempts(tmp_path):

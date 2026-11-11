@@ -294,6 +294,8 @@ class JobStore:
                 self._row_from_job(job),
             )
             db.commit()
+        # 页面直接建的任务不会经过 record_event，清理只能靠这里触发，否则表只增不减。
+        self._maybe_prune()
         return job
 
     def get(self, job_id: str) -> Optional[CrawlJob]:
@@ -346,6 +348,8 @@ class JobStore:
 
         running 状态意味着上次是被强杀/崩溃打断的——回到 queued 并计入一次尝试，
         超过 ``max_attempts`` 的任务不再自动重试，改为失败并留下原因。
+        queued 任务只是还排在队里、从没开始跑，重排不计入尝试：否则服务重启两次
+        就会把没跑过的任务误判成「多次仍未完成」。
         """
         resumed: List[str] = []
         now = _now()
@@ -357,6 +361,13 @@ class JobStore:
             for row in rows:
                 job = self._job_from_row(row)
                 if job is None:
+                    continue
+                if job.status == JobStatus.queued:
+                    db.execute(
+                        "UPDATE crawl_jobs SET message=?, updated_at=? WHERE job_id=?",
+                        ("服务重启后继续", now, job.job_id),
+                    )
+                    resumed.append(job.job_id)
                     continue
                 if job.attempts >= max_attempts:
                     db.execute(
