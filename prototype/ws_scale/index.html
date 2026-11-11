@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>前端规模原型（丢弃用） — 5k/50k</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0f1115; color: #d8dee9; font: 13px/1.4 -apple-system, "PingFang SC", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; padding: 10px 14px; background: #171a21; border-bottom: 1px solid #2a2f3a; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  header b { color: #e6edf3; }
+  button, select { background: #222834; color: #d8dee9; border: 1px solid #394152; border-radius: 6px; padding: 5px 9px; font: inherit; }
+  button:hover { border-color: #5b6b85; }
+  #meta { color: #8b98ab; }
+  #scroll { height: 620px; overflow: auto; border-bottom: 1px solid #2a2f3a; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  th { position: sticky; top: 0; z-index: 1; background: #1b2029; color: #9aa7b8; text-align: left; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid #2a2f3a; }
+  td { padding: 7px 10px; border-bottom: 1px solid #202530; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  tbody tr { height: 52px; }
+  tbody tr:hover { background: #171c26; }
+  .name-cell { width: 38%; }
+  .size-cell { width: 8%; }
+  .result-cell { width: 25%; }
+  .source-cell { width: 19%; }
+  .item-name { color: #e6edf3; overflow: hidden; text-overflow: ellipsis; }
+  .item-meta { color: #67758a; font-size: 11px; }
+  .chip { padding: 1px 6px; border-radius: 9px; background: #233047; color: #9fc0ea; }
+  .badge { padding: 1px 6px; border-radius: 4px; background: #2b3342; color: #c7d2e0; margin-right: 6px; }
+  .result-text { color: #9aa7b8; }
+  .tag { padding: 1px 5px; border-radius: 4px; background: #22303a; color: #86b6a8; margin-right: 6px; }
+  .source-url { color: #78879b; }
+  .spacer td { padding: 0; border: 0; }
+  #out { margin: 0; padding: 12px 14px; white-space: pre-wrap; color: #9ad0a5; font: 12px/1.5 ui-monospace, SFMono-Regular, monospace; }
+  .controls { display: flex; gap: 6px; align-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <b>前端规模原型（丢弃用，不入库）</b>
+  <span class="controls">
+    <select id="n"><option value="5000">5,000</option><option value="50000">50,000</option></select>
+    <select id="mode">
+      <option value="current">当前：全量 innerHTML</option>
+      <option value="incremental">增量 patch 单行</option>
+      <option value="virtual">虚拟滚动</option>
+      <option value="page">窗口 + 分页</option>
+    </select>
+    <button id="run">重新测量</button>
+  </span>
+  <span id="meta"></span>
+</header>
+<main>
+  <div id="scroll"><table><thead><tr><th></th><th class="name-cell">名称</th><th>分类</th><th class="size-cell">大小</th><th class="result-cell">结果 · 原因</th><th class="source-cell">来源</th></tr></thead><tbody id="tbody"></tbody></table></div>
+  <pre id="out">测量中…</pre>
+</main>
+<script>
+(function () {
+  "use strict";
+  const ROW_H = 52;
+  const VIEW_H = 620;
+  const PAGE_SIZE = 200;
+  const params = new URLSearchParams(location.search);
+  const tbody = document.getElementById("tbody");
+  const scroll = document.getElementById("scroll");
+  const out = document.getElementById("out");
+  const meta = document.getElementById("meta");
+
+  const categories = ["电影", "电视剧", "动漫", "音乐", "游戏", "软件", "综艺", "纪录片", "其他"];
+  const statuses = ["pending", "classifying", "adding", "queued", "downloading", "paused", "success", "error", "skipped"];
+
+  function makeItems(n) {
+    const items = [];
+    for (let i = 0; i < n; i++) {
+      const status = statuses[i % statuses.length];
+      items.push({
+        hash: "H" + String(i).padStart(12, "0"),
+        name: "示例资源 " + i + " — 这是一条长度接近真实条目的中文标题 With.English.Words.2026.1080p.BluRay.x264-GROUP",
+        category: categories[i % categories.length],
+        size: (1 + (i % 900) / 10).toFixed(1) + " GB",
+        status: status,
+        progress: status === "downloading" ? (i % 100) : 0,
+        created_at: "2026-11-12T0" + (i % 9) + ":00:00",
+        updated_at: "2026-11-12T0" + (i % 9) + ":00:00",
+        source_url: "https://example.test/detail/" + i + "?utm_source=rss&token=abcdef",
+        source_kind: i % 3 === 0 ? "mac_magnet" : "ui_url",
+        detail_url: "https://example.test/detail/" + i,
+        error_msg: status === "error" ? "连接 qB 超时" : "",
+      });
+    }
+    return items;
+  }
+
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  }
+
+  const statusLabels = { pending: "待处理", classifying: "分类中", adding: "提交中", queued: "排队", downloading: "下载中", paused: "已暂停", success: "已完成", error: "失败", skipped: "已跳过" };
+  const sourceLabels = { mac_magnet: "Mac 磁力", ui_url: "页面采集" };
+
+  function rowHtml(item) {
+    const status = item.status || "pending";
+    const label = statusLabels[status] || status;
+    return '<tr id="row-' + esc(item.hash) + '">' +
+      '<td><input type="checkbox" aria-label="选择"></td>' +
+      '<td class="name-cell"><div class="item-name">' + esc(item.name) + '</div><div class="item-meta">' + esc(item.hash.slice(0, 16)) + '…</div></td>' +
+      '<td><span class="chip">' + esc(item.category) + '</span></td>' +
+      '<td class="size-cell">' + esc(item.size) + '</td>' +
+      '<td class="result-cell"><span class="badge">' + esc(label) + '</span><span class="result-text">' + esc(status === "downloading" ? "下载中 " + item.progress + "%" : "示例结果文案") + '</span></td>' +
+      '<td class="source-cell"><span class="tag">' + esc(sourceLabels[item.source_kind] || "未知来源") + '</span><span class="source-url">' + esc("example.test/detail/" + item.hash) + '</span></td>' +
+      '</tr>';
+  }
+
+  function nextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+
+  function forceLayout() {
+    return tbody.offsetHeight;
+  }
+
+  async function measureRender(fn) {
+    const t0 = performance.now();
+    fn();
+    forceLayout();
+    await nextFrame();
+    return performance.now() - t0;
+  }
+
+  function median(values) {
+    const sorted = values.slice().sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  // ── 四种策略：都按“全量排序后的数组”做输入，差异只在 DOM 更新方式 ──
+  const modes = {
+    // 当前实现：static/app.js renderTable() 每次 innerHTML 重建整表。
+    async current(items) {
+      let rows = items;
+      tbody.innerHTML = rows.map(rowHtml).join("");
+      return {
+        async update(item) { rows = rows.map((row) => row.hash === item.hash ? item : row); tbody.innerHTML = rows.map(rowHtml).join(""); },
+        async scroll() {},
+      };
+    },
+
+    // 增量 patch：首屏仍然全量（当前 API 契约），事件只替换那一行。
+    async incremental(items) {
+      let rows = items;
+      const byHash = new Map();
+      tbody.innerHTML = rows.map((row) => { byHash.set(row.hash, row); return rowHtml(row); }).join("");
+      return {
+        async update(item) {
+          rows = rows.map((row) => row.hash === item.hash ? item : row);
+          byHash.set(item.hash, item);
+          const existing = document.getElementById("row-" + item.hash);
+          if (existing) existing.outerHTML = rowHtml(item);
+        },
+        async scroll() {},
+      };
+    },
+
+    // 虚拟滚动：只渲染视口附近的几十行，上下用 spacer 撑高度。
+    async virtual(items) {
+      let rows = items;
+      let first = 0;
+      let count = 0;
+      const renderSlice = () => {
+        const start = Math.max(0, Math.floor(scroll.scrollTop / ROW_H) - 2);
+        const visible = Math.ceil(VIEW_H / ROW_H) + 4;
+        first = start;
+        count = Math.min(visible, Math.max(0, rows.length - start));
+        const body = rows.slice(start, start + count).map(rowHtml).join("");
+        const top = start * ROW_H;
+        const bottom = Math.max(0, (rows.length - start - count) * ROW_H);
+        tbody.innerHTML = (top ? '<tr class="spacer"><td colspan="6" style="height:' + top + 'px"></td></tr>' : "") + body + (bottom ? '<tr class="spacer"><td colspan="6" style="height:' + bottom + 'px"></td></tr>' : "");
+      };
+      renderSlice();
+      const onScroll = () => { renderSlice(); };
+      scroll.addEventListener("scroll", onScroll, { passive: true });
+      return {
+        async update(item) {
+          rows = rows.map((row) => row.hash === item.hash ? item : row);
+          const index = rows.findIndex((row) => row.hash === item.hash);
+          if (index >= first && index < first + count) {
+            const existing = document.getElementById("row-" + item.hash);
+            if (existing) existing.outerHTML = rowHtml(item);
+          }
+        },
+        async scroll() { scroll.scrollTop = Math.floor(rows.length / 2) * ROW_H; renderSlice(); },
+      };
+    },
+
+    // 窗口 + 分页：只渲染一页（200 条），翻页时重渲染该页；事件只 patch 当前页内行。
+    async page(items) {
+      let rows = items;
+      let page = 0;
+      const pages = () => Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+      const renderPage = () => {
+        page = Math.min(page, pages() - 1);
+        const start = page * PAGE_SIZE;
+        tbody.innerHTML = rows.slice(start, start + PAGE_SIZE).map(rowHtml).join("");
+        meta.textContent = "第 " + (page + 1) + " / " + pages() + " 页";
+      };
+      renderPage();
+      return {
+        async update(item) {
+          rows = rows.map((row) => row.hash === item.hash ? item : row);
+          const index = rows.findIndex((row) => row.hash === item.hash);
+          const start = page * PAGE_SIZE;
+          if (index >= start && index < start + PAGE_SIZE) {
+            const existing = document.getElementById("row-" + item.hash);
+            if (existing) existing.outerHTML = rowHtml(item);
+          }
+        },
+        async scroll() { page = Math.floor(pages() / 2); renderPage(); },
+      };
+    },
+  };
+
+  async function run() {
+    const n = Number(document.getElementById("n").value);
+    const modeName = document.getElementById("mode").value;
+    scroll.scrollTop = 0;
+    const items = makeItems(n);
+    tbody.innerHTML = "";
+    scroll.scrollTop = 0;
+    const t0 = performance.now();
+    const impl = await modes[modeName](items);
+    forceLayout();
+    await nextFrame();
+    const initial = performance.now() - t0;
+
+    const updateTimes = [];
+    for (let k = 0; k < 5; k++) {
+      const target = { ...items[10 + k], updated_at: "2026-11-12T23:59:5" + k, status: "downloading", progress: 50 + k };
+      const u0 = performance.now();
+      await impl.update(target);
+      forceLayout();
+      await nextFrame();
+      updateTimes.push(performance.now() - u0);
+    }
+
+    const scrollTimes = [];
+    for (let k = 0; k < 3; k++) {
+      const s0 = performance.now();
+      await impl.scroll();
+      forceLayout();
+      await nextFrame();
+      scrollTimes.push(performance.now() - s0);
+    }
+
+    const result = {
+      n,
+      mode: modeName,
+      initialMs: Number(initial.toFixed(1)),
+      eventMedianMs: Number(median(updateTimes).toFixed(1)),
+      eventMaxMs: Number(Math.max(...updateTimes).toFixed(1)),
+      jumpMedianMs: Number(median(scrollTimes).toFixed(1)),
+      domRows: tbody.querySelectorAll("tr:not(.spacer)").length,
+      heapMB: performance.memory ? Number((performance.memory.usedJSHeapSize / 1048576).toFixed(1)) : null,
+    };
+    out.textContent = JSON.stringify(result, null, 2);
+    window.__result = result;
+    return result;
+  }
+
+  document.getElementById("run").addEventListener("click", () => { out.textContent = "测量中…"; run(); });
+  if (params.get("auto")) {
+    document.getElementById("n").value = params.get("n") || "5000";
+    document.getElementById("mode").value = params.get("mode") || "current";
+  }
+  // 供 Playwright 直接调用；页面打开时也自动跑一次。
+  window.__run = run;
+  run();
+
+  if (params.get("auto")) out.dataset.auto = "1";
+})();
+</script>
+</body>
+</html>
