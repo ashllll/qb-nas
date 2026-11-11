@@ -240,10 +240,17 @@ class PageFetcher:
 
     # ── 对外唯一入口 ─────────────────────────
 
-    async def fetch(self, url: str, *, allow_browser: bool = True) -> PageFetch:
-        """取一页：先 HTTP，必要时升级浏览器。永不抛异常，失败落在 ``reason``。"""
+    async def fetch(
+        self, url: str, *, allow_browser: bool = True, browser_first: bool = False
+    ) -> PageFetch:
+        """取一页：先 HTTP，必要时升级浏览器。永不抛异常，失败落在 ``reason``。
+
+        ``browser_first`` 用于已经确认整站要 JS 的场景，跳过必输的 HTTP 快失败。
+        """
         host = (urlparse(url).hostname or "").lower()
         async with self._slot(host):
+            if browser_first and allow_browser:
+                return await self._browser_fetch(url)
             page = await self._http_fetch(url)
             if not allow_browser or not self._should_escalate(page):
                 return page
