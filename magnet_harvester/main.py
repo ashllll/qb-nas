@@ -14,7 +14,7 @@ from magnet_harvester.api.error_contract import install_error_handlers
 from magnet_harvester.api.ingest_routes import router as ingest_router
 from magnet_harvester.api.pages import STATIC_DIR, router as pages_router
 from magnet_harvester.api.routes import router as api_router
-from magnet_harvester.api.security import install_security_guard
+from magnet_harvester.api.security import install_security_guard, install_security_headers
 from magnet_harvester.api.websocket import router as ws_router
 from magnet_harvester.assembly import build_runtime
 from magnet_harvester.config import settings
@@ -79,6 +79,8 @@ install_error_handlers(app)
 _configure_cors(app)
 # Host（DNS rebinding）与跨源写（CSRF）在入口统一挡；详见 api/security.py
 install_security_guard(app)
+# 安全头最后装：作为最外层，护栏自己产生的 403/404 也带上头
+install_security_headers(app)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(pages_router)
