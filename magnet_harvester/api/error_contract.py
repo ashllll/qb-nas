@@ -7,7 +7,8 @@
 这里做四件事：
 1. HTTPException → 契约体；401 按请求头有没有 X-API-Key 区分缺失/不对。
 2. RequestValidationError → 422，detail 指出是哪个字段、错在哪。
-3. 未捕获异常 → 500，detail 带异常类型与脱敏后的消息，并写完整堆栈到日志。
+3. 未捕获异常 → 500，正文只给一个短错误编号；异常类型/消息/堆栈只进日志，
+   日志按同一编号关联（正文里的路径、SQL、内部主机名不回给客户端）。
 4. 任何 detail/hint 都过一遍脱敏，API Key 不会因错误消息回到页面或日志。
 """
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -175,10 +177,17 @@ async def validation_exception_handler(
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    log.exception("未捕获异常：%s %s", request.method, request.url.path)
-    summary = f"{type(exc).__name__}: {exc}".strip().rstrip(":")
-    detail = f"服务内部错误（{summary[:300]}）" if summary else "服务内部错误"
-    return JSONResponse(_payload(500, detail), status_code=500)
+    # 异常文本可能带绝对路径、SQL、内部主机名；正文只给编号，堆栈按编号进日志。
+    error_id = secrets.token_hex(4)
+    log.exception("未捕获异常（错误编号 %s）：%s %s", error_id, request.method, request.url.path)
+    return JSONResponse(
+        _payload(
+            500,
+            f"服务内部错误（错误编号 {error_id}）",
+            hint=f"把错误编号 {error_id} 和发生时间发给维护者，NAS 日志里按编号能找到完整堆栈。",
+        ),
+        status_code=500,
+    )
 
 
 def install_error_handlers(app: FastAPI) -> None:

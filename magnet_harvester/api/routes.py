@@ -293,11 +293,12 @@ async def health_check(ctx: AppContext = Depends(get_context)):
 
 
 @router.get("/api/config")
-async def get_config():
-    """读取 qB 连接配置：只读开放，写按 AUTH_MODE 判定（见 update_config）。
+async def get_config(_=Depends(require_api_key)):
+    """读取 qB 连接配置：读写都过同一份授权（trusted 局域网免 key，strict 要 key）。
 
     浏览器不保存 key，也要看见真实的地址与用户名，否则页面只能显示占位符，
     用户会以为配置丢了。密码（含明文/掩码/长度）绝不回显，只回答是否已配置。
+    严格模式下没 key 时页面收到 401，按「只读」提示处理（见 static/app.js）。
     """
     return {
         "qbit_host": settings.QBIT_HOST,
