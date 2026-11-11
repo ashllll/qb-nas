@@ -4,10 +4,22 @@ import sys
 import os
 
 import pytest
+from pydantic import ValidationError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.config import Settings
+
+
+def test_auth_mode_normalizes_case_and_whitespace():
+    assert Settings(AUTH_MODE="  STRICT ").AUTH_MODE == "strict"
+    assert Settings(AUTH_MODE="Trusted").AUTH_MODE == "trusted"
+
+
+def test_auth_mode_rejects_unknown_value_at_startup():
+    """拼错的 AUTH_MODE 必须启动失败，不能悄悄退回 trusted 放行写。"""
+    with pytest.raises(ValidationError, match="AUTH_MODE"):
+        Settings(AUTH_MODE="stric")
 
 
 def test_security_posture_allows_loopback_without_api_key():
