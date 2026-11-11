@@ -56,7 +56,14 @@ if [[ "$MODE" != full ]]; then
   exit 0
 fi
 
-step "pytest"
-"$PYTHON" -m pytest tests -q
+step "uv lock --check"
+if command -v uv >/dev/null 2>&1; then
+  uv lock --check
+else
+  echo "uv 未安装，跳过 lock 检查（CI 的 gates 会跑）" >&2
+fi
+
+step "pytest (coverage)"
+"$PYTHON" -m pytest tests -q --cov --cov-report=term-missing
 
 printf '\nfull gate passed\n'

@@ -9,10 +9,18 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gates:
     name: gates
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -30,10 +38,14 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -r requirements.txt
           # requirements.txt holds runtime deps only; the gate tools live in the pyproject dev extra.
-          .venv/bin/pip install ruff==0.15.21 pytest pytest-asyncio
+          .venv/bin/pip install ruff==0.15.21 pytest pytest-asyncio pytest-cov
+          .venv/bin/pip install uv
 
       - name: Install Playwright browser
         run: .venv/bin/python -m playwright install --with-deps chromium
+
+      - name: uv lock --check
+        run: .venv/bin/uv lock --check
 
       - name: ruff check
         run: .venv/bin/ruff check magnet_harvester tests
@@ -41,5 +53,38 @@ jobs:
       - name: ruff format --check
         run: .venv/bin/ruff format --check magnet_harvester tests
 
+      # fail_under=79 在 pyproject.toml，pytest-cov 会按该配置卡阈值，与 npm run check 同构。
       - name: pytest
-        run: .venv/bin/python -m pytest tests -q
+        run: .venv/bin/python -m pytest tests -q --cov --cov-report=term-missing
+
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: >
+          docker build
+          -f deploy/docker/Dockerfile
+          --build-arg GIT_COMMIT=${{ github.sha }}
+          -t qb-nas-center:ci
+          .
+
+      - name: Import the app inside the image
+        run: docker run --rm qb-nas-center:ci python -c "import magnet_harvester.main; print('ok')"
+
+  mac-agent:
+    name: mac-agent-selftest
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile and run pure-logic selftests
+        run: |
+          cd mac_agent
+          mkdir -p build
+          swiftc -O -swift-version 5 Sources/Core/*.swift Sources/Tests/main.swift -o build/selftest
+          ./build/selftest
