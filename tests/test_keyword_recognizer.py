@@ -51,7 +51,7 @@ def test_unmatched_name_returns_none(tmp_path):
 
 
 def test_reload_returns_false_and_keeps_keywords_on_invalid_config(tmp_path):
-    """缺失/半截 JSON/顶层非对象/keywords 非数组 → reload False，旧规则不动。"""
+    """缺失/半截 JSON/顶层非对象/缺 keywords 键/keywords 非数组 → reload False，旧规则不动。"""
     rules_file = tmp_path / "category_keywords.json"
     rules_file.write_text(
         json.dumps({"keywords": [{"keyword": "ubuntu", "category": "软件"}]}),
@@ -60,7 +60,7 @@ def test_reload_returns_false_and_keeps_keywords_on_invalid_config(tmp_path):
     recognizer = KeywordCategoryRecognizer(rules_file=rules_file)
     expected = {"category": "软件", "save_path": "软件", "keyword": "ubuntu"}
 
-    for bad in ('{"keywords": [', "[]", '{"keywords": "not-a-list"}'):
+    for bad in ('{"keywords": [', "[]", '{"keywordz": []}', '{"keywords": "not-a-list"}'):
         rules_file.write_text(bad, encoding="utf-8")
         assert recognizer.reload() is False
         assert recognizer.recognize("Ubuntu.24.04.Desktop.iso") == expected

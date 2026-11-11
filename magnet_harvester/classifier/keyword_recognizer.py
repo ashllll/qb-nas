@@ -26,7 +26,10 @@ def _load_keywords(rules_file: Path = KEYWORD_FILE) -> Optional[List[Dict[str, s
                 if not isinstance(data, dict):
                     log.error("分类关键词配置文件格式错误：应为 JSON 对象")
                     return None
-                keywords = data.get("keywords", [])
+                if "keywords" not in data:
+                    log.error("分类关键词配置缺少 'keywords' 字段")
+                    return None
+                keywords = data["keywords"]
                 if not isinstance(keywords, list):
                     log.error("分类关键词配置中 'keywords' 应为数组")
                     return None
