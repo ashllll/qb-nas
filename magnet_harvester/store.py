@@ -21,10 +21,17 @@ from typing import Dict, Iterable, List, Optional, Protocol
 
 from pydantic import ValidationError
 
-from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.models import SYNC_ACTIVE_STATUSES, MagnetItem, TaskStatus
 from magnet_harvester.utils.timeutil import iso_utc, parse_iso_utc, utc_now
 
 log = logging.getLogger(__name__)
+
+# 同步分页必须走部分索引：优化器在状态索引与部分索引之间可能选错，选错就会
+# 全表扫 + 临时 B-tree 排序；这里显式钉住索引，索引不存在时直接报错而不是悄悄退化。
+_SYNC_PAGE_SQL = (
+    "SELECT * FROM magnet_items INDEXED BY idx_magnet_items_sync "
+    "WHERE {where} ORDER BY hash ASC LIMIT ?"
+)
 
 
 def _item_name_key(item: MagnetItem) -> str:
@@ -73,13 +80,14 @@ class _ItemStoreBackend(Protocol):
 
     def add(self, item: MagnetItem) -> bool: ...
     def get(self, hash_key: str) -> Optional[MagnetItem]: ...
-    def update(self, hash_key: str, **fields) -> bool: ...
+    def get_many(self, hashes: Iterable[str]) -> Dict[str, MagnetItem]: ...
+    def update(self, hash_key: str, **fields) -> Optional[MagnetItem]: ...
     def update_if_status(
         self,
         hash_key: str,
         expected_statuses: set[TaskStatus],
         **fields,
-    ) -> bool: ...
+    ) -> Optional[MagnetItem]: ...
     def remove(self, hash_key: str) -> bool: ...
     def list(
         self,
@@ -90,6 +98,9 @@ class _ItemStoreBackend(Protocol):
     def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]: ...
     def get_pending(self) -> List[MagnetItem]: ...
     def get_hashes_by_prefix(self, prefix: str) -> List[str]: ...
+    def list_for_sync(
+        self, after_hash: Optional[str] = None, limit: int = 500
+    ) -> List[MagnetItem]: ...
     def recent(self, limit: int = 10) -> List[MagnetItem]: ...
     @property
     def count(self) -> int: ...
@@ -110,13 +121,14 @@ class ItemStore(Protocol):
 
     async def add(self, item: MagnetItem) -> bool: ...
     async def get(self, hash_key: str) -> Optional[MagnetItem]: ...
-    async def update(self, hash_key: str, **fields) -> bool: ...
+    async def get_many(self, hashes: Iterable[str]) -> Dict[str, MagnetItem]: ...
+    async def update(self, hash_key: str, **fields) -> Optional[MagnetItem]: ...
     async def update_if_status(
         self,
         hash_key: str,
         expected_statuses: set[TaskStatus],
         **fields,
-    ) -> bool: ...
+    ) -> Optional[MagnetItem]: ...
     async def remove(self, hash_key: str) -> bool: ...
     async def list(
         self,
@@ -127,6 +139,9 @@ class ItemStore(Protocol):
     async def search(self, query: str, limit: Optional[int] = None) -> List[MagnetItem]: ...
     async def get_pending(self) -> List[MagnetItem]: ...
     async def get_hashes_by_prefix(self, prefix: str) -> List[str]: ...
+    async def list_for_sync(
+        self, after_hash: Optional[str] = None, limit: int = 500
+    ) -> List[MagnetItem]: ...
     async def recent(self, limit: int = 10) -> List[MagnetItem]: ...
     async def count(self) -> int: ...
     async def count_and_page(
@@ -163,7 +178,10 @@ class AsyncItemStore:
     async def get(self, hash_key: str) -> Optional[MagnetItem]:
         return await self._invoke(self._backend.get, hash_key)
 
-    async def update(self, hash_key: str, **fields) -> bool:
+    async def get_many(self, hashes: Iterable[str]) -> Dict[str, MagnetItem]:
+        return await self._invoke(self._backend.get_many, hashes)
+
+    async def update(self, hash_key: str, **fields) -> Optional[MagnetItem]:
         return await self._invoke(self._backend.update, hash_key, **fields)
 
     async def update_if_status(
@@ -171,7 +189,7 @@ class AsyncItemStore:
         hash_key: str,
         expected_statuses: set[TaskStatus],
         **fields,
-    ) -> bool:
+    ) -> Optional[MagnetItem]:
         """仅当当前状态匹配时更新；比较与写入在同一把锁/同一条 SQL 里完成。"""
         return await self._invoke(
             self._backend.update_if_status,
@@ -204,6 +222,11 @@ class AsyncItemStore:
 
     async def get_hashes_by_prefix(self, prefix: str) -> List[str]:
         return await self._invoke(self._backend.get_hashes_by_prefix, prefix)
+
+    async def list_for_sync(
+        self, after_hash: Optional[str] = None, limit: int = 500
+    ) -> List[MagnetItem]:
+        return await self._invoke(self._backend.list_for_sync, after_hash=after_hash, limit=limit)
 
     async def recent(self, limit: int = 10) -> List[MagnetItem]:
         return await self._invoke(self._backend.recent, limit)
@@ -264,44 +287,48 @@ class InMemoryItemStore:
         with self._lock:
             return self._items.get(hash_key)
 
-    def update(self, hash_key: str, **fields) -> bool:
+    def get_many(self, hashes: Iterable[str]) -> Dict[str, MagnetItem]:
+        with self._lock:
+            return {h: self._items[h] for h in dict.fromkeys(hashes) if h in self._items}
+
+    def update(self, hash_key: str, **fields) -> Optional[MagnetItem]:
         """更新字段（category, save_path, status, error_msg 等）
 
         通过 Pydantic model_validate 重新验证，保持类型安全。
-        如果任何字段非法或不存在，返回 False 且不修改原对象。
+        返回写入后的最新条目；字段非法或条目不存在时返回 None。
         """
         with self._lock:
             item = self._items.get(hash_key)
             if not item:
-                return False
+                return None
 
             new_item = _validated_update(item, fields)
             if new_item is None:
-                return False
+                return None
 
             self._items[hash_key] = new_item
-            return True
+            return new_item
 
     def update_if_status(
         self,
         hash_key: str,
         expected_statuses: set[TaskStatus],
         **fields,
-    ) -> bool:
+    ) -> Optional[MagnetItem]:
         """仅当当前状态匹配时更新；状态比较与写入共享同一把锁。"""
         if not expected_statuses:
-            return False
+            return None
         with self._lock:
             item = self._items.get(hash_key)
             if item is None or item.status not in expected_statuses:
-                return False
+                return None
 
             new_item = _validated_update(item, fields)
             if new_item is None:
-                return False
+                return None
 
             self._items[hash_key] = new_item
-            return True
+            return new_item
 
     def remove(self, hash_key: str) -> bool:
         with self._lock:
@@ -333,7 +360,7 @@ class InMemoryItemStore:
         status: Optional[str | list[str] | set[str]] = None,
     ) -> Iterable[MagnetItem]:
         status_set: set[str] | None = None
-        if isinstance(status, (list, set, frozenset)):
+        if isinstance(status, (list, set, frozenset, tuple)):
             if not status:
                 return
             status_set = set(status)
@@ -380,6 +407,19 @@ class InMemoryItemStore:
         p = prefix.lower()
         with self._lock:
             return [h for h in self._items.keys() if h.lower().startswith(p)]
+
+    def list_for_sync(self, after_hash: Optional[str] = None, limit: int = 500) -> List[MagnetItem]:
+        """按 hash 顺序取一页活跃条目；keyset 分页，不打乱顺序、不重扫头部。"""
+        if limit <= 0:
+            return []
+        active = set(SYNC_ACTIVE_STATUSES)
+        with self._lock:
+            candidates = (
+                item
+                for item in self._items.values()
+                if item.status in active and (after_hash is None or item.hash > after_hash)
+            )
+            return heapq.nsmallest(limit, candidates, key=lambda item: item.hash)
 
     # ── 统计 ──────────────────────────────
 
@@ -496,7 +536,37 @@ class SQLiteItemStore:
                 )
             """)
             self._migrate_columns(db)
+            self._create_indexes(db)
             db.commit()
+
+    @classmethod
+    def _create_indexes(cls, db: sqlite3.Connection) -> None:
+        """补查询基线索引；旧库启动时幂等补齐，不改数据。
+
+        sync 索引是部分索引：只收活跃状态，按 hash 排序，qB 同步的 keyset
+        分页因此既不用扫全表，也不会为 ORDER BY 付临时 B-tree。
+        """
+        db.execute("CREATE INDEX IF NOT EXISTS idx_magnet_items_status ON magnet_items(status)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_magnet_items_category ON magnet_items(category)")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_magnet_items_created_at "
+            "ON magnet_items(created_at DESC, updated_at DESC)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_magnet_items_name_nocase "
+            "ON magnet_items(name COLLATE NOCASE)"
+        )
+        sync_statuses = ", ".join(f"'{status}'" for status in SYNC_ACTIVE_STATUSES)
+        desired = f"WHERE status IN ({sync_statuses})"
+        existing = db.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_magnet_items_sync'"
+        ).fetchone()
+        # 活跃状态集合变了就重建：部分索引的谓词是写死的，旧的不能复用于新查询。
+        if existing is not None and desired not in (existing[0] or ""):
+            db.execute("DROP INDEX idx_magnet_items_sync")
+        db.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_magnet_items_sync ON magnet_items(hash) {desired}"
+        )
 
     # 采集中心新增列：旧库升级时补列，不重建表、不丢数据。
     _ADDED_COLUMNS = (
@@ -635,39 +705,61 @@ class SQLiteItemStore:
             cursor = db.execute("SELECT * FROM magnet_items WHERE hash = ?", (hash_key,))
             return self._row_to_item(cursor.fetchone())
 
-    def update(self, hash_key: str, **fields) -> bool:
+    def get_many(self, hashes: Iterable[str]) -> Dict[str, MagnetItem]:
+        """一次连接批量取条目；超过 SQLite 变量上限时按 500 分块。"""
+        unique = list(dict.fromkeys(hashes))
+        if not unique:
+            return {}
+        found: Dict[str, MagnetItem] = {}
+        with self._lock, self._connect() as db:
+            for start in range(0, len(unique), 500):
+                chunk = unique[start : start + 500]
+                placeholders = ", ".join("?" * len(chunk))
+                cursor = db.execute(
+                    f"SELECT * FROM magnet_items WHERE hash IN ({placeholders})",
+                    chunk,
+                )
+                for row in cursor.fetchall():
+                    item = self._row_to_item(row)
+                    if item is not None:
+                        found[item.hash] = item
+        return found
+
+    def update(self, hash_key: str, **fields) -> Optional[MagnetItem]:
         known = MagnetItem.model_fields
         unknown = [k for k in fields if k not in known]
         if unknown:
-            return False
+            return None
 
         with self._lock, self._connect() as db:
             # 读取用于模型校验；SQL 仅写入请求字段，避免覆盖其他连接的无关修改。
             cursor = db.execute("SELECT * FROM magnet_items WHERE hash = ?", (hash_key,))
             row = cursor.fetchone()
             if row is None:
-                return False
+                return None
             item = self._row_to_item(row)
             if item is None:
-                return False
+                return None
 
             new_item = _validated_update(item, fields)
             if new_item is None:
-                return False
-            return self._write_updated_fields(db, hash_key, new_item, fields)
+                return None
+            if not self._write_updated_fields(db, hash_key, new_item, fields):
+                return None
+            return new_item
 
     def update_if_status(
         self,
         hash_key: str,
         expected_statuses: set[TaskStatus],
         **fields,
-    ) -> bool:
+    ) -> Optional[MagnetItem]:
         """仅当当前状态匹配时更新；SQL 条件保证比较与写入原子化。"""
         if not expected_statuses:
-            return False
+            return None
         unknown = [key for key in fields if key not in MagnetItem.model_fields]
         if unknown:
-            return False
+            return None
 
         with self._lock, self._connect() as db:
             row = db.execute(
@@ -676,18 +768,20 @@ class SQLiteItemStore:
             ).fetchone()
             item = self._row_to_item(row)
             if item is None or item.status not in expected_statuses:
-                return False
+                return None
 
             new_item = _validated_update(item, fields)
             if new_item is None:
-                return False
-            return self._write_updated_fields(
+                return None
+            if not self._write_updated_fields(
                 db,
                 hash_key,
                 new_item,
                 fields,
                 expected_statuses,
-            )
+            ):
+                return None
+            return new_item
 
     def remove(self, hash_key: str) -> bool:
         with self._lock, self._connect() as db:
@@ -712,7 +806,7 @@ class SQLiteItemStore:
             conditions.append("category = ?")
             params.append(category)
         if status and status != "all":
-            if isinstance(status, (list, set, frozenset)):
+            if isinstance(status, (list, set, frozenset, tuple)):
                 if not status:
                     return []
                 placeholders = ", ".join(["?"] * len(status))
@@ -723,7 +817,7 @@ class SQLiteItemStore:
                 params.append(status)
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        sql = f"SELECT * FROM magnet_items {where} ORDER BY name ASC LIMIT ?"
+        sql = f"SELECT * FROM magnet_items {where} ORDER BY name COLLATE NOCASE ASC LIMIT ?"
         params.append(limit)
 
         with self._lock, self._connect() as db:
@@ -771,6 +865,22 @@ class SQLiteItemStore:
             )
             return [r[0] for r in cursor.fetchall()]
 
+    def list_for_sync(self, after_hash: Optional[str] = None, limit: int = 500) -> List[MagnetItem]:
+        """按 hash 顺序取一页活跃条目；keyset 分页，不重扫头部、不排序 name。"""
+        if limit <= 0:
+            return []
+        # 部分索引的谓词必须是字面量，绑定参数会让 SQLite 无法证明索引可用。
+        status_list = ", ".join(f"'{status}'" for status in SYNC_ACTIVE_STATUSES)
+        where = f"status IN ({status_list})"
+        params: list[str | int] = []
+        if after_hash:
+            where += " AND hash > ?"
+            params.append(after_hash)
+        params.append(limit)
+        with self._lock, self._connect() as db:
+            cursor = db.execute(_SYNC_PAGE_SQL.format(where=where), params)
+            return [item for r in cursor.fetchall() if (item := self._row_to_item(r)) is not None]
+
     # ── 统计 ──────────────────────────────
 
     @property
@@ -808,7 +918,11 @@ class SQLiteItemStore:
             if limit <= 0:
                 return total, []
             offset = max(0, offset)
-            order_by = "created_at DESC, updated_at DESC" if order == "newest" else "name ASC"
+            order_by = (
+                "created_at DESC, updated_at DESC"
+                if order == "newest"
+                else "name COLLATE NOCASE ASC"
+            )
             cursor = db.execute(
                 f"SELECT * FROM magnet_items {where} ORDER BY {order_by} LIMIT ? OFFSET ?",
                 params + [limit, offset],
@@ -820,11 +934,6 @@ class SQLiteItemStore:
     def stats(self) -> StoreStats:
         s = StoreStats()
         with self._lock, self._connect() as db:
-            # Total count
-            cursor = db.execute("SELECT COUNT(*) FROM magnet_items")
-            row = cursor.fetchone()
-            s.total = row[0] if row else 0
-
             # By category
             cursor = db.execute(
                 "SELECT CASE WHEN category IS NULL OR category = '' THEN '未分类' ELSE category END as cat, "
@@ -833,10 +942,11 @@ class SQLiteItemStore:
             for row in cursor.fetchall():
                 s.by_category[row["cat"]] = row["cnt"]
 
-            # By status
+            # By status：total 由各状态计数相加，不再单独全表 COUNT(*)
             cursor = db.execute("SELECT status, COUNT(*) as cnt FROM magnet_items GROUP BY status")
             for row in cursor.fetchall():
                 s.by_status[row["status"]] = row["cnt"]
+            s.total = sum(s.by_status.values())
 
             # Pending count
             cursor = db.execute(

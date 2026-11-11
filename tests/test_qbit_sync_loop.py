@@ -91,9 +91,9 @@ class RecordingStore(FakeStore):
         super().__init__()
         self.list_calls = 0
 
-    def list(self, *args, **kwargs):
+    def list_for_sync(self, *args, **kwargs):
         self.list_calls += 1
-        return super().list(*args, **kwargs)
+        return super().list_for_sync(*args, **kwargs)
 
 
 class FakeTaskManager:
@@ -529,19 +529,19 @@ async def test_concurrent_start_creates_only_one_task():
 
 
 class FlakyListStore(FakeStore):
-    """第一次 list 抛 SQLite 错误（locked/IO），之后正常。"""
+    """第一次同步取页抛 SQLite 错误（locked/IO），之后正常。"""
 
     def __init__(self):
         super().__init__()
         self.list_calls = 0
 
-    def list(self, *args, **kwargs):
+    def list_for_sync(self, *args, **kwargs):
         self.list_calls += 1
         if self.list_calls == 1:
             import sqlite3
 
             raise sqlite3.OperationalError("database is locked")
-        return super().list(*args, **kwargs)
+        return super().list_for_sync(*args, **kwargs)
 
 
 @pytest.mark.asyncio

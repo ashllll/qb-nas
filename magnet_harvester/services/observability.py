@@ -80,7 +80,8 @@ class ObservabilitySnapshot:
 
     async def system_status(self) -> dict:
         qbit_ok = await self._probe.read(self._qbit.ping)
-        by_status = (await self._store.stats()).by_status
+        store_stats = await self._store.stats()
+        by_status = store_stats.by_status
         tracked = sum(
             by_status.get(status.value, 0)
             for status in (TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading)
@@ -90,7 +91,7 @@ class ObservabilitySnapshot:
         return {
             "qbittorrent": "online" if qbit_ok else "offline",
             "classifier": "local_rules",
-            "items_count": await self._store.count(),
+            "items_count": store_stats.total,
             "tracked_downloads": tracked,
             "qbit_stats": qbit_stats,
             "disk_space": await asyncio.to_thread(settings.check_disk_space),

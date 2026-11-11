@@ -155,8 +155,8 @@ class HarvestPipeline:
                 new_hashes.append(candidate.hash)
         if not new_hashes:
             return []
-        stored = await asyncio.gather(*(self._store.get(h) for h in new_hashes))
-        stored_items = [i for i in stored if i is not None]
+        stored = await self._store.get_many(new_hashes)
+        stored_items = [stored[h] for h in new_hashes if h in stored]
         await self._stream_classify(stored_items)
         if auto_download:
             await self._download_items(new_hashes)
@@ -246,8 +246,8 @@ class HarvestPipeline:
             if not new_hashes:
                 return
 
-            items = await asyncio.gather(*(self._store.get(h) for h in new_hashes))
-            items = [i for i in items if i is not None]
+            stored = await self._store.get_many(new_hashes)
+            items = [stored[h] for h in new_hashes if h in stored]
             await self._stream_classify(items)
 
             if auto_download:
@@ -328,13 +328,14 @@ class HarvestPipeline:
         仅回退状态仍为 classifying 的条目——已完成的 classified() 回调
         会将状态改为 pending+category，不应被覆盖。
         """
+        latest = await self._store.get_many([item.hash for item in items])
         for i, item in enumerate(items):
             t = result_events.get(i)
             if t is not None and t.done():
                 if not t.cancelled() and t.exception() is None:
                     continue
             # 前置状态检查：仅回退仍处于 classifying 的条目
-            current = await self._store.get(item.hash)
+            current = latest.get(item.hash)
             if current is None or current.status != TaskStatus.classifying:
                 continue
             try:
@@ -349,13 +350,15 @@ class HarvestPipeline:
     async def _download_items(self, hashes: List[str], concurrency: int = 3):
         if not hashes:
             return
+        # 预检一次批量读取；submitting() 还会再做原子状态校验，这里的条目只用于取磁力与分类。
+        prepared = await self._store.get_many(hashes)
         semaphore = asyncio.Semaphore(concurrency)
         try:
             # 按条目数动态计算超时：30s 基础 + 每条 15s
             dynamic_timeout = min(30.0 + len(hashes) * 15.0, 300.0)
             results = await asyncio.wait_for(
                 asyncio.gather(
-                    *(self._download_single_item(h, semaphore) for h in hashes),
+                    *(self._download_single_item(h, prepared.get(h), semaphore) for h in hashes),
                     return_exceptions=True,
                 ),
                 timeout=dynamic_timeout,
@@ -369,14 +372,16 @@ class HarvestPipeline:
                     await self._downloads.failed(hashes[i], str(result))
         except asyncio.TimeoutError:
             log.warning("批量下载超时 (%d 条目)", len(hashes))
+            current = await self._store.get_many(hashes)
             for h in hashes:
-                item = await self._store.get(h)
+                item = current.get(h)
                 if item and item.status in {TaskStatus.pending, TaskStatus.adding}:
                     await self._downloads.failed(h, "下载超时")
 
-    async def _download_single_item(self, hash_key: str, semaphore: asyncio.Semaphore) -> None:
-        item = await self._store.get(hash_key)
-        if not item:
+    async def _download_single_item(
+        self, hash_key: str, item: MagnetItem | None, semaphore: asyncio.Semaphore
+    ) -> None:
+        if item is None:
             return
         if not item.category:
             log.warning("跳过下载 %s：分类结果缺少 category", hash_key)
@@ -401,12 +406,12 @@ class HarvestPipeline:
 
     async def reclassify(self, hashes: List[str]):
         hashes = list(dict.fromkeys(hashes))
-        items = await asyncio.gather(*(self._store.get(h) for h in hashes))
+        stored = await self._store.get_many(hashes)
         items = [
-            i
-            for i in items
-            if i is not None
-            and i.status
+            item
+            for h in hashes
+            if (item := stored.get(h)) is not None
+            and item.status
             not in {
                 TaskStatus.adding,
                 TaskStatus.queued,
