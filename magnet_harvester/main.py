@@ -48,17 +48,9 @@ async def lifespan(app: FastAPI):
 
     runtime = build_runtime()
     app.state.ctx = runtime.ctx
-    try:
-        await runtime.start()
-    except Exception:
-        log.exception("runtime.start() 失败")
-        # 验证核心存储服务是否可用：store 不可用为致命错误，应阻止启动
-        try:
-            await runtime.ctx.core.store.count()
-        except Exception:
-            log.critical("核心存储 store 不可用，无法启动")
-            raise
-        log.warning("runtime.start() 部分失败，继续以降级模式运行")
+    # 启动步骤内部已各自降级（爬虫/qB/续跑失败只退掉对应功能）；走到这里还抛异常，
+    # 说明后台同步循环起不来——带着「页面正常但永不同步」的状态跑，比启动失败更难查。
+    await runtime.start()
 
     # qBittorrent 连接检查（可降级：离线时服务仍可运行）。
     # 限时 3 秒：qB 离线时 ping 会内部重试十几秒，启动不该被它拖住。
