@@ -26,7 +26,7 @@ def _make_item(hash_key: str, name: str = "Test") -> MagnetItem:
 
 
 def test_update_rejects_invalid_status_string():
-    """传入非法 status 字符串时，update() 应返回 False，不修改原对象"""
+    """传入非法 status 字符串时，update() 应返回 None，不修改原对象"""
     store = InMemoryItemStore()
     item = _make_item("TEST01")
     store.add(item)
@@ -38,7 +38,7 @@ def test_update_rejects_invalid_status_string():
     result = store.update("TEST01", status="not_a_real_status")
 
     # 应该被拒绝
-    assert result is False
+    assert result is None
     # 原对象不应被修改
     assert store.get("TEST01").status == TaskStatus.pending
 
@@ -55,7 +55,7 @@ def test_update_accepts_valid_task_status():
     store.add(item)
 
     result = store.update("TEST02", status=TaskStatus.downloading)
-    assert result is True
+    assert result is not None
     assert store.get("TEST02").status == TaskStatus.downloading
 
 
@@ -71,7 +71,7 @@ def test_update_accepts_valid_status_string():
     store.add(item)
 
     result = store.update("TEST03", status="downloading")
-    assert result is True
+    assert result is not None
     assert store.get("TEST03").status == TaskStatus.downloading
 
 
@@ -81,13 +81,13 @@ def test_update_accepts_valid_status_string():
 
 
 def test_update_rejects_invalid_progress():
-    """传入非法 progress 值（如字符串）时，update() 应返回 False"""
+    """传入非法 progress 值（如字符串）时，update() 应返回 None"""
     store = InMemoryItemStore()
     item = _make_item("TEST04")
     store.add(item)
 
     result = store.update("TEST04", progress="not_a_number")
-    assert result is False
+    assert result is None
     assert store.get("TEST04").progress == 0.0
 
 
@@ -120,13 +120,13 @@ def test_update_creates_new_instance():
 
 
 def test_update_rejects_unknown_fields():
-    """传入 MagnetItem 不存在的字段时，update() 应返回 False"""
+    """传入 MagnetItem 不存在的字段时，update() 应返回 None"""
     store = InMemoryItemStore()
     item = _make_item("TEST06")
     store.add(item)
 
     result = store.update("TEST06", not_a_field="value")
-    assert result is False
+    assert result is None
 
 
 # ═══════════════════════════════════════════════════
@@ -144,7 +144,7 @@ def test_update_multiple_fields_atomic():
     result = store.update("TEST07", category="电影", status="bad_status")
 
     # 应该全部失败
-    assert result is False
+    assert result is None
     assert store.get("TEST07").category is None
     assert store.get("TEST07").status == TaskStatus.pending
 

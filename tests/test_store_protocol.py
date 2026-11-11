@@ -59,12 +59,13 @@ def run_store_tests(store_factory):
     # dedup
     assert store.add(item) is False
 
-    # update
-    assert store.update("AAAA", category="电影") is True
+    # update 返回写入后的最新条目
+    updated = store.update("AAAA", category="电影")
+    assert updated is not None and updated.category == "电影"
     assert store.get("AAAA").category == "电影"
 
     # update non-existent
-    assert store.update("ZZZZ", category="其他") is False
+    assert store.update("ZZZZ", category="其他") is None
 
     # remove
     item2 = _make_item("BBBB")
@@ -85,7 +86,7 @@ def run_store_tests(store_factory):
     assert len(results) == 1
 
     # list by category
-    assert store.update("CCCC", category="电影")
+    assert store.update("CCCC", category="电影") is not None
     results = store.list(category="电影")
     assert len(results) >= 1
 

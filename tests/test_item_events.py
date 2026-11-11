@@ -101,7 +101,7 @@ async def test_terminal_status_always_emits_download_result():
         events = []
         bus.subscribe(EventType.DOWNLOAD_RESULT, lambda e: events.append(e))
 
-        await downloads.state_changed("TERM", previous_status=TaskStatus.downloading)
+        await downloads.state_changed(item, previous_status=TaskStatus.downloading)
         assert len(events) == 1, f"terminal {terminal_status} should emit"
 
 
@@ -121,7 +121,7 @@ async def test_new_phase_emits_download_result():
         events = []
         bus.subscribe(EventType.DOWNLOAD_RESULT, lambda e: events.append(e))
 
-        await downloads.state_changed("NEW", previous_status=prev)
+        await downloads.state_changed(item, previous_status=prev)
         assert len(events) == 1, f"new phase from {prev} should emit"
 
 
@@ -140,7 +140,7 @@ async def test_routine_oscillation_suppressed():
     events = []
     bus.subscribe(EventType.DOWNLOAD_RESULT, lambda e: events.append(e))
 
-    await downloads.state_changed("OSC", previous_status=TaskStatus.queued)
+    await downloads.state_changed(item, previous_status=TaskStatus.queued)
     assert len(events) == 0, "queued→downloading should be suppressed"
 
     item2 = MagnetItem(
@@ -151,7 +151,7 @@ async def test_routine_oscillation_suppressed():
     )
     store.add(item2)
     events.clear()
-    await downloads.state_changed("OSC2", previous_status=TaskStatus.downloading)
+    await downloads.state_changed(item2, previous_status=TaskStatus.downloading)
     assert len(events) == 0, "downloading→queued should be suppressed"
 
 

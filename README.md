@@ -111,6 +111,8 @@ ssh llll@192.168.20.193 'cd /vol3/1000/qb-nas && bash deploy/verify.sh --crash'
 
 **升级**：重复上面的「同步 + install」即可，配置与数据库保留；**卸载**：`bash deploy/uninstall.sh`（默认保留数据，`--purge --yes` 连数据一起删）。
 
+**资源库保留**：不自动清理，也没有 TTL。SQLite 只增不减；单条用界面删除，整库用 `DELETE /api/items?scope=all`（只删资源库，不动 qB 队列）。需要自动归档时再单独设计。
+
 ### 2. 构建并安装 Mac 菜单栏代理（可选，但推荐）
 
 ```bash
