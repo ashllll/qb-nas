@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -20,7 +21,7 @@ from contextlib import closing
 from datetime import timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
 from magnet_harvester.utils.timeutil import iso_utc, utc_now
 
@@ -202,6 +203,9 @@ _JOB_COLUMNS = (
 class JobStore:
     """crawl_jobs + ingest_events 的 SQLite 适配器（线程安全，短连接）。"""
 
+    # 同步 SQLite 会阻塞调用线程；async 调用方走下面的 AsyncJobStore 丢到线程池。
+    blocks_event_loop = True
+
     # 常驻服务会一直往里写：留存上限够回溯，又不让库无限长。
     MAX_EVENTS = 5000
     MAX_JOBS = 500
@@ -313,10 +317,12 @@ class JobStore:
         params["job_id"] = job_id
         params["updated_at"] = _now()
         assignments = ", ".join(f"{name} = :{name}" for name in params if name != "job_id")
+        # 同一条连接里写完顺手读回：再调 get() 会多开一次连接，任务越密代价越明显。
         with self._lock, self._connect() as db:
             db.execute(f"UPDATE crawl_jobs SET {assignments} WHERE job_id = :job_id", params)
             db.commit()
-        return self.get(job_id)
+            row = db.execute("SELECT * FROM crawl_jobs WHERE job_id = ?", (job_id,)).fetchone()
+        return self._job_from_row(row)
 
     def list(self, limit: int = 20, status: Optional[str] = None) -> List[CrawlJob]:
         limit = max(0, min(int(limit), 200))
@@ -596,3 +602,71 @@ class JobStore:
             finished_at=row["finished_at"] or "",
             updated_at=row["updated_at"] or "",
         )
+
+
+class AsyncJobStore:
+    """``JobStore`` 的异步外壳：SQLite 读写丢到线程池，事件循环只等服务。
+
+    同步查询接口（``JobStore.list`` 等）留给路由层的同步调用；async 代码里的每一次
+    写库都必须经过这里，否则一次落盘就会卡住同一条 loop 上的 qB 同步与 WS 推送。
+    """
+
+    def __init__(self, backend: JobStore):
+        self._backend = backend
+
+    async def _invoke(self, operation: Callable[..., Any], /, *args, **kwargs) -> Any:
+        if getattr(self._backend, "blocks_event_loop", False):
+            return await asyncio.to_thread(operation, *args, **kwargs)
+        return operation(*args, **kwargs)
+
+    async def create(self, job: CrawlJob) -> CrawlJob:
+        return await self._invoke(self._backend.create, job)
+
+    async def get(self, job_id: str) -> Optional[CrawlJob]:
+        return await self._invoke(self._backend.get, job_id)
+
+    async def update(self, job_id: str, **fields) -> Optional[CrawlJob]:
+        return await self._invoke(self._backend.update, job_id, **fields)
+
+    async def list(self, limit: int = 20, status: Optional[str] = None) -> List[CrawlJob]:
+        return await self._invoke(self._backend.list, limit=limit, status=status)
+
+    async def find_active_by_url(self, url: str) -> Optional[CrawlJob]:
+        return await self._invoke(self._backend.find_active_by_url, url)
+
+    async def claim_resumable(self, max_attempts: int = 2) -> List[str]:
+        return await self._invoke(self._backend.claim_resumable, max_attempts=max_attempts)
+
+    async def counts(self) -> dict:
+        return await self._invoke(self._backend.counts)
+
+    async def get_event(self, event_id: str) -> Optional[IngestRecord]:
+        return await self._invoke(self._backend.get_event, event_id)
+
+    async def record_event(
+        self,
+        *,
+        event_id: str,
+        kind: str,
+        value_hash: str,
+        status: str,
+        item_id: str = "",
+        job_id: str = "",
+        reason: str = "",
+    ) -> IngestRecord:
+        return await self._invoke(
+            self._backend.record_event,
+            event_id=event_id,
+            kind=kind,
+            value_hash=value_hash,
+            status=status,
+            item_id=item_id,
+            job_id=job_id,
+            reason=reason,
+        )
+
+    async def last_event_at(self) -> Optional[str]:
+        return await self._invoke(self._backend.last_event_at)
+
+    async def recent_events(self, limit: int = 10) -> List[IngestRecord]:
+        return await self._invoke(self._backend.recent_events, limit)
