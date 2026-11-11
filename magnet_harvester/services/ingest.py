@@ -265,8 +265,15 @@ class IngestService:
         )
         self._jobs.create(job)
         await self._emit_job(job)
-        if auto_start:
-            self.start_job(job.job_id)
+        if auto_start and not self.start_job(job.job_id):
+            # 任务已入库（还排在队里，重启/重试都能捡回来），但后台执行器没起来，
+            # 不能让调用方以为它在跑。
+            return {
+                "ok": False,
+                "status": "error",
+                "job_id": job.job_id,
+                "reason": "任务已排队，但后台执行器没能启动，稍后可在任务列表里重试",
+            }
         return {"ok": True, "status": "accepted", "job_id": job.job_id, "reason": ""}
 
     # ── 任务执行 ──────────────────────────
@@ -329,7 +336,13 @@ class IngestService:
         updated = self._jobs.get(job_id)
         if updated is not None:
             await self._emit_job(updated)
-        self.start_job(job_id)
+        if not self.start_job(job_id):
+            return {
+                "ok": False,
+                "status": "error",
+                "job_id": job_id,
+                "reason": "任务已重新排队，但后台执行器没能启动，稍后再试",
+            }
         return {"ok": True, "status": "accepted", "job_id": job_id, "reason": "已重新排队"}
 
     async def _run_job(self, job_id: str) -> None:
