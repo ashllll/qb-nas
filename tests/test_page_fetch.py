@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,6 +22,7 @@ from magnet_harvester.page_fetch import (
     PageFetcher,
     _looks_like_empty_shell,
 )
+from magnet_harvester.utils.url_validator import CrawlTargetAdmission
 
 
 class FakeResponse:
@@ -311,3 +313,94 @@ async def test_host_rate_limiter_spaces_requests():
     finally:
         module.asyncio.sleep = original
     assert waits, "同一站点的连续请求必须被拉开间隔"
+
+
+class RecordingRoute:
+    def __init__(self, url: str) -> None:
+        self.request = SimpleNamespace(url=url)
+        self.continued = False
+        self.aborted = False
+
+    async def continue_(self) -> None:
+        self.continued = True
+
+    async def abort(self) -> None:
+        self.aborted = True
+
+
+class RecordingPage:
+    def __init__(self) -> None:
+        self.handler = None
+
+    async def route(self, pattern: str, handler) -> None:
+        self.handler = handler
+
+
+@pytest.mark.asyncio
+async def test_browser_subrequests_admit_each_origin_once():
+    resolved: list[tuple[str, int]] = []
+
+    async def resolver(host: str, port: int) -> list[str]:
+        resolved.append((host, port))
+        return ["93.184.216.34"]
+
+    admission = CrawlTargetAdmission(resolver=resolver)
+    fetcher, _, _, _ = make_fetcher(lambda url: FakeResponse(200, "<html>ok</html>"))
+    fetcher._target_admission = admission
+    page = RecordingPage()
+    try:
+        await fetcher._guard_page_setup(page)
+        for target in (
+            "https://site.test/a.js",
+            "https://site.test/b.css",
+            "https://site.test/c.png",
+            "https://other.test/x.js",
+        ):
+            route = RecordingRoute(target)
+            await page.handler(route)
+            assert route.continued and not route.aborted
+    finally:
+        await admission.close()
+
+    assert resolved == [("site.test", 443), ("other.test", 443)]
+
+
+@pytest.mark.asyncio
+async def test_browser_exception_is_retried_once():
+    calls: list[str] = []
+
+    def responder(url: str):
+        calls.append(url)
+        if len(calls) == 1:
+            raise RuntimeError("playwright exploded")
+        return FakeResponse(200, "<html>rendered</html>")
+
+    fetcher, _, _, sleeps = make_fetcher(
+        lambda url: FakeResponse(200, "<html>http</html>"),
+        responder,
+    )
+    page = await fetcher.fetch("https://site.test/list", browser_first=True)
+    assert page.ok and page.via == "browser"
+    assert len(calls) == 2
+    assert sleeps, "浏览器重试前要有退避"
+
+
+@pytest.mark.asyncio
+async def test_browser_fetch_respects_host_rate_limiter():
+    class RecordingLimiter:
+        def __init__(self) -> None:
+            self.waits: list[str] = []
+
+        async def wait(self, host: str) -> float:
+            self.waits.append(host)
+            return 0.0
+
+    fetcher, _, _, _ = make_fetcher(
+        lambda url: FakeResponse(200, "<html>http</html>"),
+        lambda url: FakeResponse(200, "<html>rendered</html>"),
+    )
+    limiter = RecordingLimiter()
+    fetcher._limiter = limiter
+    await fetcher.fetch("https://site.test/a", browser_first=True)
+    await fetcher.fetch("https://site.test/b", browser_first=True)
+    assert limiter.waits == ["site.test", "site.test"]
