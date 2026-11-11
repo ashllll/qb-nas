@@ -144,9 +144,21 @@ async def start_crawl(
 
     配了采集服务时，网址走和 Mac 上报同一条路径（建任务、边抓边入库、结果与原因可查），
     避免页面和 Mac 两条链路行为分叉；没配（老装配/测试）时退回原有 pipeline 路径。
+
+    采集服务这条链路只入库、不下载，所以 auto_download=true 直接 422：
+    返回 200 却什么都不下载，调用方会一直等一个不会发生的下载。
     """
     ingest = getattr(ctx.app_services, "ingest", None)
     if ingest is not None:
+        if req.auto_download:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "detail": "这条采集入口不自动下载，只把抓到的条目入库。",
+                    "code": "auto_download_not_supported",
+                    "hint": "去掉 auto_download；采集完成后用 POST /api/download（带 infohash）提交下载。",
+                },
+            )
         outcome = await ingest.ingest_url(
             req.url,
             source="ui",
