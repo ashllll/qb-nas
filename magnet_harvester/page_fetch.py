@@ -157,6 +157,9 @@ class PageFetcher:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._limiter = HostRateLimiter(config.per_host_min_interval)
         self._host_slots: dict[str, asyncio.Semaphore] = {}
+        # 同一 origin 的浏览器子请求只做一次 DNS 准入（见 _admit_browser_target）。
+        self._admitted_browser_origins: set[tuple[str, str, int]] = set()
+        self._browser_origin_locks: dict[tuple[str, str, int], asyncio.Lock] = {}
 
     # ── 会话生命周期 ─────────────────────────
 
@@ -200,6 +203,7 @@ class PageFetcher:
 
     async def _close_browser(self) -> None:
         browser, self._browser = self._browser, None
+        self._admitted_browser_origins.clear()
         if browser is None:
             return
         try:
@@ -384,47 +388,56 @@ class PageFetcher:
     # ── 浏览器路径 ───────────────────────────
 
     async def _browser_fetch(self, url: str) -> PageFetch:
-        started = time.monotonic()
-        try:
-            browser = await self._ensure_browser()
-            kwargs: dict[str, Any] = {
-                "timeout": self._config.timeout * 1000,
-                "network_idle": self._config.wait_until == "networkidle",
-                "wait": int(self._config.delay_before_return_html * 1000),
-                "disable_resources": self._config.disable_resources,
-            }
-            if self._page_preparer is not None:
-                kwargs["page_action"] = self._page_preparer.prepare
-            if self._target_admission is not None:
-                kwargs["page_setup"] = self._guard_page_setup
-            response = await browser.fetch(url, **kwargs)
-        except Exception as exc:
-            elapsed_ms = int((time.monotonic() - started) * 1000)
-            log.warning("浏览器取页失败 %s: %s", url, exc)
-            return PageFetch(
-                url=url,
-                via="browser",
-                elapsed_ms=elapsed_ms,
-                reason=FailureReason.BROWSER_UNAVAILABLE,
-                message=f"{type(exc).__name__}: {exc}"[:300],
-            )
-        page = self._page_from_response(url, response, started)
-        page.via = "browser"
-        if page.reason is FailureReason.BLOCKED:
-            page.message = page.message or "浏览器拿到人机校验页"
-        return page
+        host = (urlparse(url).hostname or "").lower()
+        attempts = max(0, int(self._config.max_retries)) + 1
+        last: PageFetch | None = None
+        for attempt in range(attempts):
+            await self._limiter.wait(host)
+            started = time.monotonic()
+            try:
+                browser = await self._ensure_browser()
+                kwargs: dict[str, Any] = {
+                    "timeout": self._config.timeout * 1000,
+                    "network_idle": self._config.wait_until == "networkidle",
+                    "wait": int(self._config.delay_before_return_html * 1000),
+                    "disable_resources": self._config.disable_resources,
+                }
+                if self._page_preparer is not None:
+                    kwargs["page_action"] = self._page_preparer.prepare
+                if self._target_admission is not None:
+                    kwargs["page_setup"] = self._guard_page_setup
+                response = await browser.fetch(url, **kwargs)
+            except Exception as exc:
+                elapsed_ms = int((time.monotonic() - started) * 1000)
+                log.warning("浏览器取页失败 %s: %s", url, exc)
+                last = PageFetch(
+                    url=url,
+                    via="browser",
+                    elapsed_ms=elapsed_ms,
+                    reason=FailureReason.BROWSER_UNAVAILABLE,
+                    message=f"{type(exc).__name__}: {exc}"[:300],
+                )
+                if attempt + 1 < attempts:
+                    backoff = self._backoff_delay(attempt)
+                    log.info("浏览器取页重试 %s，%.2fs 后再试", url, backoff)
+                    await self._sleep(backoff)
+                continue
+            page = self._page_from_response(url, response, started)
+            page.via = "browser"
+            if page.reason is FailureReason.BLOCKED:
+                page.message = page.message or "浏览器拿到人机校验页"
+            return page
+        assert last is not None
+        return last
 
     async def _guard_page_setup(self, page: Any) -> None:
-        """浏览器里发出的每个子请求都先过 SSRF 准入（与旧行为一致）。"""
+        """浏览器里发出的每个子请求都先过 SSRF 准入；同一 origin 只准入一次。"""
         admission = self._target_admission
 
         async def _route_handler(route: Any) -> None:
             target = str(route.request.url)
-            if urlparse(target).scheme in {"data", "blob"}:
-                await route.continue_()
-                return
             try:
-                await admission.admit(target)
+                await self._admit_browser_target(admission, target)
             except Exception as exc:
                 log.warning("阻止不安全的浏览器请求 %s: %s", target, exc)
                 await route.abort()
@@ -432,6 +445,26 @@ class PageFetcher:
             await route.continue_()
 
         await page.route("**/*", _route_handler)
+
+    async def _admit_browser_target(self, admission: Any, target: str) -> None:
+        parsed = urlparse(target)
+        if parsed.scheme in {"data", "blob"}:
+            return
+        # 同一 origin 只做一次 DNS 准入：一页 50–150 个子请求不值得逐条 getaddrinfo。
+        # 代价是页面存活期间 DNS rebinding 不再复查；浏览器子请求拿不到已验证 IP，接受这个折中。
+        origin = (
+            parsed.scheme,
+            (parsed.hostname or "").lower(),
+            parsed.port or (443 if parsed.scheme == "https" else 80),
+        )
+        if origin in self._admitted_browser_origins:
+            return
+        lock = self._browser_origin_locks.setdefault(origin, asyncio.Lock())
+        async with lock:
+            if origin in self._admitted_browser_origins:
+                return
+            await admission.admit(target)
+            self._admitted_browser_origins.add(origin)
 
 
 def _response_html(response: Any) -> str:
