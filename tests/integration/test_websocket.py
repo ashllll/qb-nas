@@ -150,12 +150,16 @@ def test_websocket_broadcaster_sends_events_directly():
             pass
 
     ws = CollectingWS()
-    broadcaster.add(ws)
 
     # Emit event via bus
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+    async def _register() -> None:
+        broadcaster.add(ws)
+
     try:
+        loop.run_until_complete(_register())
         loop.run_until_complete(
             bus.emit(
                 Event(EventType.MAGNET_FOUND, {"item": {"hash": "WS001", "name": "WS Event Test"}})
@@ -167,6 +171,8 @@ def test_websocket_broadcaster_sends_events_directly():
                 break
             loop.run_until_complete(asyncio.sleep(0.01))
     finally:
+        broadcaster.shutdown()
+        loop.run_until_complete(asyncio.sleep(0))
         loop.close()
 
     assert len(ws.sent) >= 1

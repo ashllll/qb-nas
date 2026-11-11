@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -17,12 +18,28 @@ from starlette.websockets import WebSocketState
 from magnet_harvester.bus import Event, MessageBus
 from magnet_harvester.store import ItemStore
 from magnet_harvester.utils.auth import resolve_auth
+from magnet_harvester.utils.bg_tasks import BGTaskManager
 from magnet_harvester.utils.serializers import item_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
 _INIT_PAGE_SIZE = 500
+# 单个在线连接的发送积压上限：超过说明客户端读得比事件产出慢，直接断开重连。
+_CLIENT_QUEUE_MAX = 32
+# 初始化快照期间的积压上限（快照本身可能分多页，事件先攒后发）。
+_INIT_QUEUE_MAX = 1000
+# 单条消息发送超时：慢客户端不能无限占住自己的发送协程。
+_SEND_TIMEOUT = 3.0
+_CLOSE_SLOW = 1013
+
+
+@dataclass
+class _Client:
+    ws: WebSocket
+    queue: asyncio.Queue[str]
+    limit: int
+    sender: asyncio.Task | None = None
 
 
 def _json_serializer(obj: Any) -> str:
@@ -37,33 +54,51 @@ class WSBroadcaster:
     def __init__(self, bus: MessageBus, store: ItemStore | None = None):
         self._bus = bus
         self._store = store
+        self._clients: dict[WebSocket, _Client] = {}
         self._active_ws: set[WebSocket] = set()
-        self._initializing_ws: dict[WebSocket, list[str]] = {}
         bus.subscribe(None, self._on_event)
 
     def add(self, ws: WebSocket):
+        """把已建好的连接登记为在线客户端，并启动独立发送协程。"""
+        if ws in self._clients:
+            return
+        client = _Client(ws=ws, queue=asyncio.Queue(), limit=_CLIENT_QUEUE_MAX)
+        self._clients[ws] = client
         self._active_ws.add(ws)
+        client.sender = BGTaskManager.spawn(self._sender_loop(client), name="ws-sender")
+
+    def _register_initializing(self, ws: WebSocket) -> None:
+        client = _Client(ws=ws, queue=asyncio.Queue(), limit=_INIT_QUEUE_MAX)
+        previous = self._clients.pop(ws, None)
+        if previous is not None and previous.sender is not None:
+            previous.sender.cancel()
+        self._active_ws.discard(ws)
+        self._clients[ws] = client
 
     def remove(self, ws: WebSocket):
+        client = self._clients.pop(ws, None)
         self._active_ws.discard(ws)
-        self._initializing_ws.pop(ws, None)
+        if client is not None and client.sender is not None:
+            client.sender.cancel()
 
     def shutdown(self):
-        """取消 MessageBus 订阅，断开强引用以允许 GC 回收。
-
-        架构支持 Broadcaster 热替换或重载时必须调用；当前单例场景下可选。
-        """
+        """取消 MessageBus 订阅并停止所有发送协程。"""
         self._bus.unsubscribe(None, self._on_event)
+        for ws in list(self._clients):
+            self.remove(ws)
 
     @property
     def active_count(self) -> int:
         return len(self._active_ws)
 
+    async def _send_text(self, ws: WebSocket, data: str) -> None:
+        await asyncio.wait_for(ws.send_text(data), timeout=_SEND_TIMEOUT)
+
     async def send_init(self, ws: WebSocket, items: list):
         data = json.dumps(
             {"type": "init", "items": items}, ensure_ascii=False, default=_json_serializer
         )
-        await ws.send_text(data)
+        await self._send_text(ws, data)
 
     async def send_init_from_store(self, ws: WebSocket):
         if self._store is None:
@@ -85,12 +120,13 @@ class WSBroadcaster:
                 await self.send_init(ws, payloads)
                 first_page = False
             elif payloads:
-                await ws.send_text(
+                await self._send_text(
+                    ws,
                     json.dumps(
                         {"type": "init_page", "items": payloads},
                         ensure_ascii=False,
                         default=_json_serializer,
-                    )
+                    ),
                 )
 
             offset += len(page)
@@ -104,27 +140,66 @@ class WSBroadcaster:
             offset = 0
 
     async def _send_init_done(self, ws: WebSocket, total: int) -> None:
-        await ws.send_text(
+        await self._send_text(
+            ws,
             json.dumps(
                 {"type": "init_done", "total": total},
                 ensure_ascii=False,
-            )
+            ),
         )
 
     async def _finish_initialization(self, ws: WebSocket) -> None:
-        while True:
-            queued = self._initializing_ws.get(ws)
-            if queued is None:
-                return
-            if queued:
-                batch = list(queued)
-                queued.clear()
-                for data in batch:
-                    await ws.send_text(data)
-                continue
-            self._initializing_ws.pop(ws, None)
-            self._active_ws.add(ws)
+        client = self._clients.get(ws)
+        if client is None:
             return
+        client.limit = _CLIENT_QUEUE_MAX
+        self._active_ws.add(ws)
+        # 快照期间攒下的事件都在队列里，独立 sender 按 FIFO 发送，天然排在 init_done 之后。
+        client.sender = BGTaskManager.spawn(self._sender_loop(client), name="ws-sender")
+
+    async def _sender_loop(self, client: _Client) -> None:
+        failed = False
+        try:
+            while True:
+                data = await client.queue.get()
+                try:
+                    state = getattr(client.ws, "client_state", None)
+                    if isinstance(state, WebSocketState) and state != WebSocketState.CONNECTED:
+                        failed = True
+                        break
+                    await asyncio.wait_for(client.ws.send_text(data), timeout=_SEND_TIMEOUT)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log.warning("WebSocket 发送失败，断开连接: %s", exc)
+                    failed = True
+                    break
+                finally:
+                    client.queue.task_done()
+        finally:
+            self._detach(client)
+            if failed:
+                await self._close_ws(client.ws, _CLOSE_SLOW, "send failed")
+
+    def _detach(self, client: _Client) -> None:
+        if self._clients.get(client.ws) is client:
+            self._clients.pop(client.ws, None)
+            self._active_ws.discard(client.ws)
+
+    def _drop_client(self, client: _Client, reason: str) -> None:
+        if self._clients.get(client.ws) is not client:
+            return
+        self._detach(client)
+        if client.sender is not None:
+            client.sender.cancel()
+        BGTaskManager.spawn(self._close_ws(client.ws, _CLOSE_SLOW, reason), name="ws-close-slow")
+
+    @staticmethod
+    async def _close_ws(ws: WebSocket, code: int, reason: str) -> None:
+        try:
+            await ws.close(code=code, reason=reason)
+        except Exception:
+            log.debug("WebSocket close 失败（连接可能已断开）", exc_info=True)
 
     async def handle_connection(self, ws: WebSocket, already_accepted: bool = False):
         """Full WebSocket lifecycle: accept, init, keep-alive, cleanup.
@@ -134,7 +209,7 @@ class WSBroadcaster:
         """
         if not already_accepted:
             await ws.accept()
-        self._initializing_ws[ws] = []
+        self._register_initializing(ws)
         try:
             try:
                 await self.send_init_from_store(ws)
@@ -216,7 +291,7 @@ class WSBroadcaster:
             self.remove(ws)
 
     async def _on_event(self, event: Event):
-        if not self._active_ws and not self._initializing_ws:
+        if not self._clients:
             return
         try:
             data = json.dumps(event.as_dict(), ensure_ascii=False, default=_json_serializer)
@@ -244,65 +319,16 @@ class WSBroadcaster:
                 )
                 data = json.dumps({"type": event.type.value, "error": "serialization_failed"})
 
-        for queued in self._initializing_ws.values():
-            queued.append(data)
-        _DEAD = b"DEAD"  # sentinel
-        _SEND_TIMEOUT = 3.0  # per-client 广播超时
-
-        async def _send(ws: WebSocket):
-            client_state = getattr(ws, "client_state", None)
-            if (
-                isinstance(client_state, WebSocketState)
-                and client_state != WebSocketState.CONNECTED
-            ):
-                return _DEAD
-            try:
-                await ws.send_text(data)
-            except Exception:
-                # 连接已断开时由外层统一清理。
-                # CancelledError 必须传播，让 TaskGroup 回收整个 fan-out。
-                return _DEAD
-            return None
-
-        async def _send_with_timeout(ws: WebSocket):
-            try:
-                return await asyncio.wait_for(_send(ws), timeout=_SEND_TIMEOUT)
-            except Exception as exc:
-                return exc
-
-        # ── 并发模型说明 ──────────────────────────────
-        # _active_ws 是普通的 set[WebSocket]，未使用 asyncio.Lock 保护。
-        # 这是安全的，因为：
-        # 1. add() / remove() 只在 handle_connection() 协程中调用，
-        #    而 handle_connection() 与本方法 (_on_event) 运行在同一个
-        #    asyncio 事件循环中。
-        # 2. asyncio 协程只在 await 点切换，set 的 add/discard/difference_update
-        #    等原子操作之间不会发生竞态。
-        # 3. 快照 + difference_update 模式确保：迭代 snapshot 期间即使
-        #    handle_connection() 调用了 remove() 修改 _active_ws，
-        #    也不会导致 RuntimeError: Set changed size during iteration。
-        # ⚠️ 未来若重构为多事件循环或多线程，必须为 _active_ws 加锁。
-        # ─────────────────────────────────────────────
-        snapshot = list(self._active_ws)
-        dead: set[WebSocket] = set()
-        try:
-            async with asyncio.TaskGroup() as task_group:
-                tasks = [task_group.create_task(_send_with_timeout(ws)) for ws in snapshot]
-            results = [task.result() for task in tasks]
-            for ws, result in zip(snapshot, results):
-                if isinstance(result, Exception):
-                    if isinstance(result, asyncio.TimeoutError):
-                        log.warning(
-                            "WebSocket broadcast 单客户端超时（%.1fs），标记为 DEAD",
-                            _SEND_TIMEOUT,
-                        )
-                    else:
-                        log.error("WebSocket broadcast 异常: %s", result)
-                    dead.add(ws)
-                elif result is _DEAD:
-                    dead.add(ws)
-        finally:
-            self._active_ws.difference_update(dead)
+        # 回调只入队，绝不在这里 await 网络发送：慢客户端不能反压 bus/qB 同步。
+        for client in list(self._clients.values()):
+            if client.queue.qsize() >= client.limit:
+                log.warning(
+                    "WebSocket 客户端发送积压达到上限（%d），断开连接",
+                    client.limit,
+                )
+                self._drop_client(client, "client too slow")
+                continue
+            client.queue.put_nowait(data)
 
 
 _AUTH_TIMEOUT_SECONDS = 8.0
