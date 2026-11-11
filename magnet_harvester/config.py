@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from dotenv import dotenv_values
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings.sources import DotEnvSettingsSource
 
@@ -459,9 +460,18 @@ class Settings(BaseSettings):
         self._write_env_values(path, updates)
         log.info("qBittorrent 配置已落盘：%s（600，同目录临时文件 + 原子替换）", path)
 
+    @field_validator("AUTH_MODE")
+    @classmethod
+    def _normalize_auth_mode(cls, value: object) -> str:
+        """只认 trusted / strict（去空白、转小写）；拼错就启动失败，不悄悄退回信任模式。"""
+        normalized = str(value or "").strip().lower()
+        if normalized not in {"trusted", "strict"}:
+            raise ValueError("AUTH_MODE 只能是 trusted 或 strict")
+        return normalized
+
     def auth_mode_normalized(self) -> str:
-        """AUTH_MODE 的唯一解释：只认 strict，其余一律 trusted（默认）。"""
-        return "strict" if str(self.AUTH_MODE or "").strip().lower() == "strict" else "trusted"
+        """AUTH_MODE 已由 field_validator 归一，这里只做读取。"""
+        return self.AUTH_MODE
 
     def validate_security_posture(self) -> None:
         """启动自检：先报配置事实源，再拒绝无鉴权的对外写接口。
@@ -489,6 +499,11 @@ class Settings(BaseSettings):
                 )
             return
 
+        if not self.API_KEY.strip() and not self.ALLOW_INSECURE_WRITE_API:
+            log.warning(
+                "AUTH_MODE=strict 且未配置 API_KEY：所有写接口返回 401（fail-closed）。"
+                "请在 config/.env 配置 API_KEY；仅本地开发可临时设 ALLOW_INSECURE_WRITE_API=true。"
+            )
         if loopback or self.API_KEY.strip() or self.ALLOW_INSECURE_WRITE_API:
             return
         raise RuntimeError(

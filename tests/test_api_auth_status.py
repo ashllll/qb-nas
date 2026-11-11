@@ -63,13 +63,14 @@ def test_strict_status_answers_readonly_without_leaking_key(monkeypatch):
         assert BAD_KEY not in resp.text
 
 
-def test_strict_status_without_configured_key_is_writable(monkeypatch):
-    """严格模式但服务端没有 key：没有门可关，如实说可写。"""
+def test_strict_status_without_configured_key_is_readonly(monkeypatch):
+    """严格模式但服务端没有 key：没有门可关，写接口 fail-closed，如实说不能写。"""
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", False)
     app = _client(monkeypatch, mode="strict", api_key="")
     with asgi_client(app) as client:
         body = client.get("/api/auth").json()
     assert body["required"] is False
-    assert body["write"] is True
+    assert body["write"] is False
     assert body["key"] == "not_required"
 
 

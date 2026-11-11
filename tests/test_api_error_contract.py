@@ -25,6 +25,8 @@ def client(monkeypatch):
     # 这一组锁的是 strict（必须 key）下的错误体；N23 默认 trusted 见
     # tests/test_auth_trust_model.py。
     monkeypatch.setattr(settings, "AUTH_MODE", "strict")
+    # 这里测的是错误体形状，不是授权：用显式开发开关让 strict + 未配 key 也能进路由。
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     app, ctx, _ = make_test_app()
     install_error_handlers(app)
     with asgi_client(app) as c:

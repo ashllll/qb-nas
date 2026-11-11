@@ -24,7 +24,9 @@
    ``Sec-Fetch-Site`` 必须是 ``same-origin`` / ``none``。没有 ``Origin`` 的
    程序请求（curl、Mac 代理）照常放行。
 3. **模式**。``trusted``（默认）：放行，带正确 key 仍放行，错 key 不阻断；
-   ``strict``：写必须带正确 ``X-API-Key``。两种模式都先过 1、2。
+   ``strict``：写必须带正确 ``X-API-Key``；strict 却没配 key 时写接口默认全关
+   （fail-closed），只有显式 ``ALLOW_INSECURE_WRITE_API=true`` 的开发部署才放行。
+   两种模式都先过 1、2。
 """
 
 from __future__ import annotations
@@ -230,7 +232,9 @@ def resolve_auth(request: Request) -> AuthContext:
 
     trusted = mode == TRUSTED and host_ok and origin_ok
     required = mode == STRICT and bool(expected)
-    write = host_ok and origin_ok and (trusted or not expected or key_state == "valid")
+    # strict 且没配 key：没有门可关，但也不能默认放行——只有显式的开发开关才开写。
+    insecure_dev_write = not expected and bool(getattr(settings, "ALLOW_INSECURE_WRITE_API", False))
+    write = host_ok and origin_ok and (trusted or key_state == "valid" or insecure_dev_write)
 
     if not host_ok:
         reason = "untrusted_host"
@@ -279,7 +283,9 @@ async def require_api_key(request: Request, x_api_key: str | None = Header(None)
 
     信任模式（默认）：不带 key 放行；带正确 key 放行；带错 key 也不阻断——
     key 在这个部署里不是门，留着它只是为了 Mac 代理这类程序通道兼容。
-    非信任模式：写必须带正确 key；页面没有 key，于是只读。
+    严格模式：写必须带正确 key；页面没有 key，于是只读。
+    严格模式却没配 key：写接口全关（fail-closed），只有显式的
+    ALLOW_INSECURE_WRITE_API=true 开发开关才放行。
     """
     ctx = getattr(request.app.state, "ctx", None)
     if ctx is None:
@@ -296,6 +302,17 @@ async def require_api_key(request: Request, x_api_key: str | None = Header(None)
     if auth.write:
         return
 
+    if auth.key_state == "not_required":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "detail": "严格模式没有配置 API_KEY，写接口已关闭",
+                "code": "auth_not_configured",
+                "hint": "AUTH_MODE=strict 时必须同时在 NAS config/.env 里配置 API_KEY；"
+                "只有本地开发才可临时设 ALLOW_INSECURE_WRITE_API=true。",
+            },
+            headers={"WWW-Authenticate": "X-API-Key"},
+        )
     if auth.key_state == "missing":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

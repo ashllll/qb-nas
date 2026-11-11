@@ -5,6 +5,7 @@
 * 默认（trusted）局域网内写接口不带 key 也放行，带正确 key 仍放行，
   错 key 不阻断——key 只留给程序通道，不再是页面的门；
 * 严格模式（未来外网）写必须带正确 ``X-API-Key``，页面因此只读；
+  strict 却没配 key 时写接口 fail-closed，只有 ALLOW_INSECURE_WRITE_API 显式放行；
 * Host 只接受本机/局域网名与显式白名单（防 DNS rebinding，读也挡）；
 * 浏览器发起的跨源写被拒（CSRF），没有 Origin 的程序请求放行；
 * ``/api/auth`` 与 ``/api/config`` 不回声任何凭据。
@@ -153,16 +154,28 @@ def test_strict_auth_payload_sends_the_page_readonly(monkeypatch):
     assert authorized["key"] == "valid"
 
 
-def test_strict_without_configured_key_stays_open_like_before(monkeypatch):
-    """严格模式但服务端没配 key：没有门可关，按开放处理（向后兼容）。"""
+def test_strict_without_configured_key_denies_write(monkeypatch):
+    """严格模式却没配 key：没有门可关，但也不能默认放行——写接口 fail-closed。"""
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", False)
+    app, _ = _app(monkeypatch, mode="strict", api_key="")
+    with asgi_client(app) as client:
+        resp = _write(client)
+        body = client.get("/api/auth").json()
+    assert resp.status_code == 401
+    assert resp.json()["code"] == "auth_not_configured"
+    assert body["required"] is False
+    assert body["key"] == "not_required"
+    assert body["write"] is False
+    assert body["reason"] == "no_key_configured"
+
+
+def test_strict_without_key_opens_only_with_explicit_dev_flag(monkeypatch):
+    """显式的开发开关才放行；旧部署靠它保持兼容。"""
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     app, _ = _app(monkeypatch, mode="strict", api_key="")
     with asgi_client(app) as client:
         assert _write(client).status_code == 200
-        body = client.get("/api/auth").json()
-    assert body["required"] is False
-    assert body["key"] == "not_required"
-    assert body["write"] is True
-    assert body["reason"] == "no_key_configured"
+        assert client.get("/api/auth").json()["write"] is True
 
 
 def test_strict_websocket_rejects_missing_and_wrong_key(monkeypatch):
