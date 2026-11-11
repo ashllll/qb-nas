@@ -213,11 +213,15 @@ else
   [ -f "$SOURCE/magnet_harvester/main.py" ] || die "$SOURCE 里没有 magnet_harvester/main.py"
   command -v rsync >/dev/null || die "没有 rsync"
   SRC_RO=$(cd "$SOURCE" && pwd)
+  # 只传运行所需内容：本地工作树（qb-nas/ 副本、.agents/ worktrees、.planning/）动辄几百 MB，
+  # rsync 会把它们一起搬上 NAS；research/、scripts/factory/ 也是本机草稿
   rsync -a --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' \
     --exclude '.pytest_cache/' --exclude '.ruff_cache/' --exclude 'tests/' --exclude '.env' --exclude '.env.*' \
     --exclude '*.log' --exclude 'logs/' --exclude 'data/' --exclude 'docs/' --exclude 'doc/' \
     --exclude '.husky/' --exclude '.claude/' --exclude '.codegraph/' --exclude '.context/' \
-    --exclude '.codebase-memory/' --exclude '.DS_Store' "$SRC_RO/" "$STAGE/"
+    --exclude '.codebase-memory/' --exclude '.DS_Store' \
+    --exclude '.agents/' --exclude '.planning/' --exclude '.reasonix/' --exclude 'qb-nas/' \
+    --exclude 'research/' --exclude 'scripts/factory/' "$SRC_RO/" "$STAGE/"
   info "来源：本地目录 $SRC_RO"
 fi
 # 这台 NAS（fnOS/btrfs）新建文件默认 700，从 tar 解出来的甚至会是 000：
@@ -458,8 +462,11 @@ info "$COMPOSE"
 
 # ── 5. 构建 + 启动 ──────────────────────────────────────────────────────────
 step "5/8 构建镜像并启动（首次 3–8 分钟，取决于拉基础镜像）"
+OLD_IMAGE_ID=""
 if [ "$START" = "1" ] && [ "$DOCKER_OK" = "1" ]; then
   BUILD_LOG="$RUN/build.log"
+  # 升级前记下镜像 ID：新 tag 会覆盖旧 tag，但旧镜像层还在，健康检查失败时回切
+  OLD_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
   if docker compose -f "$COMPOSE" --project-name "$PROJECT" build --progress plain >"$BUILD_LOG" 2>&1; then
     tail -n 6 "$BUILD_LOG" | sed 's/^/  /'
   else
@@ -488,6 +495,24 @@ if [ "$START" = "1" ] && [ "$DOCKER_OK" = "1" ]; then
   if [ "$ok" != "1" ]; then
     printf '\n%s✗ 容器没起来。最近日志：%s\n' "$c_err" "$c_0" >&2
     docker logs --tail 80 "$CONTAINER" 2>&1 | sed 's/^/  /' >&2 || true
+    if [ -n "$OLD_IMAGE_ID" ]; then
+      warn "尝试回滚到升级前的镜像（${OLD_IMAGE_ID:7:12}）"
+      rolled=0
+      if docker tag "$OLD_IMAGE_ID" "$IMAGE" >>"$RUN/rollback.log" 2>&1 \
+        && docker compose -f "$COMPOSE" --project-name "$PROJECT" up -d --force-recreate >>"$RUN/rollback.log" 2>&1; then
+        for i in $(seq 1 60); do
+          if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1 \
+            || curl -fsS --max-time 3 "http://$URL_HOST:$HOST_PORT/api/v1/health" >/dev/null 2>&1; then
+            rolled=1; break
+          fi
+          sleep 1
+        done
+      fi
+      if [ "$rolled" = "1" ]; then
+        die "新镜像健康检查未通过，已回滚到升级前的镜像（${HEALTH_URL} 已恢复）。新版本排查：docker logs ${CONTAINER}（回滚日志 $RUN/rollback.log）"
+      fi
+      warn "回滚也没起来。旧镜像 ID ${OLD_IMAGE_ID} 还在，手动回切：docker tag ${OLD_IMAGE_ID} ${IMAGE} && docker compose -f ${COMPOSE} --project-name ${PROJECT} up -d --force-recreate"
+    fi
     die "排查：docker logs ${CONTAINER}；构建日志 $RUN/build.log"
   fi
   info "健康检查通过：$HEALTH_URL"
