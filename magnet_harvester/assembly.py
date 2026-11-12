@@ -21,7 +21,7 @@ from magnet_harvester.context.app_context import (
     RuntimeState,
 )
 from magnet_harvester.crawler import MagnetCrawler
-from magnet_harvester.errors import error_handler
+from magnet_harvester.errors import ErrorHandler
 from magnet_harvester.transitions import (
     ClassificationTransitions,
     DiscoveryTransitions,
@@ -190,6 +190,7 @@ def _build_services(
     classification,
     downloads,
     stats,
+    error_handler,
     crawler=None,
     jobs=None,
 ):
@@ -247,6 +248,7 @@ def build_runtime() -> AppRuntime:
     """
     site_auth, crawler, qbit, classifier, store, bus, bg_manager = _build_core()
     discovery, classification, downloads, queries = _build_data_layer(store, bus)
+    error_handler = ErrorHandler()
     pipeline = _build_pipeline(
         crawler,
         classifier,
@@ -272,6 +274,7 @@ def build_runtime() -> AppRuntime:
         classification=classification,
         downloads=downloads,
         stats=stats,
+        error_handler=error_handler,
         crawler=crawler,
         jobs=jobs,
     )

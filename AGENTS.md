@@ -126,7 +126,7 @@ qb-nas/
 │   ├── services/ ingest.py  qbit_sync.py  site_auth.py  observability.py  user_actions.py  item_queries.py  stats.py  probe.py
 │   ├── context/app_context.py
 │   └── utils/ auth.py  url_validator.py  serializers.py  bg_tasks.py  timeutil.py  infohash.py
-└── tests/                              # 107 个测试文件、825 个用例
+└── tests/                              # 107 个测试文件、821 个用例
 ```
 
 ## Configuration
@@ -167,7 +167,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 
 - **Framework**: pytest + pytest-asyncio (`asyncio_mode = auto` in `pyproject.toml`)
 - **Test doubles**: `InMemoryItemStore` for store, `NullBus` for bus, manual `AppContext` for DI
-- **107 个测试文件、825 个用例** 覆盖：URL 校验/SSRF、qB 客户端模块（transport、paths、submitter、sync、mapper）、爬虫调度与单页抓取、分类规则链、状态转换/事件、API 鉴权/路由、WebSocket 广播与反压、Mac Agent ingest、存储查询
+- **107 个测试文件、821 个用例** 覆盖：URL 校验/SSRF、qB 客户端模块（transport、paths、submitter、sync、mapper）、爬虫调度与单页抓取、分类规则链、状态转换/事件、API 鉴权/路由、WebSocket 广播与反压、Mac Agent ingest、存储查询
 - **生产链路验证**: 自动化测试（pytest 全绿）≠ 生产验收。真实站点/qB/NAS 链路验证用 `scripts/smoke_production.py`（可选，见 `docs/verification.md`），两者不可互相替代
 - **机器闸门**: `scripts/preflight.sh` 跑 `uv lock --check` + `ruff check` + `ruff format --check` + `pytest --cov`（覆盖率门槛 79%）；`npm run check` 等价。CI 还构建 Docker 镜像并对 mac_agent 跑 Swift 自测
 
@@ -176,7 +176,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 - **Single assembly point**: `main.py` lifespan calls `build_runtime()` — all wiring in one place (see ADR-0001)
 - **Phase protocols**: `CrawlPhase`, `ClassifyPhase`, `DownloadPhase` protocols enable hot-swappable implementations
 - **Hot-swap qB config**: `QBitRuntime.replace_qbit_config()` validates, persists, and swaps the client atomically
-- **SSRF protection**: `url_validator` blocks loopback, link-local, multicast, RFC 1918 addresses, plus checks redirect chains
+- **SSRF protection**: `url_validator` blocks loopback, link-local, multicast, RFC 1918 addresses at seed/discovered URLs; redirect hops are re-checked per request by `page.route` (no up-front redirect-chain preflight)
 - **No external AI**: Classification is 100% local rules — no API calls to any external service
 
 ## Agent Skills 自动化

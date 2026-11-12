@@ -348,19 +348,16 @@ async def test_browser_subrequests_admit_each_origin_once():
     fetcher, _, _, _ = make_fetcher(lambda url: FakeResponse(200, "<html>ok</html>"))
     fetcher._target_admission = admission
     page = RecordingPage()
-    try:
-        await fetcher._guard_page_setup(page)
-        for target in (
-            "https://site.test/a.js",
-            "https://site.test/b.css",
-            "https://site.test/c.png",
-            "https://other.test/x.js",
-        ):
-            route = RecordingRoute(target)
-            await page.handler(route)
-            assert route.continued and not route.aborted
-    finally:
-        await admission.close()
+    await fetcher._guard_page_setup(page)
+    for target in (
+        "https://site.test/a.js",
+        "https://site.test/b.css",
+        "https://site.test/c.png",
+        "https://other.test/x.js",
+    ):
+        route = RecordingRoute(target)
+        await page.handler(route)
+        assert route.continued and not route.aborted
 
     assert resolved == [("site.test", 443), ("other.test", 443)]
 
