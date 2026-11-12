@@ -2,6 +2,7 @@ name: auto-merge
 
 # CI 绿后自动合 main：gates 工作流在 pull_request 上成功后，
 # 对同一个 PR 做 squash 合并。push 触发的 gates 没有 PR 关联，直接跳过。
+# agent 生成的 PR（label=agent 或分支 factory/*）保持 draft，由人审后手动合并。
 on:
   workflow_run:
     workflows: ["gates"]
@@ -37,6 +38,13 @@ jobs:
               });
               if (data.state !== 'open' || data.draft) {
                 core.info(`PR #${pr.number} is ${data.state}${data.draft ? ' (draft)' : ''}; skip`);
+                continue;
+              }
+              const labels = (data.labels || []).map((label) =>
+                typeof label === 'string' ? label : label.name,
+              );
+              if (labels.includes('agent') || data.head.ref.startsWith('factory/')) {
+                core.info(`PR #${pr.number} is agent-generated; skip auto-merge`);
                 continue;
               }
               if (data.mergeable === false) {
