@@ -9,21 +9,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.models import MagnetItem
 from magnet_harvester.store import (
     InMemoryItemStore,
     ItemStore,
     SQLiteItemStore,
     StoreStats,
 )
-
-
-def _make_item(hash_key: str, name: str = "Test") -> MagnetItem:
-    return MagnetItem(
-        hash=hash_key,
-        name=name,
-        magnet=f"magnet:?xt=urn:btih:{hash_key}",
-    )
+from tests.fixtures import make_item
 
 
 def test_protocol_is_defined():
@@ -51,7 +43,7 @@ def run_store_tests(store_factory):
     store = store_factory()
 
     # add + get
-    item = _make_item("AAAA")
+    item = make_item("AAAA")
     assert store.add(item) is True
     assert store.get("AAAA") is not None
     assert store.get("AAAA").hash == "AAAA"
@@ -68,7 +60,7 @@ def run_store_tests(store_factory):
     assert store.update("ZZZZ", category="其他") is None
 
     # remove
-    item2 = _make_item("BBBB")
+    item2 = make_item("BBBB")
     store.add(item2)
     assert store.remove("BBBB") is True
     assert store.get("BBBB") is None
@@ -80,7 +72,7 @@ def run_store_tests(store_factory):
     assert store.count == 1  # only AAAA remains
 
     # search
-    item3 = _make_item("CCCC", name="Avengers Movie")
+    item3 = make_item("CCCC", name="Avengers Movie")
     store.add(item3)
     results = store.search("avengers")
     assert len(results) == 1
@@ -120,8 +112,8 @@ def test_inmemory_behaviors():
 
 def test_search_nonpositive_limit_is_consistent_across_adapters(tmp_path):
     def seed(store):
-        store.add(_make_item("AAAA", name="Matrix A"))
-        store.add(_make_item("BBBB", name="Matrix B"))
+        store.add(make_item("AAAA", name="Matrix A"))
+        store.add(make_item("BBBB", name="Matrix B"))
         return store
 
     stores = [
@@ -136,8 +128,8 @@ def test_search_nonpositive_limit_is_consistent_across_adapters(tmp_path):
 
 def test_count_and_page_boundary_values_are_consistent_across_adapters(tmp_path):
     def seed(store):
-        store.add(_make_item("BBBB", name="Bravo"))
-        store.add(_make_item("AAAA", name="Alpha"))
+        store.add(make_item("BBBB", name="Bravo"))
+        store.add(make_item("AAAA", name="Alpha"))
         return store
 
     stores = [
@@ -172,9 +164,9 @@ def test_list_uses_limited_top_n_selection(monkeypatch):
     monkeypatch.setattr(store_module.heapq, "nsmallest", fake_nsmallest)
 
     store = InMemoryItemStore()
-    store.add(_make_item("CCCC", name="Charlie"))
-    store.add(_make_item("AAAA", name="Alpha"))
-    store.add(_make_item("BBBB", name="Bravo"))
+    store.add(make_item("CCCC", name="Charlie"))
+    store.add(make_item("AAAA", name="Alpha"))
+    store.add(make_item("BBBB", name="Bravo"))
 
     results = store.list(limit=2)
 
