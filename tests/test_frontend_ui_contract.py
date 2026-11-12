@@ -82,7 +82,11 @@ class ApiMock:
                 )
                 return
         payload = {
-            "config": {"qbit_host": "", "qbit_username": "", "qbit_password_configured": False},
+            "config": {
+                "aria2_rpc_url": "",
+                "aria2_save_path": "",
+                "aria2_secret_configured": False,
+            },
             "status": {"qbit": {"ok": True}, "jobs": [], "recent_events": []},
             "items": {"items": [], "total": 0},
             # N23 默认：局域网内页面可读写（浏览器不持 key）
@@ -207,7 +211,7 @@ async def test_paused_is_a_state_not_a_failure(static_server_url):
 
     assert paused_badge == "已暂停"
     assert "badge-paused" in paused_class
-    assert "在 qB 里点继续" in paused_sentence
+    assert "在下载中心里点继续" in paused_sentence
     assert "stoppedDL" in paused_sentence
     assert unknown_badge == "未知状态"
     assert "badge-muted" in unknown_class
@@ -294,9 +298,9 @@ async def test_readonly_mode_says_human_words_and_never_looks_like_qb_failure(
         "reason": "strict_mode",
     }
     api.payloads["config"] = {
-        "qbit_host": "http://192.168.20.193:8085",
-        "qbit_username": "qb-user",
-        "qbit_password_configured": True,
+        "aria2_rpc_url": "http://192.168.20.193:6800/jsonrpc",
+        "aria2_save_path": "/vol3/1000/Download",
+        "aria2_secret_configured": True,
     }
     api.status_overrides = {
         "/api/v1/status": (401, {"detail": "Invalid or missing API key"}),
@@ -320,7 +324,7 @@ async def test_readonly_mode_says_human_words_and_never_looks_like_qb_failure(
     assert "offline" not in (qbit_dot or ""), "只读不该点红"
     assert toast_count == 0, "页面加载时的只读状态不该弹错误提示"
     # 读开放：只读设备也能看见真实 qB 地址（不是占位符），写才被挡住。
-    assert cfg_host == "http://192.168.20.193:8085"
+    assert cfg_host == "http://192.168.20.193:6800/jsonrpc"
 
 
 @pytest.mark.asyncio
@@ -397,7 +401,7 @@ async def test_clear_dialog_states_scope_and_needs_explicit_confirmation(static_
     assert dialog_open is True
     assert count_text == "2"
     assert "整个资源库" in copy and "不是当前筛选结果" in copy
-    assert "qBittorrent 里已有的种子不会被删除" in copy
+    assert "下载中心里已有的任务不会被删除" in copy
     assert confirm_disabled is True
     assert confirm_enabled is True
     assert confirm_label == "清空全部 2 条"
@@ -427,8 +431,8 @@ async def test_save_config_reports_one_outcome_with_reason(static_server_url):
         ok_toasts = await page.locator("#toastStack .toast").all_inner_texts()
         await browser.close()
 
-    assert "连不上 qBittorrent" in fail_text
-    assert "qB 是否在运行" in fail_hint
+    assert "连不上飞牛下载中心" in fail_text
+    assert "桥接和下载中心是否在运行" in fail_hint
     assert fail_toasts == 1, "一次保存只该有一条失败通知"
     assert "连接成功" in ok_text
     assert sum("配置已保存" in text for text in ok_toasts) == 1

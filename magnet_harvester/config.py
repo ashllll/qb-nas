@@ -3,12 +3,14 @@ from __future__ import annotations
 import logging
 import os
 import ipaddress
+import re
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic_settings import BaseSettings
 
@@ -28,7 +30,16 @@ log = logging.getLogger(__name__)
 #   · DEPLOYMENT_PINNED_KEYS：进程环境 > 文件 > 默认。容器监听地址、端口、
 #     数据库路径由 compose 钉死，避免 .env 与端口映射对不上。
 #   · 其余键：文件 > 环境 > 默认（文件名就是事实源，方便手改）。
-FILE_AUTHORITATIVE_KEYS: frozenset[str] = frozenset({"QBIT_HOST", "QBIT_USERNAME", "QBIT_PASSWORD"})
+FILE_AUTHORITATIVE_KEYS: frozenset[str] = frozenset(
+    {
+        "QBIT_HOST",
+        "QBIT_USERNAME",
+        "QBIT_PASSWORD",
+        "ARIA2_RPC_URL",
+        "ARIA2_SECRET",
+        "ARIA2_SAVE_PATH",
+    }
+)
 DEPLOYMENT_PINNED_KEYS: frozenset[str] = frozenset(
     {"SERVICE_HOST", "SERVICE_PORT", "STORE_DB_PATH"}
 )
@@ -104,6 +115,54 @@ class CrawlerConfig:
 
 
 @dataclass
+class Aria2Config:
+    rpc_url: str = ""
+    secret: str = field(default="", repr=False)
+    save_path: str = ""
+    state_db_path: str = "data/magnet_items.db"
+
+    def validate(self) -> None:
+        """只接受带密钥的桥接端点；报错不回显可能含凭据的输入。"""
+        try:
+            url = urlsplit(self.rpc_url.strip())
+            port = url.port
+            invalid = (
+                url.scheme not in {"http", "https"}
+                or not url.hostname
+                or url.username is not None
+                or url.password is not None
+                or url.query
+                or url.fragment
+                or port == 0
+                or any(char.isspace() or ord(char) < 32 for char in self.rpc_url.strip())
+            )
+        except ValueError:
+            invalid = True
+        if invalid:
+            raise ValueError(
+                "RPC 地址必须是有效的 http(s)://主机:端口/jsonrpc，不能包含账号、查询或片段"
+            )
+        if not self.secret.strip() or any(ord(char) < 32 for char in self.secret):
+            raise ValueError("RPC 密钥不能为空或包含控制字符")
+        path = self.save_path.strip()
+        if path and (
+            not re.match(r"^/vol[1-9]\d*/", path)
+            or any(part in {".", ".."} for part in path.split("/"))
+            or "\\" in path
+            or any(ord(char) < 32 for char in path)
+        ):
+            raise ValueError("保存目录必须是 NAS 的 /volN/ 绝对路径，不能包含路径跳转")
+        host = url.hostname.lower()
+        authority = f"[{host}]" if ":" in host else host
+        if port is not None and port != {"http": 80, "https": 443}[url.scheme]:
+            authority += f":{port}"
+        self.rpc_url = urlunsplit(
+            (url.scheme, authority, url.path.rstrip("/") or "/jsonrpc", "", "")
+        )
+        self.save_path = path
+
+
+@dataclass
 class QBitConfig:
     host: str = "http://192.168.1.100:8080"
     username: str = "admin"
@@ -125,6 +184,11 @@ StoreBackend = Literal["sqlite", "memory"]
 
 
 class Settings(BaseSettings):
+    ARIA2_RPC_URL: str = ""
+    ARIA2_SECRET: str = ""
+    ARIA2_SAVE_PATH: str = ""
+    ARIA2_SYNC_INTERVAL: float = 2.0
+
     QBIT_HOST: str = "http://192.168.1.100:8080"
     QBIT_USERNAME: str = "admin"
     QBIT_PASSWORD: str = "adminadmin"
@@ -349,6 +413,46 @@ class Settings(BaseSettings):
             if key:
                 values[key] = line.split("=", 1)[1]
         return values
+
+    @property
+    def aria2(self) -> Aria2Config:
+        return Aria2Config(
+            rpc_url=self.ARIA2_RPC_URL,
+            secret=self.ARIA2_SECRET,
+            save_path=self.ARIA2_SAVE_PATH,
+            state_db_path=self.STORE_DB_PATH,
+        )
+
+    def build_aria2_config(
+        self,
+        rpc_url: str | None = None,
+        secret: str | None = None,
+        save_path: str | None = None,
+    ) -> Aria2Config:
+        candidate = Aria2Config(
+            rpc_url=self.ARIA2_RPC_URL if rpc_url is None else rpc_url,
+            secret=self.ARIA2_SECRET if secret is None else secret,
+            save_path=self.ARIA2_SAVE_PATH if save_path is None else save_path,
+            state_db_path=self.STORE_DB_PATH,
+        )
+        candidate.validate()
+        return candidate
+
+    def commit_aria2_config(self, config: Aria2Config) -> None:
+        self.ARIA2_RPC_URL = config.rpc_url
+        self.ARIA2_SECRET = config.secret
+        self.ARIA2_SAVE_PATH = config.save_path
+
+    def persist_aria2_config(self, config: Aria2Config) -> None:
+        self._write_env_values(
+            self.config_file,
+            {
+                "ARIA2_RPC_URL": config.rpc_url,
+                "ARIA2_SECRET": config.secret,
+                "ARIA2_SAVE_PATH": config.save_path,
+            },
+        )
+        log.info("下载中心桥接配置已落盘：%s", self.config_file)
 
     @property
     def qbit(self) -> QBitConfig:

@@ -74,10 +74,10 @@ CRAWLER_CONCURRENCY=4
 CRAWLER_ALLOW_FAKE_IP=1
 LOG_FILE=
 LOG_LEVEL=INFO
-# qBittorrent：只影响页面上的「下载」按钮，不影响入库；密码只写在这个文件里
-QBIT_HOST=http://192.168.20.193:8085
-QBIT_USERNAME=admin
-QBIT_PASSWORD=
+# 飞牛下载中心 Aria2 桥接：密钥仅保存在服务端
+ARIA2_RPC_URL=http://192.168.20.193:6800/jsonrpc
+ARIA2_SECRET=
+ARIA2_SAVE_PATH=
 ENVT
 
 cat > "$B/导入说明.md" <<'DOC'
@@ -86,7 +86,7 @@ cat > "$B/导入说明.md" <<'DOC'
 1. 把这个目录整个放到 NAS 的 **存储空间 3**：
    `/vol3/1000/qb-nas/`（`app/`、`config/`、`data/`、`logs/`、`compose.yaml` 都在这一层）。
 2. 复制 `config/.env.template` 为 `config/.env`，`chmod 600`，属主 llll(1000:1001)；
-   把 `API_KEY=` 填成一个随机串（24 位以上），`QBIT_PASSWORD=` 填 qB 的密码。
+   把 `API_KEY=` 填成一个随机串（24 位以上），`ARIA2_SECRET=` 填 aria2bridge 的 RPC 密钥（先在 NAS 安装并配置该桥接）。
    **如果 `/vol3/1000/qb-nas/config/.env` 已经存在，直接用现有的，不要覆盖。**
    旧部署的 `/vol3/1000/qb-nas/.env` 请搬到 `config/.env`（install.sh 会自动迁移并归档）。
 3. 打开 fnOS 的 Docker 管理界面：

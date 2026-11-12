@@ -182,7 +182,7 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
             if (
                 request.url.endswith("/api/config")
                 and request.method == "PUT"
-                and body["qbit_host"] == "http://unauthorized.test"
+                and body["aria2_rpc_url"] == "http://unauthorized.test"
             ):
                 await route.fulfill(
                     status=401,
@@ -200,7 +200,10 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
                     "reason": "trusted_lan",
                 }
             elif request.url.endswith("/api/config") and request.method == "GET":
-                payload = {"qbit_host": "http://qbit.test", "qbit_username": "admin"}
+                payload = {
+                    "aria2_rpc_url": "http://bridge.test/jsonrpc",
+                    "aria2_save_path": "/vol3/1000/Download",
+                }
             elif request.url.endswith("/api/config") and request.method == "PUT":
                 payload = {"connected": True}
             elif request.url.endswith("/api/status"):
@@ -240,7 +243,15 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
             for request in requests
             if request["url"].endswith("/api/config") and request["method"] == "PUT"
         )
-        assert "qbit_password" not in update["body"]
+        assert update["body"] == {
+            "aria2_rpc_url": "http://bridge.test/jsonrpc",
+            "aria2_save_path": "/vol3/1000/Download",
+        }
+        await page.locator("#cfgPass").fill("new-rpc-secret")
+        await page.evaluate("() => saveConfig()")
+        updates = [r for r in requests if r["method"] == "PUT"]
+        assert updates[-1]["body"]["aria2_secret"] == "new-rpc-secret"
+        assert await page.locator("#cfgUser").count() == 0
 
         await page.locator("#cfgHost").fill("http://unauthorized.test")
         await page.evaluate("() => saveConfig()")

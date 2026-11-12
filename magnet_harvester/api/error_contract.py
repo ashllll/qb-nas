@@ -60,15 +60,15 @@ _STATUS_META: dict[int, tuple[str, str]] = {
     ),
     502: (
         "upstream_unavailable",
-        "服务暂时不可用（可能 qBittorrent 或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
+        "服务暂时不可用（可能 下载中心或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
     ),
     503: (
         "service_unavailable",
-        "服务暂时不可用（可能 qBittorrent 或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
+        "服务暂时不可用（可能 下载中心或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
     ),
     504: (
         "upstream_timeout",
-        "上游超时。检查 qBittorrent 是否在线，稍后重试。",
+        "上游超时。检查下载中心桥接是否在线，稍后重试。",
     ),
 }
 

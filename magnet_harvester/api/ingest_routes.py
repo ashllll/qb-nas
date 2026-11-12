@@ -59,7 +59,7 @@ async def _qbit_status(ctx: AppContext) -> dict:
         # 客户端没留下具体原因时，给一句"该查什么"，不编造原因
         "hint": None
         if ok
-        else "检查右侧「连接设置」里的地址与账号，以及 NAS 能否访问 qB（默认 8085 端口）。",
+        else "检查「连接设置」里的 RPC 地址与密钥，以及桥接状态页中飞牛下载中心的连通性。",
     }
 
 

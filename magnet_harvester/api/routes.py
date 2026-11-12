@@ -20,7 +20,7 @@ from magnet_harvester.context.app_context import (
     get_context,
 )
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity
-from magnet_harvester.models import CrawlRequest, DownloadRequest, QBitConfigUpdate, TaskStatus
+from magnet_harvester.models import Aria2ConfigUpdate, CrawlRequest, DownloadRequest, TaskStatus
 from magnet_harvester.utils.auth import require_api_key, resolve_auth
 from magnet_harvester.utils.infohash import normalize_infohash
 
@@ -39,7 +39,7 @@ def _actions(ctx: AppContext) -> UserActionExecutorLike:
 
 def _qbit_runtime(ctx: AppContext) -> QBitRuntimeLike:
     if ctx.runtime.qbit_runtime is None:
-        raise HTTPException(status_code=500, detail="qBittorrent runtime not configured")
+        raise HTTPException(status_code=500, detail="下载中心桥接尚未配置")
     return ctx.runtime.qbit_runtime
 
 
@@ -280,60 +280,55 @@ async def health_check(ctx: AppContext = Depends(get_context)):
 
 @router.get("/api/config")
 async def get_config():
-    """读取 qB 连接配置：只读开放，写按 AUTH_MODE 判定（见 update_config）。
-
-    浏览器不保存 key，也要看见真实的地址与用户名，否则页面只能显示占位符，
-    用户会以为配置丢了。密码（含明文/掩码/长度）绝不回显，只回答是否已配置。
-    """
+    """读取下载中心桥接配置；密钥只返回是否已配置，绝不回显。"""
     return {
-        "qbit_host": settings.QBIT_HOST,
-        "qbit_username": settings.QBIT_USERNAME,
-        # 只返回是否已配置，绝不把密码或密码的明文/掩码返回给浏览器。
-        "qbit_password_configured": bool(settings.QBIT_PASSWORD.strip()),
+        "aria2_rpc_url": settings.ARIA2_RPC_URL,
+        "aria2_save_path": settings.ARIA2_SAVE_PATH,
+        "aria2_secret_configured": bool(settings.ARIA2_SECRET.strip()),
     }
 
 
 @router.put("/api/config")
 async def update_config(
-    data: QBitConfigUpdate,
+    data: Aria2ConfigUpdate,
     _=Depends(require_api_key),
     ctx: AppContext = Depends(get_context),
 ):
     try:
-        return await _qbit_runtime(ctx).replace_qbit_config(
-            host=data.qbit_host,
-            username=data.qbit_username,
-            password=data.qbit_password,
+        return await _qbit_runtime(ctx).replace_aria2_config(
+            rpc_url=data.aria2_rpc_url,
+            secret=data.aria2_secret,
+            save_path=data.aria2_save_path,
         )
     except ValueError as exc:
         log.error("配置验证失败: %s", exc)
         raise HTTPException(
             status_code=422,
             detail={
-                "detail": f"qBittorrent 配置不合法：{exc}",
+                "detail": f"下载中心桥接配置不合法：{exc}",
                 "code": "invalid_config",
-                "hint": "地址要写成 http(s)://主机:端口（qB 5.x 默认 8085），用户名/密码与 qB 里的一致。",
+                "hint": "地址填写 http(s)://NAS:6800/jsonrpc；使用桥接 RPC 密钥，目录留空使用桥接默认目录。",
             },
         ) from exc
     except RuntimeError as exc:
         # 连接失败：原因留在 detail 里，hint 指向用户真正能改的东西
-        log.error("qBittorrent 连接失败: %s", exc)
+        log.error("下载中心桥接连接失败: %s", exc)
         raise HTTPException(
             status_code=503,
             detail={
-                "detail": f"连不上 qBittorrent：{exc}",
-                "code": "qbit_connect_failed",
-                "hint": "检查 qB 是否在运行、地址端口是否正确、用户名密码是否匹配，以及 NAS 能否访问这台 qB。",
+                "detail": f"连不上下载中心桥接：{exc}",
+                "code": "aria2_connect_failed",
+                "hint": "检查 aria2bridge 是否运行、RPC 地址和密钥是否正确，以及桥接的下载中心自检结果。",
             },
         ) from exc
     except OSError as exc:
         # 根因（如 Permission denied '/app/.env.tmp'）必须原样给出来，
         # 否则用户只看到"持久化失败"却不知道是权限/挂载问题。
-        log.error("qBittorrent 配置持久化失败: %s", exc)
+        log.error("下载中心桥接配置持久化失败: %s", exc)
         raise HTTPException(
             status_code=500,
             detail={
-                "detail": f"qBittorrent 配置写入失败：{exc}",
+                "detail": f"下载中心桥接配置写入失败：{exc}",
                 "code": "config_persist_failed",
                 "hint": "这次修改没有生效。NAS 上的配置目录不可写（权限或挂载问题），请让部署侧检查该目录的属主与权限后重试。",
             },
@@ -402,10 +397,10 @@ async def delete_item(
     ctx: AppContext = Depends(get_context),
     _=Depends(require_api_key),
 ):
-    """删除单条资源记录（只删资源库这一行，不动 qBittorrent 里的种子）。
+    """删除单条资源记录（只删资源库这一行，不动下载器里的任务）。
 
     用途：验收/清理测试条目，以及用户删掉一条不想留的记录。整库清空仍走
-    ``DELETE /api/items?scope=all``（必须显式声明）。qB 队列请在 qBittorrent 里操作。
+    ``DELETE /api/items?scope=all``（必须显式声明）。下载队列请在 NAS 下载中心操作。
     """
     normalized = normalize_infohash(hash_key)
     if not normalized:
@@ -435,7 +430,7 @@ async def delete_item(
             detail={
                 "detail": "资源库里没有这个 infohash",
                 "code": "item_not_found",
-                "hint": "刷新列表确认它是否已被删除；删除 qB 里的种子请到 qBittorrent 操作。",
+                "hint": "刷新列表确认它是否已被删除；删除下载任务请到 NAS 下载中心操作。",
             },
         )
     return {"status": "removed", "hash": normalized}

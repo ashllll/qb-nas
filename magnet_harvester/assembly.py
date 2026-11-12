@@ -28,7 +28,7 @@ from magnet_harvester.transitions import (
     DownloadTransitions,
 )
 from magnet_harvester.pipeline import HarvestPipeline
-from magnet_harvester.qbit_client import QBittorrentClient
+from magnet_harvester.aria2_client import Aria2BridgeClient
 from magnet_harvester.jobs import JobStore
 from magnet_harvester.services.ingest import IngestService
 from magnet_harvester.services.item_queries import ItemQueryExecutor
@@ -144,7 +144,7 @@ def _build_core():
     """Fundamental singletons: infrastructure layer components."""
     site_auth = SiteAuth.from_raw(settings.SITE_COOKIES)
     crawler = MagnetCrawler(config=settings.crawler, site_auth=site_auth)
-    qbit = QBittorrentClient(config=settings.qbit)
+    qbit = Aria2BridgeClient(config=settings.aria2)
     classifier = LocalClassifier()
     store = _build_store()
     bus = MessageBus()
@@ -217,7 +217,7 @@ def _build_services(
         bus=bus,
         task_manager=bg_manager,
         downloads=downloads,
-        poll_interval=settings.QBIT_SYNC_INTERVAL,
+        poll_interval=settings.ARIA2_SYNC_INTERVAL,
     )
     ingest = None
     if crawler is not None and jobs is not None:
@@ -306,6 +306,6 @@ def build_runtime() -> AppRuntime:
     ctx.runtime.qbit_runtime = QBitRuntime.from_context(
         ctx,
         settings=settings,
-        client_factory=QBittorrentClient,
+        client_factory=Aria2BridgeClient,
     )
     return AppRuntime(ctx=ctx, sync_loop=sync_loop)

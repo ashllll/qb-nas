@@ -46,7 +46,7 @@ class CachedProbe:
                 value = False
                 self._reason = (
                     f"探测在 {self._timeout:g} 秒内没拿到回答"
-                    "（qB 可能离线、地址/端口不通，或上一次探测还没返回）"
+                    "（下载中心可能离线、桥接地址不通，或上一次探测还没返回）"
                 )
             except Exception:
                 value = False

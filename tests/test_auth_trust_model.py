@@ -277,16 +277,16 @@ def test_cross_origin_write_is_rejected_even_in_strict_mode(monkeypatch):
 
 def test_config_is_open_and_never_echoes_password_in_strict_mode(monkeypatch):
     app, _ = _app(monkeypatch, mode="strict")
-    monkeypatch.setattr(settings, "QBIT_HOST", "http://192.168.20.193:8085")
-    monkeypatch.setattr(settings, "QBIT_USERNAME", "qb-user")
-    monkeypatch.setattr(settings, "QBIT_PASSWORD", "super-secret-pass")
+    monkeypatch.setattr(settings, "ARIA2_RPC_URL", "http://192.168.20.193:6800/jsonrpc")
+    monkeypatch.setattr(settings, "ARIA2_SAVE_PATH", "")
+    monkeypatch.setattr(settings, "ARIA2_SECRET", "super-secret-pass")
     with asgi_client(app) as client:
         resp = client.get("/api/config")
     assert resp.status_code == 200
     assert resp.json() == {
-        "qbit_host": "http://192.168.20.193:8085",
-        "qbit_username": "qb-user",
-        "qbit_password_configured": True,
+        "aria2_rpc_url": "http://192.168.20.193:6800/jsonrpc",
+        "aria2_save_path": "",
+        "aria2_secret_configured": True,
     }
     assert "super-secret-pass" not in resp.text
 

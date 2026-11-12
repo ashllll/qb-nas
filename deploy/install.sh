@@ -38,9 +38,9 @@ ROTATE_KEY=0
 START=1
 WITH_BROWSER=0
 PYPI_INDEX=""
-QBIT_HOST=""
-QBIT_USER=""
-QBIT_PASS=""
+ARIA2_RPC_URL=""
+ARIA2_SAVE_PATH=""
+ARIA2_SECRET=""
 ALLOW_ANY_DISK=0
 ALLOW_FAKE_IP=""
 LOG_LEVEL=INFO
@@ -75,7 +75,9 @@ usage() {
   --api-key KEY       指定 API Key（默认首次随机生成，之后保留）
   --rotate-key        重新生成 API Key
   --pypi-index URL    构建时用的 PyPI 源（默认自动探测阿里云镜像）
-  --qbit-host/-user/-pass   顺带写入 qB 配置（可之后在 Web UI 填）
+  --aria2-url URL     Aria2 桥接 RPC 地址（也可之后在 Web UI 填）
+  --aria2-secret KEY  RPC 密钥（建议在 Web UI 填，避免进入 shell 历史）
+  --aria2-path DIR    NAS 下载根目录（留空使用桥接默认目录）
   --allow-fake-ip 0|1 局域网走 mihomo/Clash fake-IP 时设 1（默认自动探测）
   --with-browser      镜像内装 Chromium（HTTP 优先，通常不需要）
   --test              测试档：prefix=/vol3/1000/qb-nas-test，port=18999，名字都带 -test
@@ -101,9 +103,9 @@ while [ $# -gt 0 ]; do
     --api-key) API_KEY=${2:?}; shift 2 ;;
     --rotate-key) ROTATE_KEY=1; shift ;;
     --pypi-index) PYPI_INDEX=${2:?}; shift 2 ;;
-    --qbit-host) QBIT_HOST=${2:?}; shift 2 ;;
-    --qbit-user) QBIT_USER=${2:?}; shift 2 ;;
-    --qbit-pass) QBIT_PASS=${2:?}; shift 2 ;;
+    --aria2-url) ARIA2_RPC_URL=${2:?}; shift 2 ;;
+    --aria2-path) ARIA2_SAVE_PATH=${2:?}; shift 2 ;;
+    --aria2-secret) ARIA2_SECRET=${2:?}; shift 2 ;;
     --allow-fake-ip) ALLOW_FAKE_IP=${2:?}; shift 2 ;;
     --with-browser) WITH_BROWSER=1; shift ;;
     --allow-any-disk) ALLOW_ANY_DISK=1; shift ;;
@@ -349,16 +351,16 @@ ENV_HEAD
   printf '\n# 日志：统一 stdout → docker logs（compose 里 20MB×5 轮转）\n'
   keep_or LOG_FILE 'LOG_FILE='
   keep_or LOG_LEVEL "LOG_LEVEL=${LOG_LEVEL}"
-  printf '\n# qBittorrent（可空：只影响「下载」按钮，不影响入库）\n'
-  managed_or QBIT_HOST "$QBIT_HOST" 'QBIT_HOST='
-  managed_or QBIT_USERNAME "$QBIT_USER" 'QBIT_USERNAME='
-  managed_or QBIT_PASSWORD "$QBIT_PASS" 'QBIT_PASSWORD='
+  printf '\n# 飞牛下载中心 Aria2 桥接（可空：只影响下载，不影响入库）\n'
+  managed_or ARIA2_RPC_URL "$ARIA2_RPC_URL" 'ARIA2_RPC_URL='
+  managed_or ARIA2_SAVE_PATH "$ARIA2_SAVE_PATH" 'ARIA2_SAVE_PATH='
+  managed_or ARIA2_SECRET "$ARIA2_SECRET" 'ARIA2_SECRET='
 
   # 模板之外的键：原样保留（用户手加的实验开关不该被重装吃掉）
   EXTRA_KEYS=""
   while IFS= read -r key; do
     [ -n "$key" ] || continue
-    case " API_KEY STORE_BACKEND CRAWLER_HTTP_FIRST CRAWLER_ALLOWED_RESOLUTIONS CRAWLER_ALLOW_FAKE_IP CRAWLER_MAX_DEPTH CRAWLER_TIMEOUT CRAWLER_CONCURRENCY LOG_FILE LOG_LEVEL QBIT_HOST QBIT_USERNAME QBIT_PASSWORD SERVICE_HOST SERVICE_PORT STORE_DB_PATH ENV_FILE " in
+    case " API_KEY STORE_BACKEND CRAWLER_HTTP_FIRST CRAWLER_ALLOWED_RESOLUTIONS CRAWLER_ALLOW_FAKE_IP CRAWLER_MAX_DEPTH CRAWLER_TIMEOUT CRAWLER_CONCURRENCY LOG_FILE LOG_LEVEL ARIA2_RPC_URL ARIA2_SAVE_PATH ARIA2_SECRET SERVICE_HOST SERVICE_PORT STORE_DB_PATH ENV_FILE " in
       *" $key "*) continue ;;
     esac
     [ -z "$EXTRA_KEYS" ] && printf '\n# 以下键不在模板里：安装脚本原样保留\n'
@@ -398,7 +400,7 @@ printf '%s\n' "$API_KEY" > "$PREFIX/api-key.txt"; chmod 600 "$PREFIX/api-key.txt
 # 权限/属主：容器以 1000:1001 写这个目录，对不上就是当初那条 Permission denied
 CFG_MODE=$(stat -c %a "$ENV_FILE"); CFG_UID=$(stat -c %u "$ENV_FILE"); CFG_GID=$(stat -c %g "$ENV_FILE")
 DIR_MODE=$(stat -c %a "$CONFIG_DIR")
-[ "$CFG_MODE" = "600" ] || die "配置文件权限 $CFG_MODE，必须是 600（里面有 API Key 与 qB 凭据）"
+[ "$CFG_MODE" = "600" ] || die "配置文件权限 $CFG_MODE，必须是 600（里面有 API Key 与 RPC 密钥）"
 if [ "$CFG_UID" != "$CONTAINER_UID" ] || [ "$CFG_GID" != "$CONTAINER_GID" ]; then
   warn "配置属主 ${CFG_UID}:${CFG_GID}，容器运行用户 ${CONTAINER_UID}:${CONTAINER_GID}：界面保存会 Permission denied"
   warn "修：sudo chown -R ${CONTAINER_UID}:${CONTAINER_GID} ${CONFIG_DIR}"

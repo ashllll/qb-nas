@@ -41,7 +41,7 @@ def test_401_without_key_says_key_is_missing(client):
     c, ctx = client
     ctx.runtime.api_key = SECRET
 
-    resp = c.put("/api/config", json={"qbit_host": "http://nas:8085"})
+    resp = c.put("/api/config", json={"aria2_rpc_url": "http://nas:6800/jsonrpc"})
 
     assert resp.status_code == 401
     body = resp.json()
@@ -59,7 +59,7 @@ def test_401_with_wrong_key_says_key_is_invalid(client):
 
     resp = c.put(
         "/api/config",
-        json={"qbit_host": "http://nas:8085"},
+        json={"aria2_rpc_url": "http://nas:6800/jsonrpc"},
         headers={"X-API-Key": "definitely-wrong"},
     )
 
@@ -78,7 +78,7 @@ def test_401_never_echoes_the_supplied_key(client):
 
     resp = c.put(
         "/api/config",
-        json={"qbit_host": "http://nas:8085"},
+        json={"aria2_rpc_url": "http://nas:6800/jsonrpc"},
         headers={"X-API-Key": "leaky-key-value-123"},
     )
 

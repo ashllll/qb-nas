@@ -66,7 +66,7 @@ def client(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_MODE", "strict")
     monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     monkeypatch.setattr(assembly_module, "MagnetCrawler", _FakeCrawler)
-    monkeypatch.setattr(assembly_module, "QBittorrentClient", _FakeQbit)
+    monkeypatch.setattr(assembly_module, "Aria2BridgeClient", _FakeQbit)
     monkeypatch.setattr(assembly_module, "QBitSyncLoop", _FakeSyncLoop)
     monkeypatch.setattr(assembly_module, "WSBroadcaster", _FakeBroadcaster)
     with asgi_client(app) as c:
@@ -116,7 +116,7 @@ class TestAPIKeyAuth:
         assert r.status_code == 401
 
     def test_config_put_without_key_returns_401(self, client):
-        r = client.put("/api/config", json={"qbit_host": "http://new.host:8080"})
+        r = client.put("/api/config", json={"aria2_rpc_url": "http://new.host:8080"})
         assert r.status_code == 401
 
     def test_config_get_without_key_reads_non_sensitive_only(self, client):
@@ -124,18 +124,19 @@ class TestAPIKeyAuth:
         r = client.get("/api/config")
         assert r.status_code == 200
         body = r.json()
-        assert {"qbit_host", "qbit_username", "qbit_password_configured"} <= set(body)
+        assert {"aria2_rpc_url", "aria2_save_path", "aria2_secret_configured"} <= set(body)
         # 密码（含掩码）绝不回显；写仍要 key
-        assert "qbit_password" not in body
+        assert "aria2_secret" not in body
         assert (
-            client.put("/api/config", json={"qbit_host": "http://new.host:8080"}).status_code == 401
+            client.put("/api/config", json={"aria2_rpc_url": "http://new.host:8080"}).status_code
+            == 401
         )
 
     def test_config_get_with_valid_key_succeeds(self, client):
         r = client.get("/api/config", headers={"X-API-Key": "test-secret-key-123"})
         assert r.status_code == 200
-        assert "qbit_username" in r.json()
-        assert "qbit_password" not in r.json()
+        assert "aria2_save_path" in r.json()
+        assert "aria2_secret" not in r.json()
 
     def test_delete_items_without_key_returns_401(self, client):
         r = client.delete("/api/items")
@@ -164,7 +165,7 @@ class TestAPIKeyAuth:
         assert client.get("/api/health").status_code == 200
         assert client.get("/api/config").status_code == 200
         # 只读开放不等于写开放：PUT/DELETE 仍要 key
-        assert client.put("/api/config", json={"qbit_host": "http://x:8080"}).status_code == 401
+        assert client.put("/api/config", json={"aria2_rpc_url": "http://x:8080"}).status_code == 401
         assert client.delete("/api/items").status_code == 401
 
     def test_no_key_config_allows_all(self, client):

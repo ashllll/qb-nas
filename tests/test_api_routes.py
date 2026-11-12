@@ -14,7 +14,7 @@ from tests._client import asgi_client
 
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
-from magnet_harvester.config import QBitConfig
+from magnet_harvester.config import Aria2Config
 from magnet_harvester.context.app_context import (
     AppContext,
     AppServices,
@@ -198,19 +198,17 @@ def _make_app():
     item_queries = ItemQueryExecutor(store=async_store)
 
     class RuntimeSettings:
-        def build_qbit_config(self, host, username, password):
-            if not host or not host.startswith(("http://", "https://")):
-                raise ValueError("非法的 qBittorrent 主机地址")
-            if not username:
-                raise ValueError("用户名不能为空")
-            if not password:
-                raise ValueError("密码不能为空")
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+        def build_aria2_config(self, rpc_url, secret, save_path):
+            config = Aria2Config(
+                rpc_url=rpc_url or "", secret=secret or "", save_path=save_path or ""
+            )
+            config.validate()
+            return config
 
-        def persist_qbit_config(self, config, env_path=None):
+        def persist_aria2_config(self, config):
             return None
 
-        def commit_qbit_config(self, config):
+        def commit_aria2_config(self, config):
             return None
 
     class RuntimeQbit(FakeQbit):
@@ -386,7 +384,7 @@ def test_search_clear_health_categories_and_config_routes():
     assert categories.status_code == 200
     assert "电影" in categories.json()["categories"]
     assert config.status_code == 200
-    assert "qbit_host" in config.json()
+    assert "aria2_rpc_url" in config.json()
     assert cleared.status_code == 200
     assert cleared.json()["removed"] == 1
 
@@ -419,20 +417,20 @@ def test_errors_routes_return_and_clear_all_records():
 
 def test_update_config_replaces_qbit_client():
     from magnet_harvester.context.app_context import QBitRuntime
-    from magnet_harvester.config import QBitConfig
+    from magnet_harvester.config import Aria2Config
 
     created = []
     persisted = []
     committed = []
 
     class CapturingSettings:
-        def build_qbit_config(self, host, username, password):
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+        def build_aria2_config(self, rpc_url, secret, save_path):
+            return Aria2Config(rpc_url=rpc_url, secret=secret, save_path=save_path or "")
 
-        def persist_qbit_config(self, config, env_path=None):
+        def persist_aria2_config(self, config, env_path=None):
             persisted.append(config)
 
-        def commit_qbit_config(self, config):
+        def commit_aria2_config(self, config):
             committed.append(config)
 
     class NewQbit(FakeQbit):
@@ -453,9 +451,9 @@ def test_update_config_replaces_qbit_client():
         resp = client.put(
             "/api/config",
             json={
-                "qbit_host": "http://localhost:8080",
-                "qbit_username": "tester",
-                "qbit_password": "secret",
+                "aria2_rpc_url": "http://localhost:8080",
+                "aria2_save_path": "",
+                "aria2_secret": "secret",
             },
         )
 
@@ -477,29 +475,32 @@ def test_update_config_requires_assembled_qbit_runtime():
         resp = client.put(
             "/api/config",
             json={
-                "qbit_host": "http://localhost:8080",
-                "qbit_username": "tester",
-                "qbit_password": "secret",
+                "aria2_rpc_url": "http://localhost:8080",
+                "aria2_save_path": "",
+                "aria2_secret": "secret",
             },
         )
 
     assert resp.status_code == 500
-    assert resp.json()["detail"] == "qBittorrent runtime not configured"
+    assert resp.json()["detail"] == "下载中心桥接尚未配置"
 
 
 def test_update_config_keeps_current_client_when_candidate_cannot_connect():
     from magnet_harvester.context.app_context import QBitRuntime
-    from magnet_harvester.config import QBitConfig
+    from magnet_harvester.config import Aria2Config
 
     created = []
     persisted = []
 
     class CapturingSettings:
-        def build_qbit_config(self, host, username, password):
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+        def build_aria2_config(self, rpc_url, secret, save_path):
+            return Aria2Config(rpc_url=rpc_url, secret=secret, save_path=save_path or "")
 
-        def persist_qbit_config(self, config, env_path=None):
+        def persist_aria2_config(self, config, env_path=None):
             persisted.append(config)
+
+        def commit_aria2_config(self, config):
+            raise AssertionError("must not commit an offline endpoint")
 
     class OfflineQbit(FakeQbit):
         def __init__(self, config):
@@ -520,9 +521,9 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
         resp = client.put(
             "/api/config",
             json={
-                "qbit_host": "http://offline.example:8080",
-                "qbit_username": "tester",
-                "qbit_password": "secret",
+                "aria2_rpc_url": "http://offline.example:8080",
+                "aria2_save_path": "",
+                "aria2_secret": "secret",
             },
         )
 
@@ -536,16 +537,16 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
 
 def test_update_config_returns_500_when_persist_fails():
     from magnet_harvester.context.app_context import QBitRuntime
-    from magnet_harvester.config import QBitConfig
+    from magnet_harvester.config import Aria2Config
 
     class FailingSettings:
-        def build_qbit_config(self, host, username, password):
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+        def build_aria2_config(self, rpc_url, secret, save_path):
+            return Aria2Config(rpc_url=rpc_url, secret=secret, save_path=save_path or "")
 
-        def persist_qbit_config(self, config, env_path=None):
+        def persist_aria2_config(self, config, env_path=None):
             raise OSError("disk full")
 
-        def commit_qbit_config(self, config):
+        def commit_aria2_config(self, config):
             raise AssertionError("should not commit after persist failure")
 
     class NewQbit(FakeQbit):
@@ -565,9 +566,9 @@ def test_update_config_returns_500_when_persist_fails():
         resp = client.put(
             "/api/config",
             json={
-                "qbit_host": "http://localhost:8080",
-                "qbit_username": "tester",
-                "qbit_password": "secret",
+                "aria2_rpc_url": "http://localhost:8080",
+                "aria2_save_path": "",
+                "aria2_secret": "secret",
             },
         )
 
@@ -575,7 +576,7 @@ def test_update_config_returns_500_when_persist_fails():
     detail = resp.json()["detail"]
     # 缺陷 ⑤：根因（OSError 原文）必须原样给出来，不能被"持久化失败"一句话吞掉
     assert detail["code"] == "config_persist_failed"
-    assert "qBittorrent 配置写入失败" in detail["detail"]
+    assert "下载中心桥接配置写入失败" in detail["detail"]
     assert "disk full" in detail["detail"]
     assert detail["hint"]
     assert ctx.core.qbit is old_qbit
@@ -590,9 +591,9 @@ def test_update_config_rejects_invalid_candidate_without_mutating_runtime():
         resp = client.put(
             "/api/config",
             json={
-                "qbit_host": "invalid-host",
-                "qbit_username": "tester",
-                "qbit_password": "secret",
+                "aria2_rpc_url": "invalid-host",
+                "aria2_save_path": "",
+                "aria2_secret": "secret",
             },
         )
 

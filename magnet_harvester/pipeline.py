@@ -353,6 +353,10 @@ class HarvestPipeline:
         try:
             # 按条目数动态计算超时：30s 基础 + 每条 15s
             dynamic_timeout = min(30.0 + len(hashes) * 15.0, 300.0)
+            # 桥接串行提交且会在上游超时后确认任务，必须留足完整恢复窗口。
+            submission_timeout = getattr(self._qbit, "submission_timeout", None)
+            if submission_timeout is not None:
+                dynamic_timeout = 30.0 + len(hashes) * submission_timeout
             results = await asyncio.wait_for(
                 asyncio.gather(
                     *(self._download_single_item(h, semaphore) for h in hashes),
@@ -392,7 +396,9 @@ class HarvestPipeline:
                 if ok:
                     await self._downloads.submitted(hash_key)
                 else:
-                    await self._downloads.failed(hash_key, self._qbit.last_error or "qB 返回失败")
+                    await self._downloads.failed(
+                        hash_key, self._qbit.last_error or "下载器返回失败"
+                    )
             except Exception as e:
                 try:
                     await self._downloads.failed(hash_key, str(e))

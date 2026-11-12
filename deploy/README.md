@@ -30,7 +30,7 @@
 | --- | --- |
 | Web UI「保存并测试」 | 经 `/config` 目录挂载写它：同目录临时文件 + 原子 rename（单文件 bind mount 会 EBUSY，所以挂的是目录） |
 | `install.sh` | 幂等合并：只补缺、只改部署派生键；界面改过的值原样保留（整行保留，不重排引号/转义） |
-| 容器启动 | `ENV_FILE=/config/.env` 读它；compose **不用** `env_file`，进程环境里没有 `QBIT_*`/`API_KEY` |
+| 容器启动 | `ENV_FILE=/config/.env` 读它；compose **不用** `env_file`，进程环境里没有 `ARIA2_*`/`API_KEY` |
 
 优先级（`magnet_harvester/config.py` 里是唯一实现，测试锁住）：
 **文件 > 进程环境 > 内置默认**；例外是 `SERVICE_HOST` / `SERVICE_PORT` / `STORE_DB_PATH`
@@ -112,7 +112,8 @@ docker logs --tail 50 qb-nas-center
 - **IP 是 DHCP**：`192.168.20.193` 由路由器分配（`dynamic`）。Mac 代理填的是这个地址，换 IP 就要改；建议在路由器上给它固定租约。
 - **镜像拉取**：NAS 的 `/etc/docker/daemon.json` 已配镜像加速（`docker.fnnas.com` 等）；构建时 PyPI 自动走阿里云镜像，也可 `--pypi-index` 指定。
 - **浏览器兜底**：默认只装 HTTP 依赖（`CRAWLER_HTTP_FIRST=true`）；确实需要跑 JS 时加 `--with-browser` 重建镜像（装 Chromium，镜像大 ~400MB）。
-- **qBittorrent（已装好）**：NAS 上是 Docker 容器，WebUI `http://192.168.20.193:8085`，版本 5.2.4.10（WebAPI 2.15.1）。凭据只写在 `config/.env` 的 `QBIT_*`（600）。v5 与 v4 的差异已在代码里兼容：登录 204 + `QBT_SID_<端口>` cookie；`torrents/add` 返回 JSON。入库阶段完全不碰 qB，只有页面点「下载」才提交，提交后立即开始下载。
+- **飞牛下载中心**：先在 NAS 安装 [aria2bridge FPK](https://github.com/jjsxjxj/fnos-aria2-bridge/releases/latest)（x86_64，需要 Python 3.12 应用）。桥接使用未开两步验证的专用低权限账号，主账号保留两步验证。网页连接设置填写 `http://<NAS-IP>:6800/jsonrpc`、RPC 密钥及可选 `/volN/...` 下载目录；密钥写入 `config/.env` 的 `ARIA2_SECRET`。只对可信局域网开放桥接，禁止公网映射：上游当前状态/设置页无鉴权，RPC 也接受缺省 token。
+- **从 Docker qB 切换**：新版本只向桥接提交，不回退 qB。旧 `QBIT_*` 值原样保留但不再使用；既有 qB 任务和文件不迁移、不删除、不停止。先核对旧队列再自行处理旧下载器。下载目录用 NAS 真实 `/volN/...` 路径，不沿用容器内 `/downloads`；GID 对应关系与资源库共用 `STORE_DB_PATH`，升级和备份需保留数据库。
 - **fake-IP 必须放行**：这台局域网（Mac 与 NAS 都一样）DNS 把公开域名解析到 `198.18.x.x`（mihomo/Clash fake-IP）。`config/.env` 里 `CRAWLER_ALLOW_FAKE_IP=1` 不能删，否则所有网址都会被 SSRF 校验判成「不安全」。`install.sh` 会自动探测并写入。
 - **docker logs 里的 Key 已脱敏**：WebSocket 握手把 Key 放查询参数，uvicorn 会写日志；`logger.py` 已加 `RedactingDefaultFormatter`，日志里只会看到 `api_key=***`。
 - **自检**：装完跑 `bash /vol3/1000/qb-nas/verify.sh --crash`：容器/health/API Key/挂载只在 /vol3/

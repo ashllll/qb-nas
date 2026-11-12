@@ -216,8 +216,8 @@ class DownloadTransitions(_TransitionBase):
     # 启动时一次最多回收多少条「卡在加入中」的记录；正常机器远到不了这个量。
     RECOVER_LIMIT = 1000
     INTERRUPTED_ADDING_MSG = (
-        "上次「加入 qB」在服务重启/退出时被中断，结果未知："
-        "qB 里已经有这条的话，下一轮同步会自动长回下载状态；没有就重新点「下载」"
+        "上次提交到下载中心时服务被中断，结果未知；已取得任务编号的记录会自动同步。"
+        "若仍未恢复，请先在 NAS 下载中心核对，避免重复提交。"
     )
 
     def __init__(self, store: ItemStore, bus: MessageBus):
@@ -322,11 +322,11 @@ class DownloadTransitions(_TransitionBase):
             log.exception("download failure DOWNLOAD_RESULT 发送失败 hash=%s", hash_key)
 
     async def removed(self, hash_key: str, previous_status: TaskStatus | None):
-        """种子已从 qBittorrent 中消失"""
+        """任务已从下载器中移除。"""
         if not await self._store.update(
             hash_key,
             status=TaskStatus.error,
-            error_msg="种子已从 qBittorrent 中消失",
+            error_msg="任务已从下载器中移除",
             torrent_state="removed",
         ):
             return
@@ -379,7 +379,11 @@ class DownloadTransitions(_TransitionBase):
             return False
 
         try:
-            mapped = TorrentStatusMapper.map(torrent)
+            mapped = (
+                torrent["download_state"]
+                if "download_state" in torrent
+                else TorrentStatusMapper.map(torrent)
+            )
         except Exception:
             log.warning("无法映射 torrent 状态，跳过 hash=%s", hash_key, exc_info=True)
             return False

@@ -106,7 +106,7 @@
             <span class="dot checking" id="dotWs"></span
             ><span class="status-label" id="wsStatus">连接中</span>
           </div>
-          <div class="status-chip" title="qBittorrent 状态">
+          <div class="status-chip" title="飞牛下载中心状态">
             <span class="dot checking" id="dotQbit"></span
             ><span class="status-label" id="qbitStatus">检测中</span>
           </div>
@@ -161,7 +161,7 @@
               <div class="option-row subtle">
                 <div class="option-copy">
                   <strong>只入库，不下载</strong
-                  ><span>抓到的磁力先进资源库，点选后才进 qB</span>
+                  ><span>抓到的磁力先进资源库，点选后才进下载中心</span>
                 </div>
               </div>
               <button
@@ -205,7 +205,7 @@
                 data-status="paused"
                 aria-pressed="false"
                 onclick="setStatusFilter('paused')"
-                title="只看已加入 qB、当前暂停的条目"
+                title="只看已加入下载中心、当前暂停的条目"
               >
                 <span class="stat-value" id="pausedCount">0</span>
                 <span class="stat-label">已暂停</span>
@@ -491,31 +491,31 @@
           <section class="section">
             <div class="field-stack">
               <div>
-                <label class="field-label" for="cfgHost">qBittorrent 地址</label
+                <label class="field-label" for="cfgHost">Aria2 桥接 RPC 地址</label
                 ><input
                   class="input"
                   id="cfgHost"
                   type="url"
-                  placeholder="http://主机:端口（如 http://192.168.20.193:8085）"
+                  placeholder="http://NAS:6800/jsonrpc"
                 />
               </div>
               <div>
-                <label class="field-label" for="cfgUser">用户名</label
+                <label class="field-label" for="cfgPath">NAS 下载目录（可选）</label
                 ><input
                   class="input"
-                  id="cfgUser"
-                  autocomplete="username"
-                  placeholder="qBittorrent 用户名"
+                  id="cfgPath"
+                  autocomplete="off"
+                  placeholder="留空使用桥接默认目录，如 /vol3/1000/Download"
                 />
               </div>
               <div>
-                <label class="field-label" for="cfgPass">密码</label
+                <label class="field-label" for="cfgPass">RPC 密钥</label
                 ><input
                   class="input"
                   id="cfgPass"
                   type="password"
                   autocomplete="current-password"
-                  placeholder="留空保持已保存密码"
+                  placeholder="留空保持已保存密钥"
                 />
               </div>
               <button
@@ -528,7 +528,7 @@
               </button>
             </div>
             <div class="connection-result" id="cfgResult">
-              <span id="cfgResultText">尚未测试连接（密码仅保存在服务端，不会回显）</span>
+              <span id="cfgResultText">尚未测试连接（密钥仅保存在服务端，不会回显）</span>
               <span class="connection-hint" id="cfgHint" hidden></span>
             </div>
           </section>
@@ -604,7 +604,7 @@
         </p>
         <p class="dialog-breakdown" id="clearBreakdown"></p>
         <p class="dialog-copy dialog-safe">
-          只删这里的记录：qBittorrent 里已有的种子不会被删除，也不会被暂停。
+          只删这里的记录：下载中心里已有的任务不会被删除，也不会被暂停。
         </p>
         <label class="dialog-check">
           <input class="checkbox" type="checkbox" id="clearConfirmCheck"

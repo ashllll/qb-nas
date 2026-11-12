@@ -12,13 +12,13 @@ def test_app_mounts_static_assets():
     assert len(static_mounts) == 1
 
 
-def test_qbit_password_is_persisted_without_frontend_echo():
+def test_aria2_secret_is_persisted_without_frontend_echo():
     html = Path("static/index.html").read_text(encoding="utf-8")
     app_js = Path("static/app.js").read_text(encoding="utf-8")
-    assert 'placeholder="留空保持已保存密码"' in html
-    assert "密码仅保存在服务端，不会回显" in html
-    assert "qbit_password_configured" in app_js
-    assert "if (password) payload.qbit_password = password;" in app_js
+    assert 'placeholder="留空保持已保存密钥"' in html
+    assert "密钥仅保存在服务端，不会回显" in html
+    assert "aria2_secret_configured" in app_js
+    assert "if (password) payload.aria2_secret = password;" in app_js
 
 
 def test_frontend_throttles_transient_qbit_logs_but_keeps_real_failures():
@@ -26,7 +26,7 @@ def test_frontend_throttles_transient_qbit_logs_but_keeps_real_failures():
     assert "LOG_DEDUPE_WINDOW_MS" in app_js
     assert '"qbit-transient-retry"' in app_js
     # 无 error_msg 的兜底文案不得承诺「正在重试」（同步层只报告状态，无自动重试）
-    assert "qB 状态异常，请在 qB 中检查该种子" in app_js
+    assert "下载中心状态异常，请在下载中心中检查该任务" in app_js
     assert "正在重试" not in app_js
     assert "下载失败 · ${name} · ${msg.error_msg}" in app_js
 

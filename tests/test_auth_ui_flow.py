@@ -130,9 +130,9 @@ class UiApiMock:
             }
         elif path.endswith("/api/config") and method == "GET":
             payload = {
-                "qbit_host": "http://192.168.20.193:8085",
-                "qbit_username": "qb-user",
-                "qbit_password_configured": True,
+                "aria2_rpc_url": "http://192.168.20.193:6800/jsonrpc",
+                "aria2_save_path": "/vol3/1000/Download",
+                "aria2_secret_configured": True,
             }
         elif path.endswith("/api/config") and method == "PUT":
             payload = {"status": "ok", "connected": True}
@@ -198,8 +198,8 @@ async def test_trusted_page_writes_without_key_and_stores_nothing(static_server_
     """写操作不带 key；页面不写任何浏览器存储，地址栏没有凭据。"""
     async with async_playwright() as playwright:
         browser, context, page, mock = await _open(playwright, static_server_url)
-        await page.locator("#cfgHost").fill("http://192.168.20.193:8085")
-        await page.locator("#cfgUser").fill("qb-user")
+        await page.locator("#cfgHost").fill("http://192.168.20.193:6800/jsonrpc")
+        await page.locator("#cfgPath").fill("/vol3/1000/Download")
         await page.locator("#saveConfigBtn").click()
         await page.wait_for_timeout(300)
 
@@ -313,7 +313,7 @@ async def test_auth_probe_failure_is_unknown_not_readonly(static_server_url):
             })
             """
         )
-        await page.locator("#cfgHost").fill("http://192.168.20.193:8085")
+        await page.locator("#cfgHost").fill("http://192.168.20.193:6800/jsonrpc")
         await page.locator("#saveConfigBtn").click()
         await page.wait_for_timeout(250)
         await browser.close()

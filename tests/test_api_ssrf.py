@@ -63,7 +63,7 @@ def client(monkeypatch):
 
     monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     monkeypatch.setattr(assembly_module, "MagnetCrawler", _FakeCrawler)
-    monkeypatch.setattr(assembly_module, "QBittorrentClient", _FakeQbit)
+    monkeypatch.setattr(assembly_module, "Aria2BridgeClient", _FakeQbit)
     monkeypatch.setattr(assembly_module, "QBitSyncLoop", _FakeSyncLoop)
     monkeypatch.setattr(assembly_module, "WSBroadcaster", _FakeBroadcaster)
     with asgi_client(app) as c:

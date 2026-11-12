@@ -60,17 +60,17 @@ async def lifespan(app: FastAPI):
             raise
         log.warning("runtime.start() 部分失败，继续以降级模式运行")
 
-    # qBittorrent 连接检查（可降级：离线时服务仍可运行）。
-    # 限时 3 秒：qB 离线时 ping 会内部重试十几秒，启动不该被它拖住。
+    # 下载中心桥接连接检查（可降级：离线时服务仍可运行）。
+    # 限时 3 秒：桥接离线时 ping 会内部重试十几秒，启动不该被它拖住。
     qbit_ok = False
     try:
         qbit_ok = await asyncio.wait_for(runtime.ctx.core.qbit.ping(), timeout=3.0)
     except (asyncio.TimeoutError, Exception):
-        log.warning("qBittorrent 连接检查失败（降级运行：入库照常，手动下载需 qB 在线）")
+        log.warning("下载中心桥接连接检查失败（降级运行：入库照常，手动下载需下载中心在线）")
 
     disk_info = settings.check_disk_space()
     log.info(
-        f"Scrapling Spider 已就绪 | qB: {'在线' if qbit_ok else '离线'} "
+        f"Scrapling Spider 已就绪 | 下载中心: {'在线' if qbit_ok else '离线'} "
         f"| 本地分类器就绪 | 磁盘: {disk_info.get('free_gb', '?')}GB"
     )
 

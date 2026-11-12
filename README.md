@@ -23,10 +23,10 @@ Magnet Harvester（`qb-nas`）是一套**自托管的磁力采集 → 分类 →
 
 - 复制一条 `magnet:` 链接，或复制一个资源页网址；
 - NAS 上的常驻服务自动抓页、提取磁力、按本地规则链分类、写入资源库；
-- 在网页里勾选后点「下载」，qBittorrent 立刻开始下载——不需要再去 qB 里手动恢复；
+- 在网页里勾选后点「下载」，通过 Aria2 桥接把任务交给飞牛下载中心；
 - 全程实时推送到网页（任务进度、错误原因、下载百分比），不需要轮询刷新。
 
-它适合：有 NAS、用 qBittorrent 下载、希望把「复制 → 找磁力 → 提交 → 手动开始」压缩成「复制」一步的人。
+它适合：使用飞牛下载中心，希望集中采集磁力、分类并选择下载的人。
 
 **设计取舍**：分类 100% 本地规则链，不调用任何外部 AI / API；Mac 代理只读剪贴板、不落全文；服务默认只监听局域网，浏览器不保存任何密钥。
 
@@ -34,7 +34,9 @@ Magnet Harvester（`qb-nas`）是一套**自托管的磁力采集 → 分类 →
 
 ![Magnet Harvester 工作台](docs/assets/ui-overview.png)
 
-左侧是采集与活动日志，中间是资源库（分类筛选、搜索、批量操作），右侧是 qBittorrent 连接设置与运行状态；顶部实时显示 WebSocket、qB、Mac 代理三条链路是否在线。
+截图及下方架构插图保留旧 qB 版本外观；当前下载链路与连接字段以本文为准。
+
+左侧是采集与活动日志，中间是资源库（分类筛选、搜索、批量操作），右侧是 Aria2 桥接连接设置与运行状态；顶部实时显示 WebSocket、下载中心、Mac 代理三条链路是否在线。
 
 ## 工作流
 
@@ -48,8 +50,8 @@ Magnet Harvester（`qb-nas`）是一套**自托管的磁力采集 → 分类 →
 2. **NAS 服务**的 ingest 层接单：网址交给站点漫游 + Scrapling 抓取，磁力直接解析 infohash；
 3. **本地规则链**分类（关键词 → 工作室/厂牌 → 正则回退），写入 SQLite 资源库；
 4. **网页**通过 WebSocket 实时收到新条目、分类结果与任务进度；
-5. 用户点「下载」→ qB Web API v2 提交并**立即开始**；
-6. **同步循环**每 2 秒读 qB 状态，下载进度与终态回推页面。
+5. 用户点「下载」→ `aria2.addUri` 经桥接提交给飞牛下载中心；
+6. **同步循环**每 2 秒读桥接状态，下载进度与终态回推页面。
 
 > 采集与下载是分离的：抓取任务只负责把磁力放进资源库，是否下载由你点选决定（界面上明确标注「只入库，不下载」）。
 
@@ -59,9 +61,11 @@ Magnet Harvester（`qb-nas`）是一套**自托管的磁力采集 → 分类 →
 
 | 角色        | 要求                                                                                     |
 | ----------- | ---------------------------------------------------------------------------------------- |
-| NAS         | 飞牛 fnOS 或任意 Linux，已装 Docker 与 Docker Compose；数据盘建议 ≥ 50 GB 空闲           |
-| qBittorrent | Web UI 可访问（v4.1+，推荐 v5），建议与 NAS 部署在同一台机器                             |
+| NAS         | 飞牛 fnOS，已装 Docker 与 Docker Compose；数据盘建议 ≥ 50 GB 空闲           |
+| 下载中心桥接 | NAS 已安装 [aria2bridge](https://github.com/jjsxjxj/fnos-aria2-bridge)（目前 x86_64，需要 Python 3.12 应用），下载中心可用 |
 | Mac（可选） | macOS 13+，装过 Xcode Command Line Tools（`xcode-select --install`），用于构建菜单栏代理 |
+
+先在飞牛应用中心手动安装桥接 FPK，按向导设置专用账号、RPC 密钥和默认保存目录。桥接要求账号未开启两步验证；使用专用低权限账号，不改主账号的两步验证。桥接只放在可信局域网，6800 端口不要映射公网。
 
 ### 1. 在 NAS 上部署服务
 
@@ -98,7 +102,7 @@ Key     /vol3/1000/qb-nas/api-key.txt        # 程序通道用，浏览器不需
 | ----------------------------- | ----------------------------------------------------------- |
 | `--prefix DIR`                | 安装根目录，默认 `/vol3/1000/qb-nas`（必须在存储空间 3 下） |
 | `--port N` / `--bind-ip ADDR` | 对外端口（默认 8899）/ 只监听指定局域网地址                 |
-| `--qbit-host/-user/-pass`     | 顺带写入 qB 连接信息，也可以在网页「连接设置」里填          |
+| `--aria2-url` / `--aria2-path` | 桥接 RPC 地址与 NAS 下载目录；RPC 密钥建议在网页「连接设置」里填 |
 | `--test`                      | 测试档：`/vol3/1000/qb-nas-test`、端口 18999，不碰正式目录  |
 | `--prepare` / `--no-start`    | 只摆文件 / 只构建不启动                                     |
 | `--commit SHA`                | 记录构建来源（推 GitHub 后用 `git rev-parse --short HEAD`） |
@@ -141,10 +145,10 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 
 ### 3. 第一次使用
 
-1. 浏览器打开 `http://<NAS-IP>:8899`（同一局域网内默认免密钥，页面顶部显示「已连接 / qB 在线」）；
+1. 浏览器打开 `http://<NAS-IP>:8899`（同一局域网内默认免密钥，页面顶部显示「已连接 / 下载中心在线」）；
 2. 左栏粘贴资源页网址 → 选深度 →「开始采集」；或在 Mac 上直接复制一条磁力；
 3. 任务面板显示抓取页数、耗时、新增 / 重复条数、错误原因；
-4. 资源库里按分类筛选、搜索，勾选后点「下载」——qB 立即开始，进度实时回到表格；
+4. 资源库里按分类筛选、搜索，勾选后点「下载」——任务进入飞牛下载中心，进度实时回到表格；
 5. 想清空资源库：「清空」需要二次确认，接口层强制 `?scope=all`，避免误删。
 
 ## 使用说明
@@ -153,18 +157,23 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 
 - 深度 1 = 只抓当前页；2–3 会跟进详情页（受 `CRAWLER_MAX_DETAIL_LINKS` 限制）。
 - 任务面板保留最近 20 条，`status` 为 `queued / running / done / failed`；失败原因会写明 `no_magnet`、`http_error`、`sslerror`、`timeout` 等，并保留触发 URL。
-- 「只入库，不下载」是默认行为：采集只写资源库，不会自动提交 qB（除非你打开自动下载开关）。
+- 「只入库，不下载」是默认行为：采集只写资源库，不会自动提交下载中心（除非你打开自动下载开关）。
 
 ### 资源库与下载
 
 - 分类页签：电影 / 电视剧 / 动漫 / 音乐 / 游戏 / 软件 / 综艺 / 纪录片 / 其他；厂牌命中的条目直接用厂牌名作为分类（开放集合）。
 - 支持搜索、重新分类、批量选择、批量下载；「来源」列可直接跳到原页面。
-- 点「下载」后种子以 `queuedDL` 进入 qB 并**立即开始**；页面显示下载百分比，终态（完成 / 失败）会推送通知。
-- 暂停不是失败：qB 里暂停的种子在页面上显示为「已暂停」，不会被误判为错误。
+- 点「下载」后任务经桥接进入飞牛下载中心；页面显示下载百分比，终态（完成 / 失败）会推送通知。
+- 暂停不是失败：下载中心里暂停的任务在页面上显示为「已暂停」，不会被误判为错误。
 
 ### 连接设置
 
-- 右侧面板读的是服务端真实配置（密码不回显）；「保存并测试」会写 `config/.env` 并热替换 qB 客户端，无需重启。
+- 右侧面板读的是服务端真实配置（RPC 密钥不回显）；「保存并测试」会写 `config/.env` 并热替换桥接客户端，无需重启。
+- RPC 地址填 `http://<NAS-IP>:6800/jsonrpc`，密钥填桥接的 Secret；可选下载目录填 NAS 真实路径（如 `/vol3/1000/Download`），留空使用桥接默认目录。分类子目录会附加到该目录，无需挂载 NAS 下载盘到采集服务。
+- 切换只影响今后的提交；已有 Docker qB 任务、文件不会被迁移、删除或停止，也不会自动回退到 Docker qB。旧 `QBIT_*` 配置可以留作历史记录，但不再控制下载。
+- 本项目提交得到的 GID 与磁力哈希保存在 `STORE_DB_PATH` 的数据库中，重启继续同步；不要只迁移 `.env` 而遗漏数据库。
+- 提交超时或中断且没有收到 GID 时，会保留“结果未知”记录并阻止重复提交。当前没有页面恢复入口，需要核对 NAS 后按[人工恢复步骤](docs/verification.md#提交结果未知时的人工恢复)处理，不能直接反复点下载。
+- 上游 v1.0.18 的超时补偿按创建时间挑选任务；其他客户端同时提交时仍可能返回错误 GID。本项目串行提交只能减少自身并发，不能修复上游的跨客户端误匹配。
 - 局域网内浏览器不需要 API Key；API Key 只给 Mac 代理这类程序通道使用，且只走请求头，不进 URL。
 
 ### 实时推送
@@ -179,15 +188,15 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 | ------------- | ----------------- | ---------------------------- |
 | `pending`     | 已入库，待分类    | 自动进入分类                 |
 | `classified`  | 分类完成          | 可下载                       |
-| `queued`      | 已提交 qB，排队中 | 等待 qB 调度                 |
-| `downloading` | qB 正在下载       | 看百分比                     |
+| `queued`      | 已提交下载中心，排队中 | 等待下载中心调度                 |
+| `downloading` | 下载中心正在下载       | 看百分比                     |
 | `success`     | 下载完成          | —                            |
 | `failed`      | 提交或下载失败    | 看 `error` 字段与任务面板    |
-| `paused`      | qB 中暂停         | 在 qB 里恢复，页面状态会同步 |
+| `paused`      | 下载中心中暂停         | 在下载中心里恢复，页面状态会同步 |
 
 **采集任务**（`/api/v1/status?jobs=N`）：`status` 四态 + `reason`（`no_magnet` 页面没有磁力、`http_error` 状态码异常、`sslerror` TLS/代理问题、`timeout` 超时、`robots` 被 robots.txt 拒绝）。
 
-**健康检查**（`/api/health`）：`healthy`（服务自身）、`qbittorrent`（qB 登录/连通）、`classifier`（规则链可加载）。
+**健康检查**（`/api/health`）：`healthy`（服务自身）、`qbittorrent`（兼容字段名，表示桥接及下载中心连通）、`classifier`（规则链可加载）。
 
 **Mac 菜单栏**：在线 / 离线 / 暂停 / 无 Key / 队列 N 条 / 最近一次上报结果。
 
@@ -197,8 +206,9 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 
 | 变量                                                            | 说明                                                        | 默认              |
 | --------------------------------------------------------------- | ----------------------------------------------------------- | ----------------- |
-| `QBIT_HOST` / `QBIT_USERNAME` / `QBIT_PASSWORD`                 | qBittorrent Web UI 与凭据                                   | —                 |
-| `QBIT_SYNC_INTERVAL`                                            | qB 状态轮询间隔（秒）                                       | `2.0`             |
+| `ARIA2_RPC_URL` / `ARIA2_SECRET` | 桥接 JSON-RPC 地址与密钥 | 空（先配置） |
+| `ARIA2_SAVE_PATH` | NAS 下载根目录；留空使用桥接默认目录 | 空 |
+| `ARIA2_SYNC_INTERVAL`                                            | 下载中心状态轮询间隔（秒）                                       | `2.0`             |
 | `AUTH_MODE`                                                     | `trusted`（局域网内直接读写）/ `strict`（写必须带 API Key） | `trusted`         |
 | `API_KEY`                                                       | 程序通道 `X-API-Key`（Mac 代理等）；浏览器不使用            | 空（仅 loopback） |
 | `TRUSTED_HOSTS`                                                 | 额外允许的 Host（域名/反代场景，防 DNS rebinding）          | 空                |
@@ -217,7 +227,8 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 - **局域网 trusted 模式**：同一网段可直接读写，浏览器不保存任何密钥；跨源请求自动降级为只读并按 403 拒绝写操作。
 - **DNS rebinding 防护**：Host 头必须是真实地址或 `TRUSTED_HOSTS` 白名单，否则 403。
 - **程序通道**：`API_KEY` 只接受 `X-API-Key` 请求头；WebSocket 走握手后第一帧，不把 key 放进 URL。
-- **凭据**：qB 密码只存在 NAS 的 `config/.env`（600）与内存，接口不回显；Mac 的 key 只进钥匙串。
+- **凭据**：桥接 RPC 密钥只存在 NAS 的 `config/.env`（600）与内存，接口不回显；Mac 的 key 只进钥匙串。
+- **桥接边界**：上游当前状态/设置页无鉴权，RPC 还接受缺省 token；RPC 密钥不能替代网络隔离。仅向可信设备开放桥接端口，禁止公网映射。
 - **网络**：容器只监听局域网地址，根文件系统只读，可写面只有 `/config`、`/data`、`/logs` 与 tmpfs。
 
 ## 网络与网关（很重要）
@@ -243,9 +254,10 @@ qb-nas/
 │   ├── crawler.py  site_walker.py  page_fetch.py  magnet_parser.py
 │   ├── services/              # ingest / qbit_sync / item_queries / observability
 │   ├── classifier/            # 关键词 → 厂牌 → 回退 规则链
-│   ├── qbit_client/           # qB Web API v2（transport / mapper / submitter / sync）
+│   ├── aria2_client.py        # fnOS Aria2 桥接提交、GID 持久化和状态同步
+│   ├── qbit_client/           # 旧 qB 实现与复用的状态/路径辅助代码
 │   ├── api/                   # REST / WebSocket / 静态页
-│   ├── context/               # AppContext 依赖容器 · qB 配置热替换
+│   ├── context/               # AppContext 依赖容器 · 下载器配置热替换
 │   └── utils/                 # SSRF 校验、鉴权、序列化、后台任务
 ├── static/                    # 无构建步骤的单页 Web UI
 ├── mac_agent/                 # macOS 菜单栏代理（Swift，build.sh 一键出 .app）
@@ -262,7 +274,7 @@ qb-nas/
 # 本地起服务
 uv sync --extra dev --locked
 uv run scrapling install          # 抓取用的 Chromium
-cp .env.example .env              # 填 qB 连接信息
+cp .env.example .env              # 填 Aria2 桥接连接信息
 python run.py                     # http://localhost:8899
 
 # 机器闸门（与 CI 同一套）
@@ -270,9 +282,9 @@ bash scripts/preflight.sh         # ruff check + format check + pytest
 bash scripts/preflight.sh --fast  # 只跑 lint/format
 ```
 
-- 测试基线：`python -m pytest -q` → **753 passed**；`ruff check` / `ruff format --check` 全绿。
+- 本次迁移门禁：`npm run check` → **827 passed**，覆盖率 **82.76%**；`ruff format --check` 全绿。
 - CI：push `main` / `stage/**` 与 PR 到 `main` 时由 GitHub Actions 跑同一套闸门（runner 内建 `.venv` 与 Chromium）。
-- 真实链路验证：`deploy/verify.sh`（容器/挂载/配置/自愈）与 `scripts/smoke_production.py`（真 qB、真站点）；自动化测试不能替代它们。
+- 真实链路验证：`deploy/verify.sh`（容器/挂载/配置/自愈）与 `scripts/smoke_production.py`（真下载中心、真站点）；自动化测试不能替代它们。
 
 ## 故障排查
 
@@ -280,7 +292,7 @@ bash scripts/preflight.sh --fast  # 只跑 lint/format
 | --------------------------------- | ----------------------------------------------------- | --------------------------------------------------------- |
 | 抓取全部失败（`sslerror` / 超时） | NAS 上 `curl -v https://目标站`；网关日志             | NAS 出口被强制直连，海外站需要加 AND 放行规则             |
 | 页面显示「没有找到磁力」          | 任务面板的触发 URL 与页数                             | 页面确实没有 `magnet:`；站点需要登录（用 `SITE_COOKIES`） |
-| qB 显示离线 / 提交失败            | 右侧连接设置 →「保存并测试」；`docker logs`           | 地址、账号、密码或 qB 的 IP 白名单                        |
+| 下载中心显示离线 / 提交失败            | 右侧连接设置 →「保存并测试」；`docker logs`           | RPC 地址/密钥、桥接里的飞牛登录或目录权限                        |
 | 下载完成但页面不更新              | `/api/health`、WebSocket 状态                         | 同步循环异常或 WS 断线（会自动重连）                      |
 | 修改配置后重启又回去了            | `docker logs qb-nas-center \| head -5` 的配置事实源行 | 改错文件；唯一事实源是 `config/.env`                      |
 | 页面时间对不上                    | 时间戳约定                                            | 数据一律 UTC-aware；容器 `TZ=UTC` 只影响日志              |

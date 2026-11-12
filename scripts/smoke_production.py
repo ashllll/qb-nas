@@ -1,50 +1,42 @@
 #!/usr/bin/env python3
-"""生产链路 smoke 验证脚本（可选，不参与常规 pytest 门禁）。
+"""生产链路 smoke 验证（可选，不参与常规 pytest 门禁）。
 
-用途：在真实环境验证“测试通过 ≠ 生产链路已验证”的最后一段：
-- 真实站点抓取（Scrapling 动态引擎 + 可选 Cookie 注入）
-- 真实 qBittorrent 登录与只读 API（分类、torrent 列表）
-- 本地分类规则链对真实页面名称的分类结果
-- （可选）真实提交一个 magnet 并轮询状态变化
+默认只检查 Aria2 桥接/飞牛下载中心连通、真实页面抓取和本地分类。
+SMOKE_SUBMIT=1 时提交一个占位 magnet 并按持久化 GID 轮询；任务保留在
+下载中心，请在验证后手动删除 smoke_test 任务。此检查不证明真实下载落盘。
 
 环境变量：
-    SMOKE_CRAWL_URL        必填：要抓取的真实站点页面 URL
-    SMOKE_QBIT_HOST        必填：qBittorrent Web UI 地址（如 http://192.168.1.100:8080）
-    SMOKE_QBIT_USERNAME    必填：qB 用户名
-    SMOKE_QBIT_PASSWORD    必填：qB 密码
-    SMOKE_SITE_COOKIES     可选：JSON 字符串 {"domain": "cookie-string"}，注入爬虫
-    SMOKE_SUBMIT           可选：设为 1 时执行真实提交（add_magnet + 状态轮询），
-                                会在 qB 中创建一个 smoke_test 分类并添加一个
-                                Debian 官方测试 magnet，下载会真实写入磁盘。
+    SMOKE_CRAWL_URL         必填：真实页面 URL
+    SMOKE_ARIA2_RPC_URL     必填：http://NAS:6800/jsonrpc
+    SMOKE_ARIA2_SECRET      必填：桥接 RPC 密钥
+    SMOKE_ARIA2_SAVE_PATH   可选：NAS 下载根目录，空则使用桥接默认目录
+    SMOKE_STATE_DB          可选：测试任务绑定库，默认 data/smoke-aria2.db
+    SMOKE_SITE_COOKIES      可选：JSON 格式站点 Cookie
+    SMOKE_SUBMIT            设为 1 才向下载中心创建测试任务
 
-用法：
-    SMOKE_CRAWL_URL=... SMOKE_QBIT_HOST=... SMOKE_QBIT_USERNAME=... \
-        SMOKE_QBIT_PASSWORD=... python scripts/smoke_production.py
-
-退出码：全部步骤 PASS 为 0，任一 FAIL 为 1。请勿在 NAS 生产下载目录上
-直接运行 SMOKE_SUBMIT=1；先确认 qB 默认保存路径可写且愿意接收测试下载。
+退出码：全部步骤 PASS 为 0，任一 FAIL 为 1。
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 import sys
 import traceback
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from magnet_harvester.classifier.local_classifier import LocalClassificationEngine
-from magnet_harvester.config import QBitConfig, CrawlerConfig
+from magnet_harvester.config import Aria2Config, CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
-from magnet_harvester.qbit_client import QBittorrentClient
+from magnet_harvester.aria2_client import Aria2BridgeClient
 from magnet_harvester.services.site_auth import SiteAuth
 
 # 提交链路使用的 magnet：hash 为占位值（格式合法但无真实对等体），
 # 仅验证 add_magnet 提交与状态轮询机制；如需真实下载请替换为有效 magnet。
-_PLACEHOLDER_MAGNET = (
-    "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=smoke-test-placeholder"
-)
+_SMOKE_HASH = "0123456789abcdef0123456789abcdef01234567"
+_PLACEHOLDER_MAGNET = f"magnet:?xt=urn:btih:{_SMOKE_HASH}&dn=smoke-test-placeholder"
 
 # 步骤结果容器
 _STEPS: list[tuple[str, bool, str]] = []
@@ -56,95 +48,44 @@ def _record(step: str, ok: bool, detail: str) -> None:
     print(f"[{mark}] {step}: {detail}")
 
 
-async def _check_qbit(host: str, user: str, password: str, submit: bool) -> None:
-    """真实 qB 登录 + 只读 API + （可选）真实提交轮询。"""
-    client = QBittorrentClient(config=QBitConfig(host=host, username=user, password=password))
-    try:
-        ok = await client.ping()
-        if not ok:
-            _record("qB 登录", False, f"{host} ping 失败（检查地址/凭据/网络）")
-            return
-        _record("qB 登录", True, f"{host} 认证通过")
-
-        categories = await client.get_categories()
-        _record("qB 分类 API", True, f"读取到 {len(categories)} 个分类")
-
-        snapshot = await client.poll_torrent_snapshot()
-        _record("qB torrent 列表", True, f"当前 {len(snapshot)} 个 torrent")
-
-        if not submit:
-            _record("qB 提交链路", True, "跳过（SMOKE_SUBMIT=1 时执行真实提交）")
-            return
-
-        # 真实提交：创建临时分类 + 添加 magnet + 轮询状态
-        await client.ensure_category("smoke_test", save_path="/smoke_test")
-        added = await client.add_magnet(
-            _PLACEHOLDER_MAGNET,
-            category="smoke_test",
-            save_path="/smoke_test",
+async def _check_bridge(
+    rpc_url: str, secret: str, save_path: str, state_db: Path, submit: bool
+) -> None:
+    """用实际适配器检查下游；占位任务只按哈希/GID 对应关系认领。"""
+    client = Aria2BridgeClient(
+        config=Aria2Config(
+            rpc_url=rpc_url, secret=secret, save_path=save_path, state_db_path=str(state_db)
         )
-        if not added:
-            _record("qB 提交链路", False, "add_magnet 返回失败")
-            await _cleanup_smoke(client, hash_key=None)
+    )
+    try:
+        if not await client.ping():
+            _record("下载中心连通", False, "检查 RPC 地址/密钥及桥接中的飞牛登录状态")
             return
-        _record("qB 提交链路", True, "magnet 已提交，等待状态轮询…")
-
-        seen_states: set[str] = set()
-        observed_hash = ""
+        _record("下载中心连通", True, "桥接与下载中心只读查询通过")
+        if not submit:
+            _record("提交链路", True, "跳过（SMOKE_SUBMIT=1 时创建测试任务）")
+            return
+        if not await client.add_magnet(
+            _PLACEHOLDER_MAGNET, category="smoke_test", save_path="smoke_test"
+        ):
+            _record("提交链路", False, "提交未确认；先检查下载中心，勿盲目重复提交")
+            return
+        _record("提交链路", True, "已提交；任务保留在下载中心，验证后请手动清理 smoke_test")
         for _ in range(10):
             await asyncio.sleep(2)
-            snapshot = await client.poll_torrent_snapshot()
-            for torrent_hash, torrent in snapshot.items():
-                # 占位 hash 被 qB 截断显示，按名称前缀匹配
-                name = str(torrent.get("name", ""))
-                if "smoke-test-placeholder" in name:
-                    observed_hash = torrent_hash
-                    seen_states.add(str(torrent.get("state", "unknown")))
-            if seen_states:
+            snapshot, removed = await client.poll_torrent_snapshot_with_removed()
+            torrent = snapshot.get(_SMOKE_HASH)
+            if torrent:
+                state = torrent["download_state"]["torrent_state"]
+                _record("提交轮询", True, f"已观察到测试任务：{state}")
+                return
+            if _SMOKE_HASH in removed:
                 break
-        if not seen_states:
-            _record(
-                "qB 提交轮询", False, "10 次轮询内未观察到测试 torrent（add_magnet 可能未生效）"
-            )
-            await _cleanup_smoke(client, hash_key=None)
-            return
-        detail = f"观察到状态: {', '.join(sorted(seen_states))}"
-        _record("qB 提交轮询", True, detail)
-        await _cleanup_smoke(client, hash_key=observed_hash)
-    except Exception as exc:  # noqa: BLE001
-        _record("qB 链路", False, f"{type(exc).__name__}: {exc}")
-        # 异常路径也尽力清理测试产物（无 hash 时至少移除分类）
-        await _cleanup_smoke(client, hash_key=None)
+        _record("提交轮询", False, "未观察到测试任务；请检查下载中心与桥接日志")
+    except Exception as exc:
+        _record("下载中心链路", False, f"{type(exc).__name__}（检查桥接日志）")
     finally:
         await client.close()
-
-
-async def _cleanup_smoke(client: QBittorrentClient, hash_key: str | None) -> None:
-    """清理 smoke 测试产物：删除测试 torrent 与 smoke_test 分类（彼此独立容错）。"""
-    # hash_key 为 None（未观察到 torrent）时不声称已删除 torrent
-    torrent_cleaned = bool(hash_key)
-    if hash_key:
-        try:
-            await client.request(
-                "POST",
-                "/torrents/delete",
-                params={"hashes": hash_key, "deleteFiles": "false"},
-            )
-        except Exception as exc:  # noqa: BLE001
-            torrent_cleaned = False
-            print(f"   [清理] 删除测试 torrent 失败: {exc}")
-    category_cleaned = True
-    try:
-        await client.request(
-            "POST",
-            "/torrents/removeCategories",
-            params={"categories": "smoke_test"},
-        )
-    except Exception as exc:  # noqa: BLE001
-        category_cleaned = False
-        print(f"   [清理] 删除 smoke_test 分类失败（可手动删除）: {exc}")
-    if torrent_cleaned and category_cleaned:
-        print("   [清理] 已删除测试 torrent 与 smoke_test 分类")
 
 
 async def _check_crawl(url: str, cookies_raw: str | None) -> None:
@@ -186,26 +127,27 @@ async def _check_crawl(url: str, cookies_raw: str | None) -> None:
 
 async def main() -> int:
     url = os.environ.get("SMOKE_CRAWL_URL", "").strip()
-    host = os.environ.get("SMOKE_QBIT_HOST", "").strip()
-    user = os.environ.get("SMOKE_QBIT_USERNAME", "").strip()
-    password = os.environ.get("SMOKE_QBIT_PASSWORD", "").strip()
+    rpc_url = os.environ.get("SMOKE_ARIA2_RPC_URL", "").strip()
+    secret = os.environ.get("SMOKE_ARIA2_SECRET", "")
+    save_path = os.environ.get("SMOKE_ARIA2_SAVE_PATH", "").strip()
+    state_db = Path(os.environ.get("SMOKE_STATE_DB", "data/smoke-aria2.db"))
     cookies_raw = os.environ.get("SMOKE_SITE_COOKIES", "").strip()
     submit = os.environ.get("SMOKE_SUBMIT", "").strip() == "1"
 
     if not url:
         print("缺少 SMOKE_CRAWL_URL（要抓取的真实站点 URL）")
         return 1
-    if not (host and user and password):
-        print("缺少 SMOKE_QBIT_HOST / SMOKE_QBIT_USERNAME / SMOKE_QBIT_PASSWORD")
+    if not (rpc_url and secret):
+        print("缺少 SMOKE_ARIA2_RPC_URL / SMOKE_ARIA2_SECRET")
         return 1
     if submit:
-        print("⚠ SMOKE_SUBMIT=1：将向 qB 提交一个真实测试 magnet 并轮询，请确认保存路径可写")
+        print("⚠ SMOKE_SUBMIT=1：将向下载中心提交占位 magnet 并轮询；任务保留，请验证后手动清理")
 
     print("=== 生产链路 smoke 验证 ===")
     print(f"目标站点: {url}")
-    print(f"qB: {host}（提交模式: {'开启' if submit else '关闭'}）\n")
+    print(f"下载中心提交模式: {'开启' if submit else '关闭'}\n")
 
-    await _check_qbit(host, user, password, submit)
+    await _check_bridge(rpc_url, secret, save_path, state_db, submit)
     try:
         await _check_crawl(url, cookies_raw)
     except Exception as exc:  # noqa: BLE001

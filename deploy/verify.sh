@@ -85,7 +85,7 @@ in_id=$(docker exec "$CONTAINER" id 2>/dev/null | head -1 || true)
 # 9. 配置唯一事实源：文件权限/属主、容器内同一份、可写
 if [ -f "$ENV_FILE" ]; then
   mode=$(stat -c %a "$ENV_FILE"); uid=$(stat -c %u "$ENV_FILE"); gid=$(stat -c %g "$ENV_FILE")
-  [ "$mode" = "600" ] && ok "配置权限 600" || bad "配置权限 ${mode}（含 API Key/qB 凭据，必须 600）"
+  [ "$mode" = "600" ] && ok "配置权限 600" || bad "配置权限 ${mode}（含 API Key/RPC 密钥，必须 600）"
   [ "$uid" = "1000" ] && [ "$gid" = "1001" ] && ok "配置属主 ${uid}:${gid}（= 容器运行用户）" || bad "配置属主 ${uid}:${gid}，容器运行 1000:1001（界面保存会 Permission denied）"
   dir_mode=$(stat -c %a "$CONFIG_DIR")
   [ "$dir_mode" = "700" ] && ok "配置目录 700" || note "配置目录 ${dir_mode}（建议 700）"
@@ -96,14 +96,14 @@ if [ -f "$ENV_FILE" ]; then
   else
     bad "容器内对 /config(.env) 不可写：界面保存必失败"
   fi
-  # 事实源一致性：界面读到的 qB 主机 == 文件里那一行（说明没有进程环境在盖）
+  # 事实源一致性：界面读到的 桥接 RPC 地址 == 文件里那一行（说明没有进程环境在盖）
   if [ -n "$KEY" ] && command -v python3 >/dev/null; then
-    api_host=$(curl -fsS --max-time 6 -H "X-API-Key: $KEY" "$BASE_URL/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("qbit_host",""))' 2>/dev/null || true)
-    file_host=$(grep -E '^QBIT_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
+    api_host=$(curl -fsS --max-time 6 -H "X-API-Key: $KEY" "$BASE_URL/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("aria2_rpc_url",""))' 2>/dev/null || true)
+    file_host=$(grep -E '^ARIA2_RPC_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
     if [ -n "$api_host" ] && [ "$api_host" = "$file_host" ]; then
-      ok "运行中的 qB 主机 == 配置文件（界面读的就是这一份）"
+      ok "运行中的 桥接 RPC 地址 == 配置文件（界面读的就是这一份）"
     else
-      bad "运行中的 qB 主机(${api_host:-?}) ≠ 配置文件(${file_host:-?})：有第二个配置源在盖"
+      bad "运行中的 桥接 RPC 地址(${api_host:-?}) ≠ 配置文件(${file_host:-?})：有第二个配置源在盖"
     fi
   fi
 else
@@ -112,7 +112,7 @@ fi
 
 # 10. 没有任何配置值被注入进程环境（旧部署的 env_file 陷阱）
 leaked=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER" 2>/dev/null \
-  | cut -d= -f1 | grep -E '^(QBIT_|API_KEY$|CRAWLER_|LOG_LEVEL$|STORE_BACKEND$)' | paste -sd' ' -)
+  | cut -d= -f1 | grep -E '^(ARIA2_|QBIT_|API_KEY$|CRAWLER_|LOG_LEVEL$|STORE_BACKEND$)' | paste -sd' ' -)
 [ -z "$leaked" ] && ok "容器进程环境里没有配置键（配置只来自 /config/.env）" || bad "进程环境里仍有配置键：${leaked}（会与文件形成双源）"
 tz=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER" 2>/dev/null | grep '^TZ=' || echo 'TZ=(未设)')
 note "容器时区：${tz}（只影响日志与本地钟；数据时间戳一律 UTC-aware）"
@@ -175,8 +175,8 @@ for p in os.listdir("/proc"):
   note "恢复后 healthcheck=$hc"
   # 崩溃重启后配置仍在（同一份文件、同样的值）
   if [ -f "$ENV_FILE" ]; then
-    after_host=$(grep -E '^QBIT_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
-    [ -n "$after_host" ] && ok "崩溃自愈后配置仍在：QBIT_HOST=${after_host}" || bad "崩溃自愈后读不到 QBIT_HOST"
+    after_host=$(grep -E '^ARIA2_RPC_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
+    [ -n "$after_host" ] && ok "崩溃自愈后配置仍在：ARIA2_RPC_URL=${after_host}" || bad "崩溃自愈后读不到 ARIA2_RPC_URL"
   fi
 fi
 

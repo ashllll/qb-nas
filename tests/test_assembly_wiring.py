@@ -6,7 +6,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_build_runtime_wires_all_components(monkeypatch):
     import magnet_harvester.assembly as assembly_module
-    from magnet_harvester.config import CrawlerConfig, QBitConfig
+    from magnet_harvester.config import CrawlerConfig, Aria2Config
 
     class FakeCrawler:
         def __init__(self, config, site_auth=None, tavily=None, task_manager=None):
@@ -23,10 +23,10 @@ async def test_build_runtime_wires_all_components(monkeypatch):
 
     class FakeQbit:
         def __init__(self, config):
-            assert isinstance(config, QBitConfig)
+            assert isinstance(config, Aria2Config)
             self._config = config
-            self.host = config.host
-            self.username = config.username
+            self.rpc_url = config.rpc_url
+            self.save_path = config.save_path
             self.closed = False
 
         async def ping(self):
@@ -39,7 +39,7 @@ async def test_build_runtime_wires_all_components(monkeypatch):
             return {}
 
     monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
-    monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(assembly_module, "Aria2BridgeClient", FakeQbit)
 
     runtime = assembly_module.build_runtime()
     ctx = runtime.ctx
@@ -66,14 +66,14 @@ async def test_build_runtime_wires_all_components(monkeypatch):
     assert runtime.sync_loop is not None, "sync_loop missing"
 
     # Config values accessible via injected qbit
-    assert ctx.core.qbit.host is not None
-    assert ctx.core.qbit.username is not None
+    assert ctx.core.qbit.rpc_url is not None
+    assert ctx.core.qbit.save_path is not None
 
 
 def test_build_runtime_uses_configured_qbit_sync_interval(monkeypatch):
     import magnet_harvester.assembly as assembly_module
 
-    monkeypatch.setattr(assembly_module.settings, "QBIT_SYNC_INTERVAL", 7.5, raising=False)
+    monkeypatch.setattr(assembly_module.settings, "ARIA2_SYNC_INTERVAL", 7.5, raising=False)
 
     runtime = assembly_module.build_runtime()
 

@@ -91,6 +91,15 @@ class DownloadRequest(BaseModel):
     hashes: List[str] = Field(min_length=1, max_length=500)
 
 
+class Aria2ConfigUpdate(BaseModel):
+    """桥接配置更新；省略密钥表示保留已配置的密钥。"""
+
+    model_config = {"extra": "forbid"}
+    aria2_rpc_url: Optional[str] = None
+    aria2_secret: Optional[str] = Field(default=None, repr=False)
+    aria2_save_path: Optional[str] = None
+
+
 class QBitConfigUpdate(BaseModel):
     """qBittorrent 配置更新请求体，替换 routes.py 中的裸 dict。
 

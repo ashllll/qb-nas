@@ -189,7 +189,7 @@ async def test_main_lifespan_populates_runtime_services(monkeypatch):
             self.active_count = 0
 
     monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
-    monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(assembly_module, "Aria2BridgeClient", FakeQbit)
     monkeypatch.setattr(assembly_module, "LocalClassifier", FakeClassifier)
     monkeypatch.setattr(assembly_module, "QBitSyncLoop", FakeSyncLoop)
     monkeypatch.setattr(assembly_module, "WSBroadcaster", FakeBroadcaster)
@@ -301,7 +301,7 @@ async def test_main_lifespan_supports_end_to_end_pipeline_flow(monkeypatch, tmp_
 
     monkeypatch.setattr(assembly_module, "MagnetCrawler", FakeCrawler)
     monkeypatch.setattr(assembly_module, "LocalClassifier", FakeClassifier)
-    monkeypatch.setattr(assembly_module, "QBittorrentClient", FakeQbit)
+    monkeypatch.setattr(assembly_module, "Aria2BridgeClient", FakeQbit)
     monkeypatch.setattr(assembly_module, "QBitSyncLoop", FakeSyncLoop)
 
     test_app = FastAPI(lifespan=main_module.lifespan)

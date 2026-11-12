@@ -323,7 +323,7 @@ function handleMsg(msg) {
     case "item_removed":
       if (msg.hash && itemState.remove(msg.hash)) {
         renderTable();
-        addLog("资源记录已删除（qB 队列未动）", "info");
+        addLog("资源记录已删除（下载中心队列未动）", "info");
       }
       break;
     case "classify_start":
@@ -357,7 +357,7 @@ function handleMsg(msg) {
       break;
     case "download_start":
       addLog(
-        `发送到 qB · ${(items.get(msg.hash) || {}).name || msg.hash}`,
+        `发送到下载中心 · ${(items.get(msg.hash) || {}).name || msg.hash}`,
         "info"
       );
       break;
@@ -425,24 +425,24 @@ async function loadConfig() {
   try {
     const data = await apiClient.fetch("/api/config");
     const hostInput = document.getElementById("cfgHost");
-    hostInput.value = data.qbit_host || "";
+    hostInput.value = data.aria2_rpc_url || "";
     // 没配置时给「例如」而不是一个像真地址的占位符，避免用户以为配置丢了。
-    hostInput.placeholder = data.qbit_host
+    hostInput.placeholder = data.aria2_rpc_url
       ? ""
-      : "http://主机:端口（例如 http://192.168.20.193:8085）";
-    document.getElementById("cfgUser").value = data.qbit_username || "";
+      : "http://NAS:6800/jsonrpc";
+    document.getElementById("cfgPath").value = data.aria2_save_path || "";
     const passwordInput = document.getElementById("cfgPass");
     passwordInput.value = "";
-    passwordInput.placeholder = data.qbit_password_configured
-      ? "已保存密码，留空保持不变"
-      : "请输入 qBittorrent 密码";
+    passwordInput.placeholder = data.aria2_secret_configured
+      ? "已保存密钥，留空保持不变"
+      : "请输入桥接 RPC 密钥";
     setConfigResult(
-      "已读取 NAS 上的当前配置；密码仅保存在服务端，不会回显",
+      "已读取 NAS 上的当前配置；密钥仅保存在服务端，不会回显",
       ""
     );
   } catch (error) {
     if (error && error.status === 401) {
-      // 严格模式把读接口也锁上时：这是「没授权」，不是 qB 故障，别报红。
+      // 严格模式把读接口也锁上时：这是「没授权」，不是下载中心故障，别报红。
       setConfigResult(
         "只读模式：连接配置需要授权后读取",
         "muted",
@@ -468,11 +468,11 @@ async function saveConfig() {
   setButtonBusy(button, true, "连接中");
   try {
     const payload = {
-      qbit_host: document.getElementById("cfgHost").value.trim(),
-      qbit_username: document.getElementById("cfgUser").value.trim(),
+      aria2_rpc_url: document.getElementById("cfgHost").value.trim(),
+      aria2_save_path: document.getElementById("cfgPath").value.trim(),
     };
     const password = document.getElementById("cfgPass").value;
-    if (password) payload.qbit_password = password;
+    if (password) payload.aria2_secret = password;
     const data = await apiClient.fetch("/api/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -482,17 +482,17 @@ async function saveConfig() {
       const error = new MagnetApiClient.ApiError({
         status: 0,
         code: "qbit_unreachable",
-        detail: "连不上 qBittorrent，配置没有保存",
-        hint: "检查 qB 是否在运行、地址与端口是否正确（例如 http://192.168.20.193:8085）、用户名密码是否匹配；保存成功后页面会自动刷新。",
+        detail: "连不上飞牛下载中心，配置没有保存",
+        hint: "检查桥接和下载中心是否在运行、RPC 地址是否正确（例如 http://192.168.20.193:6800/jsonrpc）、RPC 密钥是否匹配；保存成功后页面会自动刷新。",
       });
       throw error;
     }
     setConfigResult(
-      password ? "连接成功，配置已保存" : "连接成功，已保留原密码",
+      password ? "连接成功，配置已保存" : "连接成功，已保留原密钥",
       "success"
     );
     lastAuthCode = "";
-    toast("qBittorrent 配置已保存", "success", { key: "config:save" });
+    toast("飞牛下载中心配置已保存", "success", { key: "config:save" });
     loadAuthState();
     checkStatus({ force: true });
   } catch (error) {
@@ -729,8 +729,8 @@ function resultSentence(item) {
   const category = item.category || "";
   if (status === "pending") return category ? `已分类到「${category}」` : "待你点选";
   if (status === "classifying") return "正在分类";
-  if (status === "adding") return "正在提交 qB";
-  if (status === "queued") return "已提交 qB，排队中";
+  if (status === "adding") return "正在提交下载中心";
+  if (status === "queued") return "已提交下载中心，排队中";
   if (status === "downloading") {
     const progress = Number(item.progress || 0);
     const percent = progress > 0 ? ` ${Math.round(progress)}%` : "";
@@ -738,7 +738,7 @@ function resultSentence(item) {
   }
   if (status === "paused") {
     const state = item.torrent_state ? `（${item.torrent_state}）` : "";
-    return `在 qB 里点继续即可下载${state}`;
+    return `在下载中心里点继续即可下载${state}`;
   }
   if (status === "success") return "已完成";
   if (status === "error") {
@@ -993,7 +993,7 @@ function addLog(message, type = "") {
   const now = Date.now();
   const dedupeKey =
     type === "warning" &&
-    message.startsWith("qB 状态异常，请在 qB 中检查该种子")
+    message.startsWith("下载中心状态异常，请在下载中心中检查该任务")
       ? "qbit-transient-retry"
       : `${type}:${message}`;
   const previous = logDedupe.get(dedupeKey) || 0;
@@ -1022,15 +1022,15 @@ function clearLog() {
 
 function logDownloadState(item, msg) {
   const name = item.name || item.hash;
-  if (msg.status === "queued") addLog(`已进入 qB 队列 · ${name}`, "info");
+  if (msg.status === "queued") addLog(`已进入下载中心队列 · ${name}`, "info");
   else if (msg.status === "downloading")
     addLog(`下载中 ${Math.round(msg.progress || 0)}% · ${name}`, "found");
   else if (msg.status === "paused")
-    addLog(`已暂停（在 qB 里继续即可下载）· ${name}`, "info");
+    addLog(`已暂停（在下载中心里继续即可下载）· ${name}`, "info");
   else if (msg.status === "success") addLog(`下载完成 · ${name}`, "found");
   else if (msg.status === "error")
     if (msg.error_msg) addLog(`下载失败 · ${name} · ${msg.error_msg}`, "error");
-    else addLog(`qB 状态异常，请在 qB 中检查该种子 · ${name}`, "warning");
+    else addLog(`下载中心状态异常，请在下载中心中检查该任务 · ${name}`, "warning");
 }
 
 function setButtonBusy(button, busy, label = "") {
@@ -1082,7 +1082,7 @@ function syncCrawlProgress() {
 
 /* 首屏/轮询状态。三件事必须分清，不许互相冒充：
    1) 鉴权失败 → 说 API Key；2) 服务端接口失败 → 说接口；3) 网络不通 → 说连不上 NAS。
-   只有服务端亲口说 qbit.ok=false，界面才写「qB 离线」，并带上它给的原因。 */
+   只有服务端亲口说 qbit.ok=false，界面才写「下载中心离线」，并带上它给的原因。 */
 async function checkStatus({ force = false } = {}) {
   if (statusInFlight && !force) return statusInFlight;
   const seq = ++statusRequestSeq;
@@ -1093,7 +1093,7 @@ async function checkStatus({ force = false } = {}) {
     } catch (error) {
       if (seq !== statusRequestSeq) return;
       if (error.status === 404) {
-        // 老装配没有 v1 状态接口：退回旧接口，只取 qB 状态
+        // 老装配没有 v1 状态接口：退回旧接口，只取下载中心状态
         try {
           const legacy = await apiClient.fetch("/api/status");
           if (seq === statusRequestSeq) {
@@ -1144,7 +1144,7 @@ function handleStatusFailure(error) {
   // 读不到状态 ≠ 没有上报：Mac 灯立刻从「没有」改成「未知」，别让旧读数冒充现状。
   renderMacStatus();
   if (error && error.status === 401) {
-    // 严格模式下只读接口也被锁：这是「没授权」，不是 qB/采集服务的故障。
+    // 严格模式下只读接口也被锁：这是「没授权」，不是下载中心/采集服务的故障。
     auth.write = false;
     auth.trusted = false;
     if (!auth.mode) auth.mode = "strict";
@@ -1171,12 +1171,12 @@ function setQbitState(state, detail = "", hint = "") {
   const dot = document.getElementById("dotQbit");
   const label = document.getElementById("qbitStatus");
   const text = online
-    ? "qB 在线"
+    ? "下载中心在线"
     : failed
-      ? "qB 离线"
+      ? "下载中心离线"
       : readonly
-        ? "qB 状态 · 需要授权"
-        : "qB 状态未知";
+        ? "下载中心状态 · 需要授权"
+        : "下载中心状态未知";
   // 只有「没授权所以没问过」是中性的；接口/网络失败是真实故障，照旧点红。
   dot.className = `dot ${online ? "online" : readonly ? "idle" : "offline"}`;
   // 原因可能很长（aiohttp 原文）：标题里截断，完整值放 title，别把状态栏撑破
@@ -1727,7 +1727,7 @@ function handleNetworkFailure(error) {
    - open       服务端没配 key（本机/局域网部署），可写
    - authorized 钥匙有效，可写
    - anonymous  本浏览器没钥匙：只读，不红
-   - rejected   本浏览器钥匙被拒：只读 + 告知重取（不是 qB/采集故障）
+   - rejected   本浏览器钥匙被拒：只读 + 告知重取（不是下载中心/采集故障）
    - checking / unknown：还在问或问不到，只读浏览照常
    ---------------------------------------------------------------- */
 const AUTH_COPY = {

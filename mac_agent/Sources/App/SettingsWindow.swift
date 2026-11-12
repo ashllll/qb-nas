@@ -74,7 +74,7 @@ final class SettingsModel: ObservableObject {
             do {
                 let info = try await client.health()
                 var text = "连接成功 · NAS \(info.version ?? "版本未报")"
-                if let qbit = info.qbitOK { text += " · qB \(qbit ? "在" : "没连上")" }
+                if let qbit = info.qbitOK { text += " · 下载中心\(qbit ? "在线" : "未连接")" }
                 if let crawler = info.crawlerOK { text += " · 取页 \(crawler ? "就绪" : "未就绪")" }
                 await MainActor.run {
                     self.message = text

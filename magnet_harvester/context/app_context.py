@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Callable, Protocol
 
 from fastapi import Request
 
-from magnet_harvester.config import Settings, settings as default_settings
+from magnet_harvester.config import Aria2Config, QBitConfig, Settings, settings as default_settings
 from magnet_harvester.qbit_client import QBittorrentClient
 
 if TYPE_CHECKING:
@@ -71,6 +71,9 @@ class QBitClientLike(Protocol):
 
 class QBitRuntimeLike(Protocol):
     async def replace_qbit(self, new_qbit) -> None: ...
+    async def replace_aria2_config(
+        self, rpc_url: str | None, secret: str | None, save_path: str | None
+    ) -> dict: ...
     async def replace_qbit_config(
         self,
         host: str | None,
@@ -148,7 +151,7 @@ class CoreServices:
     pipeline: HarvestPipeline
     crawler: MagnetCrawler
     classifier: LocalClassifier
-    qbit: QBittorrentClient
+    qbit: QBitClientLike
 
 
 @dataclass
@@ -215,7 +218,7 @@ class QBitReplacementTarget:
     pipeline: HarvestPipeline | None = None
     qbit_sync: QBitSyncLike | None = None
     observability: ObservabilityLike | None = None
-    on_qbit_replaced: Callable[[QBittorrentClient], None] | None = None
+    on_qbit_replaced: Callable[[QBitClientLike], None] | None = None
 
 
 @dataclass
@@ -228,7 +231,7 @@ class QBitRuntime:
 
     target: QBitReplacementTarget
     settings: Settings = field(default_factory=lambda: default_settings)
-    client_factory: type[QBittorrentClient] = field(default_factory=lambda: QBittorrentClient)
+    client_factory: Callable[..., QBitClientLike] = field(default_factory=lambda: QBittorrentClient)
     transaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     @classmethod
@@ -236,9 +239,11 @@ class QBitRuntime:
         """从 AppContext 构建，只提取热替换所需的最窄依赖。"""
         return cls(target=ctx.replacement_target(), **kwargs)
 
-    async def replace_qbit(self, new_qbit: QBittorrentClient) -> None:
+    async def replace_qbit(self, new_qbit: QBitClientLike) -> None:
         async with self.transaction_lock:
+            old_qbit = self.target.qbit
             await self._replace_runtime(new_qbit)
+            await self._close_replaced_client(old_qbit, new_qbit)
 
     async def replace_qbit_config(
         self,
@@ -257,49 +262,73 @@ class QBitRuntime:
             OSError: if persisting the config fails (maps to HTTP 500).
         """
         async with self.transaction_lock:
-            old_qbit = self.target.qbit
-            old_config = getattr(old_qbit, "config", None)
             candidate = self.settings.build_qbit_config(
-                host=host,
-                username=username,
-                password=password,
+                host=host, username=username, password=password
             )
-            new_qbit = self.client_factory(config=candidate)
-            try:
-                connected = await new_qbit.ping()
-            except asyncio.CancelledError:
-                await new_qbit.close()
+            return await self._replace_config(
+                candidate, self.settings.persist_qbit_config, self.settings.commit_qbit_config
+            )
+
+    async def replace_aria2_config(
+        self,
+        rpc_url: str | None,
+        secret: str | None,
+        save_path: str | None,
+    ) -> dict:
+        async with self.transaction_lock:
+            candidate = self.settings.build_aria2_config(
+                rpc_url=rpc_url, secret=secret, save_path=save_path
+            )
+            return await self._replace_config(
+                candidate, self.settings.persist_aria2_config, self.settings.commit_aria2_config
+            )
+
+    async def _replace_config(
+        self,
+        candidate: Aria2Config | QBitConfig,
+        persist: Callable,
+        commit: Callable,
+    ) -> dict:
+        old_qbit = self.target.qbit
+        old_config = getattr(old_qbit, "config", None)
+        new_qbit = self.client_factory(config=candidate)
+        try:
+            connected = await new_qbit.ping()
+        except (Exception, asyncio.CancelledError):
+            await new_qbit.close()
+            raise
+        if not connected:
+            await new_qbit.close()
+            return {"status": "failed", "connected": False}
+
+        try:
+            persist(candidate)
+        except OSError:
+            await new_qbit.close()
+            raise
+
+        try:
+            await self._replace_runtime(new_qbit)
+            if self.target.qbit is not new_qbit:
+                raise RuntimeError("热替换下载器客户端失败")
+        except (Exception, asyncio.CancelledError) as exc:
+            await new_qbit.close()
+            if old_config is not None:
+                try:
+                    persist(old_config)
+                    commit(old_config)
+                except OSError:
+                    log.exception("热替换失败后回滚下载器配置持久化失败")
+            if isinstance(exc, (RuntimeError, asyncio.CancelledError)):
                 raise
-            if not connected:
-                await new_qbit.close()
-                return {"status": "failed", "connected": False}
+            raise RuntimeError("热替换下载器客户端失败") from exc
 
-            try:
-                self.settings.persist_qbit_config(candidate)
-            except OSError:
-                await new_qbit.close()
-                raise
+        commit(candidate)
+        # 新配置和依赖已共同提交；旧连接清理被取消时不能再回滚或关闭当前客户端。
+        await self._close_replaced_client(old_qbit, new_qbit)
+        return {"status": "ok", "connected": True}
 
-            try:
-                await self._replace_runtime(new_qbit)
-                if self.target.qbit is not new_qbit:
-                    raise RuntimeError("热替换 qBittorrent 客户端失败")
-            except (Exception, asyncio.CancelledError) as exc:
-                await new_qbit.close()
-                if old_config is not None:
-                    try:
-                        self.settings.persist_qbit_config(old_config)
-                        self.settings.commit_qbit_config(old_config)
-                    except OSError:
-                        log.exception("热替换失败后回滚 qBittorrent 配置持久化失败")
-                if isinstance(exc, (RuntimeError, asyncio.CancelledError)):
-                    raise
-                raise RuntimeError("热替换 qBittorrent 客户端失败") from exc
-
-            self.settings.commit_qbit_config(candidate)
-            return {"status": "ok", "connected": True}
-
-    async def _replace_runtime(self, new_qbit: QBittorrentClient) -> None:
+    async def _replace_runtime(self, new_qbit: QBitClientLike) -> None:
         """Align every runtime dependent and commit the primary adapter."""
         old_qbit = self.target.qbit
         try:
@@ -314,6 +343,9 @@ class QBitRuntime:
             await self._rollback_runtime(old_qbit)
             raise
 
+    async def _close_replaced_client(
+        self, old_qbit: QBitClientLike | None, new_qbit: QBitClientLike
+    ) -> None:
         if old_qbit is not None and old_qbit is not new_qbit:
             try:
                 await asyncio.wait_for(old_qbit.close(), timeout=10.0)
@@ -322,7 +354,7 @@ class QBitRuntime:
             except Exception:
                 log.exception("关闭旧 qBittorrent 客户端失败")
 
-    async def _commit_runtime(self, new_qbit: QBittorrentClient) -> None:
+    async def _commit_runtime(self, new_qbit: QBitClientLike) -> None:
         pipeline = self.target.pipeline
         qbit_sync = self.target.qbit_sync
         observability = self.target.observability
@@ -336,7 +368,7 @@ class QBitRuntime:
         if self.target.on_qbit_replaced is not None:
             self.target.on_qbit_replaced(new_qbit)
 
-    async def _rollback_runtime(self, old_qbit: QBittorrentClient | None) -> None:
+    async def _rollback_runtime(self, old_qbit: QBitClientLike | None) -> None:
         """Best-effort restoration after a dependent rejects the candidate."""
         if old_qbit is None:
             return
