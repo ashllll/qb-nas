@@ -24,17 +24,12 @@
 ## 构建与自测
 
 ```bash
-cd 代码/mac_agent
+cd mac_agent
 ./build.sh                 # → build/NAS 剪贴板代理.app
 swiftc -O -swift-version 5 Sources/Core/*.swift Sources/Tests/main.swift -o build/selftest && ./build/selftest
 ```
 
-端到端验收（真剪贴板 + 假 NAS + 无头模式，46 项断言）在公共工具：
-
-```bash
-cd ../../../../.blueprint-tmp/公共工具     # 即 $BLUEPRINT_TOOLS
-./验收Mac代理.sh
-```
+端到端验收（真剪贴板 + 假 NAS + 无头模式）依赖本机另行保留的公共工具脚本，不在本仓库内；仓库内可验证的是 61 项 Swift 自测与 Python 闸门。
 
 ## 行为细节（做的时候定下的规则）
 

@@ -11,7 +11,7 @@
 - 假 qB（FakeQbit）、模拟爬虫、NullBus/RecordingBus 下的单元与集成测试
 - URL 校验 / SSRF 防护、分类规则链、状态转换与事件、qB 客户端各模块
   （transport、mapper、paths、submitter、sync、stats）
-- API 认证与路由、WebSocket 广播与握手认证、剪贴板监控
+- API 认证与路由、WebSocket 广播/反压与首帧认证、Mac Agent ingest
 
 **能证明**：逻辑正确性、边界处理、并发与回滚语义、协议字段完整性。
 

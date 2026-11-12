@@ -202,7 +202,7 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 | `QBIT_HOST` / `QBIT_USERNAME` / `QBIT_PASSWORD`                 | qBittorrent Web UI 与凭据                                   | —                 |
 | `QBIT_SYNC_INTERVAL`                                            | qB 状态轮询间隔（秒）                                       | `2.0`             |
 | `AUTH_MODE`                                                     | `trusted`（局域网内直接读写）/ `strict`（写必须带 API Key） | `trusted`         |
-| `API_KEY`                                                       | 程序通道 `X-API-Key`（Mac 代理等）；浏览器不使用            | 空（仅 loopback） |
+| `API_KEY`                                                       | 程序通道 `X-API-Key`（Mac 代理等）；浏览器不使用            | 空（strict 下必填） |
 | `TRUSTED_HOSTS`                                                 | 额外允许的 Host（域名/反代场景，防 DNS rebinding）          | 空                |
 | `SITE_COOKIES`                                                  | 需要登录站点的 Cookie 注入，JSON `{"domain": "cookie"}`     | `{}`              |
 | `CRAWLER_TIMEOUT` / `CRAWLER_MAX_DEPTH` / `CRAWLER_PER_HOST_CONCURRENCY` | 抓取超时 / 最大深度 / 同一站点并发                         | `30` / `2` / `4`  |
@@ -212,7 +212,7 @@ open "build/NAS 剪贴板代理.app"   # 首次打开点「安装」
 | `MIN_DISK_SPACE_GB`                                             | 磁盘告警阈值                                                | `10.0`            |
 | `LOG_LEVEL` / `LOG_FILE`                                        | 日志级别与文件输出（轮转）                                  | `INFO` / 控制台   |
 
-> 时间约定：数据与接口时间戳一律 **UTC-aware**，`updated_at` 用 naive-local ISO 以便前端按字典序比较；不要混入 aware-UTC，否则前端版本表会失序。
+> 时间约定：数据与接口时间戳一律 **UTC-aware**（`+00:00`，来自 `utils/timeutil.utc_now()`）；前端按 `updated_at` 的 ISO 字符串字典序比较，不要写入 naive 时间戳。
 
 ## 安全模型
 
@@ -252,10 +252,11 @@ qb-nas/
 ├── static/                    # 无构建步骤的单页 Web UI
 ├── mac_agent/                 # macOS 菜单栏代理（Swift，build.sh 一键出 .app）
 ├── deploy/                    # install.sh / verify.sh / uninstall.sh / Dockerfile
-├── docs/                      # 架构说明、ADR、验收记录、assets/、本地工作区说明
+├── doc/  docs/                # 历史规格、ADR、验收记录、assets/、本地工作区说明
+├── LICENSE                    # MIT
 ├── scripts/                   # preflight.sh（本地闸门）、smoke_production.py
-├── tests/                     # 750+ 用例（pytest + pytest-asyncio）
-└── .github/workflows/gates.yml # GitHub Actions：ruff + format + pytest
+├── tests/                     # 107 个测试文件、825 个用例（pytest + pytest-asyncio）
+└── .github/workflows/         # gates.yml：ruff/format/pytest+覆盖率、Docker 构建、mac 自测
 ```
 
 ## 开发与验证
@@ -268,12 +269,12 @@ cp .env.example .env              # 填 qB 连接信息
 python run.py                     # http://localhost:8899
 
 # 机器闸门（与 CI 同一套）
-bash scripts/preflight.sh         # ruff check + format check + pytest
+bash scripts/preflight.sh         # uv lock --check + ruff + pytest --cov
 bash scripts/preflight.sh --fast  # 只跑 lint/format
 ```
 
-- 测试基线：`python -m pytest -q` → **753 passed**；`ruff check` / `ruff format --check` 全绿。
-- CI：push `main` / `stage/**` 与 PR 到 `main` 时由 GitHub Actions 跑同一套闸门（runner 内建 `.venv` 与 Chromium）。
+- 测试基线：`python -m pytest -q` → **825 passed**；覆盖率 **84.9%**（门槛 79%）；`ruff check` / `ruff format --check` 全绿。
+- CI：push `main` / `stage/**` 与 PR 到 `main` 时由 GitHub Actions 跑三个 job：测试与覆盖率、Docker 镜像构建、mac_agent Swift 自测（runner 内建 `.venv` 与 Chromium）。
 - 真实链路验证：`deploy/verify.sh`（容器/挂载/配置/自愈）与 `scripts/smoke_production.py`（真 qB、真站点）；自动化测试不能替代它们。
 
 ## 故障排查
