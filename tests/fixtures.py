@@ -19,8 +19,9 @@ from magnet_harvester.api.routes import router
 from magnet_harvester.api.websocket import router as ws_router, WSBroadcaster
 from magnet_harvester.bus import MessageBus as RealMessageBus, NullBus, Event, EventType
 from magnet_harvester.classifier.local_classifier import LocalClassifier
+from magnet_harvester.config import QBitConfig
 from magnet_harvester.context.app_context import AppContext, AppServices, CoreServices, RuntimeState
-from magnet_harvester.models import MagnetItem
+from magnet_harvester.models import MagnetItem, TaskStatus
 from magnet_harvester.pipeline import HarvestPipeline
 from magnet_harvester.services.item_queries import ItemQueryExecutor
 from magnet_harvester.services.user_actions import UserActionExecutor
@@ -212,6 +213,28 @@ class FakeStats:
             "download_count": self.download_count,
             "api_calls": self.api_call_count,
         }
+
+
+# ═══════════════════════════════════════════════════
+# Shared model factories
+# ═══════════════════════════════════════════════════
+
+
+def make_item(
+    hash_key: str,
+    name: str = "Test",
+    status: TaskStatus = TaskStatus.pending,
+) -> MagnetItem:
+    return MagnetItem(
+        hash=hash_key,
+        name=name,
+        magnet=f"magnet:?xt=urn:btih:{hash_key}",
+        status=status,
+    )
+
+
+def make_qbit_config(host: str, username: str, password: str) -> QBitConfig:
+    return QBitConfig(host=host, username=username, password=password, fs_base_path="")
 
 
 # ═══════════════════════════════════════════════════

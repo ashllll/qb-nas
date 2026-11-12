@@ -10,11 +10,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 from fastapi import FastAPI
 
-from tests.fixtures import asgi_client
+from tests.fixtures import asgi_client, make_qbit_config
 
 from magnet_harvester.errors import ErrorCategory, ErrorSeverity, ErrorHandler
 from magnet_harvester.api.routes import router
-from magnet_harvester.config import QBitConfig
 from magnet_harvester.context.app_context import (
     AppContext,
     AppServices,
@@ -205,7 +204,7 @@ def _make_app():
                 raise ValueError("用户名不能为空")
             if not password:
                 raise ValueError("密码不能为空")
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+            return make_qbit_config(host, username, password)
 
         def persist_qbit_config(self, config, env_path=None):
             return None
@@ -419,7 +418,6 @@ def test_errors_routes_return_and_clear_all_records():
 
 def test_update_config_replaces_qbit_client():
     from magnet_harvester.context.app_context import QBitRuntime
-    from magnet_harvester.config import QBitConfig
 
     created = []
     persisted = []
@@ -427,7 +425,7 @@ def test_update_config_replaces_qbit_client():
 
     class CapturingSettings:
         def build_qbit_config(self, host, username, password):
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+            return make_qbit_config(host, username, password)
 
         def persist_qbit_config(self, config, env_path=None):
             persisted.append(config)
@@ -489,14 +487,13 @@ def test_update_config_requires_assembled_qbit_runtime():
 
 def test_update_config_keeps_current_client_when_candidate_cannot_connect():
     from magnet_harvester.context.app_context import QBitRuntime
-    from magnet_harvester.config import QBitConfig
 
     created = []
     persisted = []
 
     class CapturingSettings:
         def build_qbit_config(self, host, username, password):
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+            return make_qbit_config(host, username, password)
 
         def persist_qbit_config(self, config, env_path=None):
             persisted.append(config)
@@ -536,11 +533,10 @@ def test_update_config_keeps_current_client_when_candidate_cannot_connect():
 
 def test_update_config_returns_500_when_persist_fails():
     from magnet_harvester.context.app_context import QBitRuntime
-    from magnet_harvester.config import QBitConfig
 
     class FailingSettings:
         def build_qbit_config(self, host, username, password):
-            return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+            return make_qbit_config(host, username, password)
 
         def persist_qbit_config(self, config, env_path=None):
             raise OSError("disk full")

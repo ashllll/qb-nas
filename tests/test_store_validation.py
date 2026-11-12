@@ -8,16 +8,9 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.models import TaskStatus
 from magnet_harvester.store import InMemoryItemStore
-
-
-def _make_item(hash_key: str, name: str = "Test") -> MagnetItem:
-    return MagnetItem(
-        hash=hash_key,
-        name=name,
-        magnet=f"magnet:?xt=urn:btih:{hash_key}",
-    )
+from tests.fixtures import make_item
 
 
 # ═══════════════════════════════════════════════════
@@ -28,7 +21,7 @@ def _make_item(hash_key: str, name: str = "Test") -> MagnetItem:
 def test_update_rejects_invalid_status_string():
     """传入非法 status 字符串时，update() 应返回 None，不修改原对象"""
     store = InMemoryItemStore()
-    item = _make_item("TEST01")
+    item = make_item("TEST01")
     store.add(item)
 
     # 当前 item 状态是 pending
@@ -51,7 +44,7 @@ def test_update_rejects_invalid_status_string():
 def test_update_accepts_valid_task_status():
     """传入合法的 TaskStatus Enum 时，update() 应成功更新"""
     store = InMemoryItemStore()
-    item = _make_item("TEST02")
+    item = make_item("TEST02")
     store.add(item)
 
     result = store.update("TEST02", status=TaskStatus.downloading)
@@ -67,7 +60,7 @@ def test_update_accepts_valid_task_status():
 def test_update_accepts_valid_status_string():
     """传入合法的 status 字符串时，Pydantic 应自动转换为 TaskStatus"""
     store = InMemoryItemStore()
-    item = _make_item("TEST03")
+    item = make_item("TEST03")
     store.add(item)
 
     result = store.update("TEST03", status="downloading")
@@ -83,7 +76,7 @@ def test_update_accepts_valid_status_string():
 def test_update_rejects_invalid_progress():
     """传入非法 progress 值（如字符串）时，update() 应返回 None"""
     store = InMemoryItemStore()
-    item = _make_item("TEST04")
+    item = make_item("TEST04")
     store.add(item)
 
     result = store.update("TEST04", progress="not_a_number")
@@ -99,7 +92,7 @@ def test_update_rejects_invalid_progress():
 def test_update_creates_new_instance():
     """update() 应通过 model_copy() 创建新实例，保持不可变性"""
     store = InMemoryItemStore()
-    item = _make_item("TEST05")
+    item = make_item("TEST05")
     store.add(item)
 
     original = store.get("TEST05")
@@ -122,7 +115,7 @@ def test_update_creates_new_instance():
 def test_update_rejects_unknown_fields():
     """传入 MagnetItem 不存在的字段时，update() 应返回 None"""
     store = InMemoryItemStore()
-    item = _make_item("TEST06")
+    item = make_item("TEST06")
     store.add(item)
 
     result = store.update("TEST06", not_a_field="value")
@@ -137,7 +130,7 @@ def test_update_rejects_unknown_fields():
 def test_update_multiple_fields_atomic():
     """同时更新多个字段时，如果任一字段非法，全部不应生效"""
     store = InMemoryItemStore()
-    item = _make_item("TEST07")
+    item = make_item("TEST07")
     store.add(item)
 
     # 尝试同时更新合法和非法字段

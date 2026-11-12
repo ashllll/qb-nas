@@ -14,6 +14,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from tests.fixtures import make_qbit_config
+
 from magnet_harvester.config import QBitConfig
 from magnet_harvester.context.app_context import (
     AppContext,
@@ -63,7 +65,7 @@ class FakeSettings:
             raise ValueError("用户名不能为空")
         if not password:
             raise ValueError("密码不能为空")
-        return QBitConfig(host=host, username=username, password=password, fs_base_path="")
+        return make_qbit_config(host, username, password)
 
     def persist_qbit_config(self, config, env_path=None):
         if self.persist_raise is not None:
