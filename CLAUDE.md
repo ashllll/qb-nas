@@ -81,7 +81,7 @@ qb-nas/
 │   ├── services/ qbit_sync.py  ingest.py  site_auth.py  observability.py  user_actions.py  item_queries.py  stats.py  probe.py
 │   ├── context/ app_context.py
 │   └── utils/ auth.py  url_validator.py  serializers.py  bg_tasks.py  timeutil.py  infohash.py
-└── tests/                              # 107 个测试文件、825 个用例
+└── tests/                              # 107 个测试文件、821 个用例
 ```
 
 ## Development Commands

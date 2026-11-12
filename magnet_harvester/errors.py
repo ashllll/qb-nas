@@ -163,7 +163,3 @@ class ErrorHandler:
             count = len(self._errors)
             self._errors.clear()
         log.info(f"已清理 {count} 个错误记录")
-
-
-# Module-level singleton
-error_handler = ErrorHandler()

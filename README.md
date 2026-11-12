@@ -255,7 +255,7 @@ qb-nas/
 ├── doc/  docs/                # 历史规格、ADR、验收记录、assets/、本地工作区说明
 ├── LICENSE                    # MIT
 ├── scripts/                   # preflight.sh（本地闸门）、smoke_production.py
-├── tests/                     # 107 个测试文件、825 个用例（pytest + pytest-asyncio）
+├── tests/                     # 107 个测试文件、821 个用例（pytest + pytest-asyncio）
 └── .github/workflows/         # gates.yml：ruff/format/pytest+覆盖率、Docker 构建、mac 自测
 ```
 
@@ -273,7 +273,7 @@ bash scripts/preflight.sh         # uv lock --check + ruff + pytest --cov
 bash scripts/preflight.sh --fast  # 只跑 lint/format
 ```
 
-- 测试基线：`python -m pytest -q` → **825 passed**；覆盖率 **84.9%**（门槛 79%）；`ruff check` / `ruff format --check` 全绿。
+- 测试基线：`python -m pytest -q` → **821 passed**；覆盖率 **85.0%**（门槛 79%）；`ruff check` / `ruff format --check` 全绿。
 - CI：push `main` / `stage/**` 与 PR 到 `main` 时由 GitHub Actions 跑三个 job：测试与覆盖率、Docker 镜像构建、mac_agent Swift 自测（runner 内建 `.venv` 与 Chromium）。
 - 真实链路验证：`deploy/verify.sh`（容器/挂载/配置/自愈）与 `scripts/smoke_production.py`（真 qB、真站点）；自动化测试不能替代它们。
 

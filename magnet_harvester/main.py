@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
     qbit_ok = False
     try:
         qbit_ok = await asyncio.wait_for(runtime.ctx.core.qbit.ping(), timeout=3.0)
-    except (asyncio.TimeoutError, Exception):
+    except Exception:
         log.warning("qBittorrent 连接检查失败（降级运行：入库照常，手动下载需 qB 在线）")
 
     disk_info = settings.check_disk_space()

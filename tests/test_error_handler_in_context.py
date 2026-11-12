@@ -78,14 +78,11 @@ def test_appcontext_accepts_error_handler():
 
 
 def test_no_module_level_error_handler_global():
-    """error_handler exists at module level for assembly injection, but should NOT be imported by route/service modules.
-    Routes access it through AppContext (ctx.runtime.error_handler), not directly from errors module.
-    """
+    """No module-level singleton: build_runtime() creates and wires its own instance."""
     import magnet_harvester.errors as err_mod
 
-    # Module-level singleton exists for assembly wiring (assembly.py → AppContext → routes via Depends)
-    assert hasattr(err_mod, "error_handler"), (
-        "Module-level error_handler singleton required — assembly.py wires it into AppContext"
+    assert not hasattr(err_mod, "error_handler"), (
+        "errors module must not expose a singleton — assembly should construct ErrorHandler"
     )
 
 
