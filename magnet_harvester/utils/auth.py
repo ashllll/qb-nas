@@ -36,7 +36,7 @@ import secrets
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
-from fastapi import Header, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 
 from magnet_harvester.config import settings
 
@@ -278,7 +278,7 @@ def cross_origin_payload() -> dict[str, str]:
     }
 
 
-async def require_api_key(request: Request, x_api_key: str | None = Header(None)) -> None:
+async def require_api_key(request: Request) -> None:
     """写接口的授权依赖：Host/Origin 先过，再按模式决定要不要 key。
 
     信任模式（默认）：不带 key 放行；带正确 key 放行；带错 key 也不阻断——

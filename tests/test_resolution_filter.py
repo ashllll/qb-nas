@@ -73,6 +73,26 @@ def test_mixed():
     assert "4444444444444444444444444444444444444444" in hashes
 
 
+def test_keep_magnet_without_display_name():
+    """没有 dn 时无法判断分辨率，宁可保留也不静默丢掉。"""
+    items = [parse_magnet("magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+
+    filtered = filter_resolution_items(items, allowed=("2160p", "4k"))
+
+    assert filtered == items
+
+
+def test_drop_only_known_non_preferred_resolution():
+    items = [
+        parse_magnet("magnet:?xt=urn:btih:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"),
+        parse_magnet("magnet:?xt=urn:btih:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC&dn=Movie.1080p"),
+    ]
+
+    filtered = filter_resolution_items(items, allowed=("2160p", "4k"))
+
+    assert [item["hash"] for item in filtered] == ["BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"]
+
+
 def test_empty():
     assert filter_resolution_items([]) == []
 

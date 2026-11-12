@@ -89,12 +89,16 @@ def test_level_set_correctly():
 
     configure_logging(level="DEBUG")
     assert root.level == logging.DEBUG
+    console = next(h for h in root.handlers if isinstance(h, logging.StreamHandler))
+    assert console.level == logging.DEBUG, "控制台应跟随 LOG_LEVEL，而不是写死 INFO"
 
     # Reset and test WARNING
     for h in list(root.handlers):
         root.removeHandler(h)
     configure_logging(level="WARNING")
     assert root.level == logging.WARNING
+    console = next(h for h in root.handlers if isinstance(h, logging.StreamHandler))
+    assert console.level == logging.WARNING
 
 
 def test_redacting_access_formatter_masks_api_key():

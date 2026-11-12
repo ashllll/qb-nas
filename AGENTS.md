@@ -126,7 +126,7 @@ qb-nas/
 │   ├── services/ ingest.py  qbit_sync.py  site_auth.py  observability.py  user_actions.py  item_queries.py  stats.py  probe.py
 │   ├── context/app_context.py
 │   └── utils/ auth.py  url_validator.py  serializers.py  bg_tasks.py  timeutil.py  infohash.py
-└── tests/                              # 111 个测试文件、890 个用例
+└── tests/                              # 111 个测试文件、903 个用例
 ```
 
 ## Configuration
@@ -168,7 +168,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 
 - **Framework**: pytest + pytest-asyncio (`asyncio_mode = auto` in `pyproject.toml`)
 - **Test doubles**: `InMemoryItemStore` for store, `NullBus` for bus, manual `AppContext` for DI
-- **111 个测试文件、890 个用例** 覆盖：URL 校验/SSRF、aria2 桥接与旧 qB 辅助模块（transport、paths、submitter、sync、mapper）、爬虫调度与单页抓取、分类规则链、状态转换/事件、API 鉴权/路由、WebSocket 广播与反压、Mac Agent ingest、存储查询
+- **111 个测试文件、903 个用例** 覆盖：URL 校验/SSRF、aria2 桥接与旧 qB 辅助模块（transport、paths、submitter、sync、mapper）、爬虫调度与单页抓取、分类规则链、状态转换/事件、API 鉴权/路由、WebSocket 广播与反压、Mac Agent ingest、存储查询
 - **生产链路验证**: 自动化测试（pytest 全绿）≠ 生产验收。真实站点/下载中心/NAS 链路验证用 `scripts/smoke_production.py`（可选，见 `docs/verification.md`），两者不可互相替代
 - **机器闸门**: `scripts/preflight.sh` 跑 `uv lock --check` + `ruff check` + `ruff format --check` + `pytest --cov`（覆盖率门槛 79%）；`npm run check` 等价。CI 还构建 Docker 镜像并对 mac_agent 跑 Swift 自测
 

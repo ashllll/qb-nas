@@ -27,6 +27,8 @@
       // hash -> 最新已知 updated_at（epoch ms），用于丢弃延迟到达的旧事件。
       // 用数值比较而不是字符串比较：带不同偏移（Z / +08:00）的 ISO 串字典序会骗人。
       this.seenAt = new Map();
+      // hash -> 删除发生的 epoch ms。保留墓碑，否则删除后迟到的旧事件会把条目复活。
+      this.removedAt = new Map();
       this.parseTime = parseTime || ((value) => (global.MagnetTime ? global.MagnetTime.parse(value) : Date.parse(value)));
     }
 
@@ -43,6 +45,7 @@
       this.items.clear();
       this.selected.clear();
       this.seenAt.clear();
+      this.removedAt.clear();
       this.upsertMany(items);
       keep.forEach((hash) => {
         if (this.items.has(hash)) this.selected.add(hash);
@@ -56,6 +59,12 @@
     upsert(item) {
       if (!item || !item.hash) return false;
       const version = this.versionOf(item);
+      const removed = this.removedAt.get(item.hash);
+      if (Number.isFinite(removed)) {
+        // 删除后只接受严格更新的版本；没有时间戳的旧格式事件一律丢弃。
+        if (!Number.isFinite(version) || version <= removed) return false;
+        this.removedAt.delete(item.hash);
+      }
       if (Number.isFinite(version)) {
         const prev = this.seenAt.get(item.hash);
         if (Number.isFinite(prev) && version < prev) return false;
@@ -73,13 +82,16 @@
       this.items.clear();
       this.selected.clear();
       this.seenAt.clear();
+      this.removedAt.clear();
     }
 
-    /* 单条删除（服务端 item_removed）：条目与勾选一起消失。 */
-    remove(hash) {
+    /* 单条删除（服务端 item_removed）：条目与勾选一起消失。
+       墓碑时间取删除时刻，用来挡住已经在路上的旧事件。 */
+    remove(hash, at = Date.now()) {
       if (!hash) return false;
       this.selected.delete(hash);
       this.seenAt.delete(hash);
+      this.removedAt.set(hash, at);
       return this.items.delete(hash);
     }
 

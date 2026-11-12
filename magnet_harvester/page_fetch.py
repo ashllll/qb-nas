@@ -32,6 +32,18 @@ log = logging.getLogger(__name__)
 # 5 跳足够覆盖常见短链/登录跳转；再多属于异常站点。
 _MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_DISABLE_SERVICE_WORKER_SCRIPT = """
+(() => {
+  try {
+    Object.defineProperty(Navigator.prototype, "serviceWorker", {
+      configurable: true,
+      get: () => undefined,
+    });
+  } catch (error) {
+    /* 个别浏览器不允许改写原型；禁用失败时保留页面可用的兜底。 */
+  }
+})();
+"""
 
 
 class FailureReason(str, Enum):
@@ -270,17 +282,20 @@ class PageFetcher:
         ``browser_first`` 用于已经确认整站要 JS 的场景，跳过必输的 HTTP 快失败。
         """
         host = (urlparse(url).hostname or "").lower()
-        async with self._slot(host):
-            if browser_first and allow_browser:
+        if browser_first and allow_browser:
+            async with self._slot(host):
                 return await self._browser_fetch(url)
-            page = await self._http_fetch(url)
-            if not allow_browser or not self._should_escalate(page):
-                return page
-            log.info("HTTP 未拿到内容，升级浏览器: %s (%s)", url, page.reason or "js_shell")
-            browser_page = await self._browser_fetch(url)
-            if browser_page.ok or not page.ok:
-                return browser_page
+        page = await self._http_fetch(url)
+        if not allow_browser or not self._should_escalate(page):
             return page
+        log.info("HTTP 未拿到内容，升级浏览器: %s (%s)", url, page.reason or "js_shell")
+        # 浏览器那一段单独占槽；HTTP 链按每一跳自己的 host 占槽，跨站重定向才不会
+        # 让目标站无限流，也不会出现 A 等 B、B 等 A 的死锁。
+        async with self._slot(host):
+            browser_page = await self._browser_fetch(url)
+        if browser_page.ok or not page.ok:
+            return browser_page
+        return page
 
     def _slot(self, host: str) -> asyncio.Semaphore:
         slot = self._host_slots.get(host)
@@ -328,14 +343,15 @@ class PageFetcher:
         redirects = 0
         while True:
             host = (urlparse(current).hostname or "").lower()
-            await self._limiter.wait(host)
-            try:
-                session = await self._ensure_http()
-                response = await session.get(
-                    current, timeout=self._config.timeout, follow_redirects=False
-                )
-            except Exception as exc:
-                return self._failure_from_exception(current, exc, started)
+            async with self._slot(host):
+                await self._limiter.wait(host)
+                try:
+                    session = await self._ensure_http()
+                    response = await session.get(
+                        current, timeout=self._config.timeout, follow_redirects=False
+                    )
+                except Exception as exc:
+                    return self._failure_from_exception(current, exc, started)
 
             status = int(getattr(response, "status", 0) or 0)
             if status not in _REDIRECT_STATUSES:
@@ -500,6 +516,15 @@ class PageFetcher:
             await route.continue_()
 
         await page.route("**/*", _route_handler)
+        context = getattr(page, "context", None)
+        add_init_script = getattr(context, "add_init_script", None)
+        if callable(add_init_script):
+            try:
+                # 浏览器 WS 不在 route 准入范围；Service Worker 能绕开页面级路由，
+                # 这里在文档脚本前把 navigator.serviceWorker 拿掉，阻止新注册。
+                await add_init_script(_DISABLE_SERVICE_WORKER_SCRIPT)
+            except Exception as exc:
+                log.warning("禁用 Service Worker 失败 %s: %s", page, exc)
 
     async def _admit_browser_target(self, admission: Any, target: str) -> None:
         parsed = urlparse(target)

@@ -21,6 +21,9 @@ const ICON_SYMBOLS = {
 
 const itemState = new MagnetItemState();
 const { items, selected } = itemState;
+// 一页最多 200 行：50k 资源时整表 innerHTML 要 4s、每条事件 4.7s；分页后首屏与单事件都回到十几毫秒。
+const PAGE_SIZE = 200;
+let currentPage = 1;
 const apiClient = new MagnetApiClient({
   onUnauthorized: (error) => handleUnauthorized(error),
   onNetworkError: (error) => handleNetworkFailure(error),
@@ -276,6 +279,7 @@ function handleMsg(msg) {
       const reconnected = wsWasConnected;
       wsWasConnected = true;
       itemState.reset(msg.items || []);
+      resetPage();
       renderTable();
       setWsState("online", "已连接");
       if (reconnected) {
@@ -382,6 +386,7 @@ function handleMsg(msg) {
     }
     case "items_cleared":
       itemState.clear();
+      resetPage();
       renderTable();
       addLog(
         Number(msg.count) > 0 ? `资源库已清空（${msg.count} 条）` : "资源库已清空",
@@ -782,6 +787,35 @@ function itemTime(item) {
   return stamp ? MagnetTime.parse(stamp) : NaN;
 }
 
+function pageCountOf(total) {
+  return Math.max(1, Math.ceil(total / PAGE_SIZE));
+}
+
+function resetPage() {
+  currentPage = 1;
+}
+
+function renderPagination(total) {
+  const pager = document.getElementById("pagination");
+  if (!pager) return;
+  const pages = pageCountOf(total);
+  pager.hidden = total <= PAGE_SIZE;
+  if (pager.hidden) return;
+  document.getElementById("pageInfo").textContent =
+    `第 ${currentPage} / ${pages} 页 · 共 ${total} 条`;
+  document.getElementById("prevPageBtn").disabled = currentPage <= 1;
+  document.getElementById("nextPageBtn").disabled = currentPage >= pages;
+}
+
+function goToPage(page) {
+  const next = Math.min(Math.max(1, page), pageCountOf(visibleItems().length));
+  if (next === currentPage) return;
+  currentPage = next;
+  renderTable();
+  const shell = document.querySelector(".table-shell");
+  if (shell) shell.scrollTop = 0;
+}
+
 function rowHtml(item) {
   const status = item.status || "pending";
   const statusText = statusLabel(status);
@@ -815,7 +849,11 @@ const STATUS_FILTER_LABELS = {
 
 function renderTable() {
   const rows = visibleItems();
-  document.getElementById("tbody").innerHTML = rows.map(rowHtml).join("");
+  const pages = pageCountOf(rows.length);
+  if (currentPage > pages) currentPage = pages;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = rows.slice(start, start + PAGE_SIZE);
+  document.getElementById("tbody").innerHTML = pageRows.map(rowHtml).join("");
   const empty = document.getElementById("emptyState");
   empty.style.display = rows.length ? "none" : "grid";
   const statusNote =
@@ -829,6 +867,7 @@ function renderTable() {
     ? `没有${statusNote}符合条件的资源；调整搜索词、分类或状态筛选后重试。`
     : "在 Mac 上复制磁力或网址，或从左侧提交网址采集。";
   renderFilterIndicator();
+  renderPagination(rows.length);
   updateCounts();
   initIcons();
 }
@@ -850,6 +889,7 @@ function renderFilterIndicator() {
 
 function setStatusFilter(bucket) {
   itemState.setStatusFilter(bucket);
+  resetPage();
   document.querySelectorAll(".stat[data-status]").forEach((card) => {
     card.setAttribute(
       "aria-pressed",
@@ -861,6 +901,7 @@ function setStatusFilter(bucket) {
 
 function setFilter(category) {
   itemState.setFilter(category);
+  resetPage();
   document
     .querySelectorAll(".filter-tab")
     .forEach((tab) =>
@@ -1900,6 +1941,7 @@ document.getElementById("urlInput").addEventListener("keydown", (event) => {
 });
 document.getElementById("searchInput").addEventListener("input", (event) => {
   itemState.setQuery(event.target.value);
+  resetPage();
   renderTable();
 });
 document.addEventListener("keydown", (event) => {

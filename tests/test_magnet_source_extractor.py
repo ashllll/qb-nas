@@ -16,3 +16,15 @@ def test_magnet_source_extractor_applies_source_policy():
 
     assert [item["hash"] for item in page_items] == ["BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"]
     assert page_items[0]["source_url"] == "https://example.com/details/1"
+
+
+def test_magnet_source_extractor_keeps_magnet_without_dn():
+    extractor = MagnetSourceExtractor(allowed_resolutions=("2160p",))
+
+    page_items = extractor.from_html(
+        "magnet:?xt=urn:btih:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        source_url="https://example.com/details/2",
+    )
+
+    assert [item["hash"] for item in page_items] == ["CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"]
+    assert "has_dn" not in page_items[0]

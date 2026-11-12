@@ -200,6 +200,27 @@ def test_parse_magnet_preserves_literal_spaces_in_dn():
     assert item["name"] == "Example Movie 2160p WEB-DL"
 
 
+def test_parse_magnet_only_takes_size_from_query_params():
+    """dn 里的 "xl=" 只是文件名的一部分，不能当成尺寸参数。"""
+    item = parse_magnet(
+        "magnet:?xt=urn:btih:1234567890ABCDEF1234567890ABCDEF12345678&dn=Movie.xl=999&xl=1024"
+    )
+
+    assert item is not None
+    assert item["name"] == "Movie.xl=999"
+    assert item["size"] == "1024"
+
+
+def test_parse_magnet_marks_missing_display_name():
+    """没有 dn 的磁力要标记出来，过滤层才不会把它误删。"""
+    item = parse_magnet("magnet:?xt=urn:btih:1234567890ABCDEF1234567890ABCDEF12345678")
+
+    assert item is not None
+    assert item["has_dn"] is False
+    assert item["name"].startswith("Unknown_")
+    assert item["size"] is None
+
+
 def test_extract_from_crawler_markdown():
     """模拟爬虫的 markdown 输出格式
 

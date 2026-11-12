@@ -110,6 +110,22 @@ async def test_frontend_loads_css_and_javascript_as_local_modules(static_server_
             "left": ["KEEP"],
             "removeMissing": False,
         }
+        assert await page.evaluate(
+            """
+            () => {
+              const state = new MagnetItemState();
+              state.reset([{hash: 'X', name: 'Before', updated_at: '2026-01-02T00:00:00Z'}]);
+              state.remove('X', Date.parse('2026-01-03T00:00:00Z'));
+              const stale = state.upsert({
+                hash: 'X', name: 'Stale', updated_at: '2026-01-02T12:00:00Z'
+              });
+              const fresh = state.upsert({
+                hash: 'X', name: 'Fresh', updated_at: '2026-01-04T00:00:00Z'
+              });
+              return {stale, fresh, name: state.items.get('X')?.name};
+            }
+            """
+        ) == {"stale": False, "fresh": True, "name": "Fresh"}
         assert await page.evaluate("() => typeof window.handleMsg") == "function"
         categories = await page.locator("[data-cat]").evaluate_all(
             "elements => elements.map((element) => element.dataset.cat)"
@@ -294,4 +310,106 @@ async def test_frontend_transport_and_item_state_behave_through_browser(static_s
         download = next(request for request in requests if request["url"].endswith("/api/download"))
         assert download["body"] == {"hashes": ["MOVIE"]}
         assert console_problems == []
+        await browser.close()
+
+
+@pytest.mark.asyncio
+async def test_frontend_paginates_large_library_and_resets_on_filter(static_server_url):
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.add_init_script(
+            """
+            window.WebSocket = class {
+              constructor() { setTimeout(() => this.onopen?.(), 0); }
+              send() {}
+              close() {}
+            };
+            """
+        )
+        await page.route(
+            "**/api/**",
+            lambda route: route.fulfill(status=200, content_type="application/json", body="{}"),
+        )
+        await page.goto(static_server_url, wait_until="domcontentloaded")
+        await page.evaluate(
+            """
+            () => {
+              const items = Array.from({length: 250}, (_, index) => ({
+                hash: 'H' + String(index).padStart(3, '0'),
+                name: 'Item ' + String(index).padStart(3, '0'),
+                status: 'pending',
+                category: '电影',
+              }));
+              handleMsg({type: 'init', items});
+            }
+            """
+        )
+
+        assert await page.locator("#tbody tr").count() == 200
+        assert await page.locator("#pageInfo").inner_text() == "第 1 / 2 页 · 共 250 条"
+        assert "Item 000" in await page.locator("#tbody").inner_text()
+        assert "Item 249" not in await page.locator("#tbody").inner_text()
+
+        await page.locator("#nextPageBtn").click()
+        assert await page.locator("#tbody tr").count() == 50
+        assert "Item 249" in await page.locator("#tbody").inner_text()
+        assert "Item 000" not in await page.locator("#tbody").inner_text()
+
+        await page.evaluate("() => setFilter('电影')")
+        assert await page.evaluate("() => currentPage") == 1
+        assert await page.locator("#tbody tr").count() == 200
+
+        await page.locator("#nextPageBtn").click()
+        await page.locator("#searchInput").fill("Item 249")
+        assert await page.evaluate("() => currentPage") == 1
+        assert await page.locator("#tbody tr").count() == 1
+        assert "Item 249" in await page.locator("#tbody").inner_text()
+        assert not await page.locator("#pagination").is_visible()
+
+        await page.locator("#searchInput").fill("")
+        assert await page.locator("#tbody tr").count() == 200
+        await browser.close()
+
+
+@pytest.mark.asyncio
+async def test_frontend_api_timeout_is_reported_as_timeout(static_server_url):
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.add_init_script(
+            """
+            window.WebSocket = class {
+              constructor() { setTimeout(() => this.onopen?.(), 0); }
+              send() {}
+              close() {}
+            };
+            """
+        )
+        await page.route(
+            "**/api/**",
+            lambda route: route.fulfill(status=200, content_type="application/json", body="{}"),
+        )
+        await page.goto(static_server_url, wait_until="domcontentloaded")
+        result = await page.evaluate(
+            """
+            async () => {
+              window.fetch = (url, options) => new Promise((resolve, reject) => {
+                options.signal.addEventListener('abort', () =>
+                  reject(new DOMException('Aborted', 'AbortError'))
+                );
+              });
+              const error = await new MagnetApiClient({timeoutMs: 20})
+                .fetch('/api/never')
+                .catch((cause) => cause);
+              return {code: error.code, status: error.status, message: error.message};
+            }
+            """
+        )
+
+        assert result == {
+            "code": "request_timeout",
+            "status": 0,
+            "message": "NAS 响应超时",
+        }
         await browser.close()

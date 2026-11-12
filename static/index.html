@@ -478,6 +478,25 @@
             </div>
           </div>
         </div>
+        <div class="pagination" id="pagination" hidden>
+          <span class="page-info" id="pageInfo" aria-live="polite"></span>
+          <button
+            class="button"
+            id="prevPageBtn"
+            type="button"
+            onclick="goToPage(currentPage - 1)"
+          >
+            上一页
+          </button>
+          <button
+            class="button"
+            id="nextPageBtn"
+            type="button"
+            onclick="goToPage(currentPage + 1)"
+          >
+            下一页
+          </button>
+        </div>
       </section>
 
       <aside class="inspector">

@@ -41,15 +41,15 @@
     },
     502: {
       code: "upstream_unavailable",
-      hint: "服务暂时不可用（可能 qBittorrent 或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
+      hint: "服务暂时不可用（可能 下载中心或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
     },
     503: {
       code: "service_unavailable",
-      hint: "服务暂时不可用（可能 qBittorrent 或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
+      hint: "服务暂时不可用（可能 下载中心或采集服务离线）。稍等再试；持续出现请查 NAS 日志。",
     },
     504: {
       code: "upstream_timeout",
-      hint: "上游超时。检查 qBittorrent 是否在线，稍后重试。",
+      hint: "上游超时。检查下载中心桥接是否在线，稍后重试。",
     },
   };
 
@@ -107,9 +107,10 @@
   }
 
   class MagnetApiClient {
-    constructor({ onUnauthorized = () => {}, onNetworkError = () => {} } = {}) {
+    constructor({ onUnauthorized = () => {}, onNetworkError = () => {}, timeoutMs = 10000 } = {}) {
       this.onUnauthorized = onUnauthorized;
       this.onNetworkError = onNetworkError;
+      this.timeoutMs = timeoutMs;
       this.requestCount = 0;
       this.lastRequestAt = 0;
     }
@@ -120,26 +121,56 @@
       return { ...extra };
     }
 
+    /* 网络层失败统一出口：超时与连不上分开说，页面不会把「NAS 卡住」画成「网络断了」。 */
+    _networkError(cause, timedOut, timeoutMs) {
+      const error = new ApiError({
+        status: 0,
+        code: timedOut ? "request_timeout" : "network_unreachable",
+        detail: timedOut ? "NAS 响应超时" : "连不上 NAS",
+        hint: timedOut
+          ? `请求超过 ${timeoutMs} 毫秒没有响应；检查 NAS 是否繁忙或网络是否中断，稍后重试。`
+          : `检查 NAS 是否在线、${global.location.host || "服务地址"} 是否可达；网络恢复后页面会自动重连。`,
+        cause,
+      });
+      this.onNetworkError(error);
+      return error;
+    }
+
     async fetch(url, options = {}) {
+      const { timeoutMs = this.timeoutMs, signal, ...rest } = options;
+      const controller = new AbortController();
+      let timedOut = false;
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              timedOut = true;
+              controller.abort();
+            }, timeoutMs)
+          : null;
+      if (signal) {
+        if (signal.aborted) controller.abort();
+        else signal.addEventListener("abort", () => controller.abort(), { once: true });
+      }
       let response;
       try {
         response = await global.fetch(url, {
-          ...options,
-          headers: this.headers(options.headers || {}),
+          ...rest,
+          headers: this.headers(rest.headers || {}),
+          signal: controller.signal,
         });
       } catch (cause) {
-        const error = new ApiError({
-          status: 0,
-          code: "network_unreachable",
-          detail: "连不上 NAS",
-          hint: `检查 NAS 是否在线、${global.location.host || "服务地址"} 是否可达；网络恢复后页面会自动重连。`,
-          cause,
-        });
-        this.onNetworkError(error);
-        throw error;
+        if (timer) clearTimeout(timer);
+        throw this._networkError(cause, timedOut, timeoutMs);
       }
 
-      const text = await response.text();
+      let text;
+      try {
+        text = await response.text();
+      } catch (cause) {
+        if (timer) clearTimeout(timer);
+        throw this._networkError(cause, timedOut, timeoutMs);
+      }
+      if (timer) clearTimeout(timer);
       let data = null;
       if (text) {
         try {

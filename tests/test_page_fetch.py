@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -48,6 +49,8 @@ class FakeHttpSession:
     async def get(self, url: str, timeout: float | None = None, follow_redirects: bool = True):
         self.calls.append({"url": url, "timeout": timeout, "follow_redirects": follow_redirects})
         result = self.responder(url)
+        if inspect.isawaitable(result):
+            result = await result
         if isinstance(result, Exception):
             raise result
         return result
@@ -539,3 +542,53 @@ async def test_browser_fetch_respects_host_rate_limiter():
     await fetcher.fetch("https://site.test/a", browser_first=True)
     await fetcher.fetch("https://site.test/b", browser_first=True)
     assert limiter.waits == ["site.test", "site.test"]
+
+
+@pytest.mark.asyncio
+async def test_cross_site_redirect_holds_the_target_host_slot():
+    """A 跳到 B 时，B 的并发槽要真的被占住，不能只算首跳。"""
+    started_b = asyncio.Event()
+    release_b = asyncio.Event()
+
+    async def responder(url: str):
+        if url == "https://a.test/start":
+            return FakeResponse(302, "", url=url, headers={"location": "https://b.test/final"})
+        if url == "https://b.test/final":
+            started_b.set()
+            await release_b.wait()
+            return FakeResponse(200, "<html>final</html>", url=url)
+        return FakeResponse(200, "<html>other</html>", url=url)
+
+    fetcher, _, _, _ = make_fetcher(responder, per_host_concurrency=1)
+    first = asyncio.create_task(fetcher.fetch("https://a.test/start"))
+    await asyncio.wait_for(started_b.wait(), timeout=1)
+
+    second = asyncio.create_task(fetcher.fetch("https://b.test/other"))
+    await asyncio.sleep(0.05)
+    assert not second.done(), "B 站的槽被重定向请求占着，第二条应排队"
+
+    release_b.set()
+    pages = await asyncio.wait_for(asyncio.gather(first, second), timeout=1)
+    assert all(page.ok for page in pages)
+
+
+class ScriptRecordingPage(RecordingPage):
+    def __init__(self) -> None:
+        super().__init__()
+        self.scripts: list[str] = []
+        self.context = SimpleNamespace(add_init_script=self._record_script)
+
+    async def _record_script(self, script: str) -> None:
+        self.scripts.append(script)
+
+
+@pytest.mark.asyncio
+async def test_browser_page_setup_disables_service_worker_registration():
+    fetcher, _, _, _ = make_fetcher(lambda url: FakeResponse(200, "<html>ok</html>"))
+    fetcher._target_admission = SimpleNamespace()
+    page = ScriptRecordingPage()
+
+    await fetcher._guard_page_setup(page)
+
+    assert page.handler is not None
+    assert page.scripts and "serviceWorker" in page.scripts[0]

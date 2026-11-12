@@ -126,7 +126,7 @@ All settings live in `.env` (see `.env.example`). Key categories:
 **Crawler (`crawler.py` + `page_fetch.py` + `site_walker.py`):**
 
 - `MagnetPageWalker.stream()` is the multi-page scheduling entry (queue, concurrency, per-domain throttle, retry, depth, dedup); `PageFetcher` is HTTP-first with browser fallback
-- `CrawlTargetAdmission` runs at seed/discovered URLs, before every HTTP redirect hop (`follow_redirects=False`), and on browser navigation/subresource requests（浏览器同一 origin 只准入一次）；浏览器 WebSocket/Service Worker 流量目前不在准入范围内
+- `CrawlTargetAdmission` runs at seed/discovered URLs, before every HTTP redirect hop (`follow_redirects=False`), and on browser navigation/subresource requests（浏览器同一 origin 只准入一次）；页面初始化时注入脚本禁用 Service Worker 注册（防止绕过 Playwright 路由），但浏览器 WebSocket 流量不在 route 准入范围内，属已知残余风险
 - `MagnetSourceExtractor` handles magnet business parsing; resolution filtering keeps `CRAWLER_ALLOWED_RESOLUTIONS`
 
 **Classifier (`classifier/local_classifier.py`):**

@@ -17,8 +17,9 @@ robots.txt、动态浏览器会话和流式结果。项目只保留 URL 安全�
 - Scrapling `AsyncDynamicSession` 负责动态页面加载，项目通过 `page_action` 执行业务所需的
   滚动、弹窗移除、iframe 和 Shadow DOM 展平。
 - `CrawlTargetAdmission` 必须在种子 URL、跟进 URL和最终响应 URL处执行。
-- Scrapling 浏览器导航、重定向、子资源和 WebSocket 请求必须在实际发出前执行网络准入，
-  并禁用可绕过 Playwright 路由的 Service Worker。
+- Scrapling 浏览器导航、重定向和子资源请求必须在实际发出前执行网络准入（同一 origin
+  只准入一次），并在页面初始化时注入脚本禁用 Service Worker 注册，避免绕过 Playwright 路由。
+- 浏览器 WebSocket 流量不经过 Playwright route，当前不作为准入覆盖项，属于已记录的残余风险。
 - `MagnetSourceExtractor` 继续负责磁力业务解析，不复制到 Spider 框架内部。
 
 ## 配置映射

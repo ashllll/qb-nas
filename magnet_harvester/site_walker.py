@@ -256,14 +256,17 @@ class MagnetPageWalker:
             return
         probe_url, rest = failed[0], failed[1:]
         probe = await self._fetch(probe_url, force_browser=True)
-        yield probe.as_event()
         if not probe.ok:
+            # 原失败已经在第一轮报过；探测再失败不重复报同一个错误。
             return
+        yield probe.as_event()
         self._browser_all = True
         if not rest:
             return
         async for page in self._fetch_many(rest):
-            yield page.as_event()
+            # 重取仍失败的页面同样不重复报错，只补发真正救回来的页面。
+            if page.ok:
+                yield page.as_event()
 
     async def _fetch_one(self, url: str) -> WalkerPage:
         try:

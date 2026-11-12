@@ -353,3 +353,50 @@ async def test_static_page_without_detail_links_is_not_refetched():
     assert len(events) == 1
     assert events[0]["detail_links"] == 0
     assert fetcher.calls == [root]
+
+
+@pytest.mark.asyncio
+async def test_failed_browser_rescue_does_not_repeat_errors():
+    """整轮失败后的浏览器探测也失败时，原始错误已经报过，不能再来一遍。"""
+    root = "https://site.test/torrents/search/4/x"
+    details = [f"https://site.test/torrents/details/{i}" for i in (101, 102, 103)]
+    pages = {root: ok(root, LIST_HTML)}
+    pages.update(
+        {
+            url: PageFetch(url=url, status=404, reason=FailureReason.HTTP_ERROR, message="HTTP 404")
+            for url in details
+        }
+    )
+
+    events = [event async for event in make_walker(FakeFetcher(pages)).stream()]
+
+    assert [event["url"] for event in events] == [root, *details]
+    assert all(event["reason"] == "http_error" for event in events[1:])
+
+
+@pytest.mark.asyncio
+async def test_browser_rescue_only_yields_pages_it_actually_saved():
+    """探测成功后就地开浏览器，只补发真正救回来的页面。"""
+    root = "https://site.test/torrents/search/4/x"
+    details = [f"https://site.test/torrents/details/{i}" for i in (101, 102, 103)]
+    pages = {root: ok(root, LIST_HTML)}
+    pages.update(
+        {
+            url: PageFetch(url=url, status=404, reason=FailureReason.HTTP_ERROR, message="HTTP 404")
+            for url in details
+        }
+    )
+    browser_pages = {
+        details[0]: PageFetch(url=details[0], status=200, html="magnet a", via="browser"),
+        details[2]: PageFetch(url=details[2], status=200, html="magnet c", via="browser"),
+    }
+    fetcher = FakeFetcher(pages, browser_pages=browser_pages)
+
+    events = [event async for event in make_walker(fetcher).stream()]
+
+    rescued = [event["url"] for event in events if event["success"]]
+    assert rescued == [root, details[0], details[2]]
+    assert sum(1 for event in events if event["url"] == details[1]) == 1, (
+        "102 浏览器也没救回来，只保留第一轮的错误"
+    )
+    assert all(fetcher.calls.count(url) == 2 for url in details)

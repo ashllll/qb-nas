@@ -34,8 +34,6 @@ MAGNET_RE = re.compile(
 
 HASH_RE = re.compile(rf"btih:({BTIH_VALUE_PATTERN})(?![a-zA-Z0-9])", re.IGNORECASE)
 
-SIZE_RE = re.compile(r"(?:xl|size)=(\d+)", re.IGNORECASE)
-
 BASE64_MAGNET_RE = re.compile(
     r"bWFnbmV0[a-zA-Z0-9+/]{10,250}={0,2}",
     re.IGNORECASE,
@@ -88,18 +86,32 @@ def parse_magnet(raw_raw: str) -> Optional[dict]:
         log.warning("磁力里的 btih 无法归一化，按无效磁力处理: %r", m.group(1)[:64])
         return None
 
-    dn_match = re.search(r"[?&]dn=([^&]+)", decoded)
-    name = urllib.parse.unquote(dn_match.group(1)) if dn_match else f"Unknown_{btih[:8]}"
-
-    xl_match = SIZE_RE.search(decoded)
-    size = xl_match.group(1) if xl_match else None
+    # 只从查询参数里取 dn/xl：之前在整串里 search，文件名的 "xl=" 子串也会被当成大小。
+    dn_raw = _query_param(decoded, "dn")
+    name = dn_raw if dn_raw else f"Unknown_{btih[:8]}"
+    size = _query_param(decoded, "xl") or _query_param(decoded, "size") or None
 
     return {
         "hash": btih,
         "name": name,
         "magnet": raw,  # keep original encoding
         "size": size,
+        # 没有 dn 的磁力无法判断分辨率；过滤层据此保留它，而不是整条丢掉。
+        "has_dn": bool(dn_raw),
     }
+
+
+def _query_param(decoded: str, key: str) -> str:
+    """从磁力链接的 query 里取一个参数；值里的 + 保持原样（不按表单编码转空格）。"""
+    try:
+        query = urllib.parse.urlsplit(decoded).query
+    except ValueError:
+        query = decoded.partition("?")[2]
+    for pair in query.split("&"):
+        name, _, value = pair.partition("=")
+        if urllib.parse.unquote(name).strip().lower() == key:
+            return urllib.parse.unquote(value)
+    return ""
 
 
 def _clean_raw_magnet(raw: str) -> str:

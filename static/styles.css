@@ -625,6 +625,25 @@ button.status-chip:hover {
   position: relative;
   overflow: auto;
 }
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 38px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--space-2);
+}
+.pagination[hidden] {
+  display: none;
+}
+.page-info {
+  margin-right: auto;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
 table {
   width: 100%;
   table-layout: fixed;

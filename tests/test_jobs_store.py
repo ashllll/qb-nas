@@ -141,6 +141,26 @@ def test_find_active_by_url_reuses_running_job(tmp_path):
     assert store.find_active_by_url("https://example.com/other") is None
 
 
+def test_find_active_by_url_treats_slash_and_host_case_as_same(tmp_path):
+    store = JobStore(tmp_path / "jobs.db")
+    store.create(
+        _job("job-1", url="https://EXAMPLE.com:443/list/#comments", status=JobStatus.running)
+    )
+
+    for variant in (
+        "https://example.com/list",
+        "https://example.com/list/",
+    ):
+        assert store.find_active_by_url(variant) is not None, variant
+
+
+def test_find_active_by_url_keeps_query_strings_apart(tmp_path):
+    store = JobStore(tmp_path / "jobs.db")
+    store.create(_job("job-1", url="https://example.com/list?page=1", status=JobStatus.running))
+
+    assert store.find_active_by_url("https://example.com/list?page=2") is None
+
+
 def test_ingest_events_are_idempotent_records(tmp_path):
     store = JobStore(tmp_path / "jobs.db")
     store.record_event(

@@ -22,10 +22,31 @@ from datetime import timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from magnet_harvester.utils.timeutil import iso_utc, utc_now
 
 log = logging.getLogger(__name__)
+
+
+def _canonical_url(url: str) -> str:
+    """任务去重用的网址键：小写 scheme/host、去默认端口与 fragment、路径去尾部斜杠。"""
+    raw = (url or "").strip()
+    try:
+        parts = urlsplit(raw)
+        host = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError:
+        return raw
+    if not parts.scheme or not host:
+        return raw
+    netloc = f"[{host}]" if ":" in host else host
+    if port is not None and port != {"http": 80, "https": 443}.get(parts.scheme.lower()):
+        netloc = f"{netloc}:{port}"
+    path = parts.path or "/"
+    if path != "/":
+        path = path.rstrip("/") or "/"
+    return urlunsplit((parts.scheme.lower(), netloc, path, parts.query, ""))
 
 
 class JobStatus:
@@ -340,14 +361,21 @@ class JobStore:
         return [job for row in rows if (job := self._job_from_row(row)) is not None]
 
     def find_active_by_url(self, url: str) -> Optional[CrawlJob]:
-        """同一个网址已有排队/进行中的任务时复用它，避免重复抓取。"""
+        """同一个网址已有排队/进行中的任务时复用它，避免重复抓取。
+
+        比较归一化后的网址：/a 与 /a/、大小写主机名、默认端口都算同一个。
+        """
+        target = _canonical_url(url)
         with self._lock, self._connect() as db:
-            row = db.execute(
-                "SELECT * FROM crawl_jobs WHERE url = ? AND status IN (?, ?) "
-                "ORDER BY created_at DESC LIMIT 1",
-                (url, JobStatus.queued, JobStatus.running),
-            ).fetchone()
-        return self._job_from_row(row)
+            rows = db.execute(
+                "SELECT * FROM crawl_jobs WHERE status IN (?, ?) ORDER BY created_at DESC",
+                JobStatus.ACTIVE,
+            ).fetchall()
+        for row in rows:
+            job = self._job_from_row(row)
+            if job is not None and _canonical_url(job.url) == target:
+                return job
+        return None
 
     def claim_resumable(self, max_attempts: int = 2) -> List[str]:
         """服务启动时调用：把中断的（queued/running）任务重新排上。

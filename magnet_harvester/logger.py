@@ -123,7 +123,8 @@ def configure_logging(
 
     # ── Console handler ──
     console = logging.StreamHandler(sys.stdout)
-    console.setLevel(logging.INFO)
+    # 控制台跟着 LOG_LEVEL 走；写死 INFO 会让 LOG_LEVEL=DEBUG 的排查看不到任何调试行。
+    console.setLevel(root.level)
     console.setFormatter(_ColorlessConsoleFormatter())
     root.addHandler(console)
 
