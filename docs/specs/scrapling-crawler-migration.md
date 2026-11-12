@@ -1,6 +1,6 @@
 # Scrapling 全量爬虫迁移规格
 
-> **状态：已实现（2026-06）**。当前 `magnet_harvester/crawler.py` + `scrapling_spider.py` 已按本规格落地；本文件保留为规格记录。
+> **状态：部分被取代**。2026-06 按本规格落地；2026-11-01 的 HTTP-first 迁移删除了 `scrapling_spider.py`，调度改由 `site_walker.py` + `page_fetch.py` 承担（见 `docs/specs/2026-11-01-http-first-crawl.md`）。本文件保留为规格记录。
 
 ## 目标
 

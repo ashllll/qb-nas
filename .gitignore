@@ -62,8 +62,10 @@ test-results/
 .coverage
 .coverage.*
 
-# 代码分析缓存
+# 代码分析缓存与本地 MCP 配置（含机器绝对路径）
 .codegraph/
+.codebase-memory/
+.mcp.json
 
 # Agent 配置
 .reasonix/
