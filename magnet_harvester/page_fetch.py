@@ -21,13 +21,17 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Awaitable, Callable
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from scrapling.fetchers import AsyncDynamicSession, FetcherSession
 
 from magnet_harvester.config import CrawlerConfig
 
 log = logging.getLogger(__name__)
+
+# 5 跳足够覆盖常见短链/登录跳转；再多属于异常站点。
+_MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 class FailureReason(str, Enum):
@@ -124,6 +128,19 @@ def _looks_like_empty_shell(html: str) -> bool:
     return text_len < 400 and "<script" in lowered
 
 
+def _redirect_location(response: Any) -> str:
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return ""
+    try:
+        location = headers.get("location") or headers.get("Location")
+    except AttributeError:  # pragma: no cover - 非 mapping 的响应头
+        return ""
+    if isinstance(location, bytes):
+        return location.decode("latin-1", "replace")
+    return str(location or "")
+
+
 class PageFetcher:
     """HTTP 优先、按需升级浏览器的取页器（会话长期复用）。
 
@@ -171,7 +188,8 @@ class PageFetcher:
             # 这里固定 1（= 发一次），重试策略由本模块自己控制。
             retries=1,
             retry_delay=0,
-            follow_redirects=True,
+            # 重定向由 _http_fetch 逐跳处理：先准入下一跳，再发请求。
+            follow_redirects=False,
         )
 
     def _default_browser_factory(self) -> Any:
@@ -289,31 +307,11 @@ class PageFetcher:
     # ── HTTP 路径 ────────────────────────────
 
     async def _http_fetch(self, url: str) -> PageFetch:
-        host = (urlparse(url).hostname or "").lower()
         attempts = max(0, int(self._config.max_retries)) + 1
         last: PageFetch | None = None
         for attempt in range(attempts):
-            await self._limiter.wait(host)
             started = time.monotonic()
-            try:
-                session = await self._ensure_http()
-                response = await session.get(url, timeout=self._config.timeout)
-            except Exception as exc:
-                last = self._failure_from_exception(url, exc, started)
-            else:
-                last = self._page_from_response(url, response, started)
-                if last.url and last.url != url and self._target_admission is not None:
-                    try:
-                        await self._target_admission.admit(last.url)
-                    except Exception as exc:
-                        last = PageFetch(
-                            url=last.url,
-                            status=last.status,
-                            via="http",
-                            elapsed_ms=last.elapsed_ms,
-                            reason=FailureReason.UNSAFE_URL,
-                            message=f"重定向到不安全地址: {exc}"[:300],
-                        )
+            last = await self._http_fetch_chain(url, started)
             if last.ok:
                 return last
             if not self._retryable(last) or attempt + 1 >= attempts:
@@ -323,6 +321,63 @@ class PageFetcher:
             await self._sleep(backoff)
         assert last is not None
         return last
+
+    async def _http_fetch_chain(self, url: str, started: float) -> PageFetch:
+        """逐跳取页：每一跳都先准入再发请求，最多跟随 _MAX_REDIRECTS 次。"""
+        current = url
+        redirects = 0
+        while True:
+            host = (urlparse(current).hostname or "").lower()
+            await self._limiter.wait(host)
+            try:
+                session = await self._ensure_http()
+                response = await session.get(
+                    current, timeout=self._config.timeout, follow_redirects=False
+                )
+            except Exception as exc:
+                return self._failure_from_exception(current, exc, started)
+
+            status = int(getattr(response, "status", 0) or 0)
+            if status not in _REDIRECT_STATUSES:
+                return self._page_from_response(current, response, started)
+
+            location = _redirect_location(response)
+            if not location:
+                return PageFetch(
+                    url=current,
+                    status=status,
+                    via="http",
+                    elapsed_ms=int((time.monotonic() - started) * 1000),
+                    reason=FailureReason.HTTP_ERROR,
+                    message=f"HTTP {status} 缺少 Location",
+                )
+
+            target = urljoin(current, location)
+            if redirects >= _MAX_REDIRECTS:
+                return PageFetch(
+                    url=target,
+                    status=status,
+                    via="http",
+                    elapsed_ms=int((time.monotonic() - started) * 1000),
+                    reason=FailureReason.HTTP_ERROR,
+                    message=f"重定向次数超过上限: {_MAX_REDIRECTS}",
+                )
+
+            if self._target_admission is not None:
+                try:
+                    await self._target_admission.admit(target)
+                except Exception as exc:
+                    return PageFetch(
+                        url=target,
+                        status=status,
+                        via="http",
+                        elapsed_ms=int((time.monotonic() - started) * 1000),
+                        reason=FailureReason.UNSAFE_URL,
+                        message=f"重定向到不安全地址: {exc}"[:300],
+                    )
+
+            redirects += 1
+            current = target
 
     @staticmethod
     def _retryable(page: PageFetch) -> bool:

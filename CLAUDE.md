@@ -81,7 +81,7 @@ qb-nas/
 │   ├── services/ qbit_sync.py  ingest.py  site_auth.py  observability.py  user_actions.py  item_queries.py  stats.py  probe.py
 │   ├── context/ app_context.py
 │   └── utils/ auth.py  url_validator.py  serializers.py  bg_tasks.py  timeutil.py  infohash.py
-└── tests/                              # 107 个测试文件、821 个用例
+└── tests/                              # 107 个测试文件、827 个用例
 ```
 
 ## Development Commands
@@ -125,7 +125,7 @@ All settings live in `.env` (see `.env.example`). Key categories:
 **Crawler (`crawler.py` + `page_fetch.py` + `site_walker.py`):**
 
 - `MagnetPageWalker.stream()` is the multi-page scheduling entry (queue, concurrency, per-domain throttle, retry, depth, dedup); `PageFetcher` is HTTP-first with browser fallback
-- `CrawlTargetAdmission` runs at seed URL, followed URLs, final response URLs, and browser navigation/subresource requests（同一 origin 只准入一次）；浏览器 WebSocket/Service Worker 流量目前不在准入范围内
+- `CrawlTargetAdmission` runs at seed/discovered URLs, before every HTTP redirect hop (`follow_redirects=False`), and on browser navigation/subresource requests（浏览器同一 origin 只准入一次）；浏览器 WebSocket/Service Worker 流量目前不在准入范围内
 - `MagnetSourceExtractor` handles magnet business parsing; resolution filtering keeps `CRAWLER_ALLOWED_RESOLUTIONS`
 
 **Classifier (`classifier/local_classifier.py`):**
