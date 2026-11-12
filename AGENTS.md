@@ -177,6 +177,7 @@ All settings in `.env` (see `.env.example`). Key categories:
 - **Phase protocols**: `CrawlPhase`, `ClassifyPhase`, `DownloadPhase` protocols enable hot-swappable implementations
 - **Hot-swap qB config**: `QBitRuntime.replace_qbit_config()` validates, persists, and swaps the client atomically
 - **SSRF protection**: `url_validator` blocks loopback, link-local, multicast, RFC 1918 addresses at seed/discovered URLs; HTTP redirects are followed manually (`follow_redirects=False`) and each hop is admitted before the next request; browser subrequests are re-checked per request by `page.route`
+- **DNS TOCTOU 残差**: `admit` 的解析结果没有钉到实际连接，HTTP/浏览器路径均存在 rebinding 窗口；当前接受并记录在 `docs/specs/2026-11-12-dns-toctou-residual.md`
 - **No external AI**: Classification is 100% local rules — no API calls to any external service
 
 ## Agent Skills 自动化
