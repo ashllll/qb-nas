@@ -51,11 +51,11 @@ async def test_reclassify_item_updates_category_and_save_path():
 @pytest.mark.asyncio
 async def test_manual_reclassify_does_not_overwrite_concurrent_save_path():
     class ConcurrentPathStore(InMemoryItemStore):
-        def update(self, hash_key: str, **fields) -> bool:
+        def update(self, hash_key: str, **fields) -> MagnetItem | None:
             InMemoryItemStore.update(self, hash_key, save_path="/concurrent")
             return InMemoryItemStore.update(self, hash_key, **fields)
 
-        def update_if_status(self, hash_key, expected_statuses, **fields) -> bool:
+        def update_if_status(self, hash_key, expected_statuses, **fields) -> MagnetItem | None:
             InMemoryItemStore.update(self, hash_key, save_path="/concurrent")
             return InMemoryItemStore.update_if_status(
                 self,

@@ -17,7 +17,7 @@ import logging
 import re
 import urllib.parse
 from collections.abc import Iterable
-from typing import Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 from magnet_harvester.utils.infohash import normalize_infohash as _normalize_infohash
 
@@ -29,11 +29,6 @@ BTIH_VALUE_PATTERN = r"(?:[a-fA-F0-9]{40}|[a-zA-Z2-7]{32})"
 
 MAGNET_RE = re.compile(
     rf'magnet:\?xt=urn:btih:{BTIH_VALUE_PATTERN}(?![a-zA-Z0-9])(?:[^\s\'"<>\)]+)?',
-    re.IGNORECASE,
-)
-
-MAGNET_FULL_RE = re.compile(
-    r'magnet:\?([^"\']+)',
     re.IGNORECASE,
 )
 
@@ -172,33 +167,6 @@ def try_decode_base64(text: str) -> List[str]:
             seen.add(decoded)
             results.append(decoded)
     return results
-
-
-def extract_magnet_params(raw: str) -> Dict[str, str]:
-    """提取磁力链接中的参数"""
-    params: Dict[str, str] = {}
-    match = MAGNET_FULL_RE.search(raw)
-    if match:
-        query_string = match.group(1)
-        for pair in query_string.split("&"):
-            if "=" in pair:
-                key, value = pair.split("=", 1)
-                params[urllib.parse.unquote(key)] = urllib.parse.unquote(value)
-    return params
-
-
-def deduplicate_magnets(items: List[dict]) -> List[dict]:
-    """按 hash 去重"""
-    seen: Set[str] = set()
-    result: List[dict] = []
-    for item in items:
-        h = item.get("hash")
-        if h is None:
-            continue
-        if h not in seen:
-            seen.add(h)
-            result.append(item)
-    return result
 
 
 def extract_from_text(text: str) -> List[dict]:

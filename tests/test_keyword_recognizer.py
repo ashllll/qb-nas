@@ -48,3 +48,44 @@ def test_unmatched_name_returns_none(tmp_path):
     recognizer = KeywordCategoryRecognizer(rules_file=rules_file)
 
     assert recognizer.recognize("Avatar.The.Way.of.Water.2022.2160p.BluRay") is None
+
+
+def test_reload_returns_false_and_keeps_keywords_on_invalid_config(tmp_path):
+    """缺失/半截 JSON/顶层非对象/缺 keywords 键/keywords 非数组 → reload False，旧规则不动。"""
+    rules_file = tmp_path / "category_keywords.json"
+    rules_file.write_text(
+        json.dumps({"keywords": [{"keyword": "ubuntu", "category": "软件"}]}),
+        encoding="utf-8",
+    )
+    recognizer = KeywordCategoryRecognizer(rules_file=rules_file)
+    expected = {"category": "软件", "save_path": "软件", "keyword": "ubuntu"}
+
+    for bad in ('{"keywords": [', "[]", '{"keywordz": []}', '{"keywords": "not-a-list"}'):
+        rules_file.write_text(bad, encoding="utf-8")
+        assert recognizer.reload() is False
+        assert recognizer.recognize("Ubuntu.24.04.Desktop.iso") == expected
+
+    rules_file.unlink()
+    assert recognizer.reload() is False
+    assert recognizer.recognize("Ubuntu.24.04.Desktop.iso") == expected
+
+
+def test_reload_returns_true_with_empty_keywords(tmp_path):
+    """空 keywords 数组合法：reload True，关键词清单变空。"""
+    rules_file = tmp_path / "category_keywords.json"
+    rules_file.write_text(
+        json.dumps({"keywords": [{"keyword": "ubuntu", "category": "软件"}]}),
+        encoding="utf-8",
+    )
+    recognizer = KeywordCategoryRecognizer(rules_file=rules_file)
+    assert recognizer.recognize("Ubuntu.24.04.Desktop.iso") is not None
+
+    rules_file.write_text(json.dumps({"keywords": []}), encoding="utf-8")
+    assert recognizer.reload() is True
+    assert recognizer.recognize("Ubuntu.24.04.Desktop.iso") is None
+
+
+def test_constructor_with_missing_file_still_works(tmp_path):
+    """首次加载即缺失：分类器可构造，只是关键词为空。"""
+    recognizer = KeywordCategoryRecognizer(rules_file=tmp_path / "missing.json")
+    assert recognizer.recognize("Ubuntu.24.04.Desktop.iso") is None

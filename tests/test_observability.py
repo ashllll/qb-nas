@@ -87,3 +87,71 @@ def test_health_reports_qbit_connectivity():
     )
     result2 = asyncio.run(snapshot_no_classifier.health())
     assert result2["classifier"] is False
+
+
+class HangingQbit:
+    async def ping(self):
+        import asyncio
+
+        await asyncio.sleep(5)
+        return True
+
+    def get_stats(self):
+        return {}
+
+
+class CountingQbit(FakeQbit):
+    def __init__(self, online: bool = True):
+        super().__init__(online)
+        self.pings = 0
+
+    async def ping(self):
+        self.pings += 1
+        return await super().ping()
+
+
+def test_health_does_not_wait_for_a_hanging_qbit():
+    import asyncio
+    import time
+
+    from magnet_harvester.services.probe import CachedProbe
+
+    snapshot = ObservabilitySnapshot(
+        store=AsyncItemStore(FakeStore()),
+        qbit=HangingQbit(),
+        classifier=FakeClassifier(),
+        probe=CachedProbe(ttl=10.0, timeout=0.05),
+    )
+
+    started = time.monotonic()
+    result = asyncio.run(snapshot.health())
+
+    assert result["qbittorrent"] is False
+    assert time.monotonic() - started < 1.0
+
+
+def test_health_and_status_share_one_cached_probe():
+    import asyncio
+
+    from magnet_harvester.services.probe import CachedProbe
+
+    qbit = CountingQbit(online=False)
+    snapshot = ObservabilitySnapshot(
+        store=AsyncItemStore(FakeStore()),
+        qbit=qbit,
+        classifier=FakeClassifier(),
+        probe=CachedProbe(ttl=60.0, timeout=1.0),
+    )
+
+    async def sample():
+        health = await snapshot.health()
+        status = await snapshot.system_status()
+        again = await snapshot.health()
+        return health, status, again
+
+    health, status, again = asyncio.run(sample())
+
+    assert health["qbittorrent"] is False
+    assert status["qbittorrent"] == "offline"
+    assert again["qbittorrent"] is False
+    assert qbit.pings == 1

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import List
 
 from magnet_harvester.magnet_parser import extract_from_text, normalize_infohash
 
@@ -37,45 +37,11 @@ class MagnetSourceExtractor:
     def __init__(self, allowed_resolutions: tuple = ()) -> None:
         self._allowed_resolutions = allowed_resolutions
 
-    def from_page_result(
-        self, result, *, source_url: str, detail_url: str | None = None
-    ) -> list[dict]:
-        return self.from_html(
-            self._result_html(result),
-            source_url=source_url,
-            detail_url=detail_url or source_url,
-        )
-
     def from_html(self, html: str, *, source_url: str, detail_url: str | None = None) -> list[dict]:
-        items: list[dict] = []
-        for text in self._content_sources((html,)):
-            items.extend(extract_from_text(text))
+        items = extract_from_text(html) if html else []
         items = filter_resolution_items(items, allowed=self._allowed_resolutions)
         return _normalise_items(
             items,
             source_url=source_url,
             detail_url=detail_url or source_url,
         )
-
-    def from_clipboard_text(self, text: str) -> list[dict]:
-        return extract_from_text(text)
-
-    @staticmethod
-    def _result_html(result) -> str:
-        for attr in ("html", "cleaned_html", "markdown"):
-            value = getattr(result, attr, "") or ""
-            if isinstance(value, str) and value:
-                return value
-        return ""
-
-    @staticmethod
-    def _content_sources(contents: Iterable[object | None]) -> list[str]:
-        sources: list[str] = []
-        seen: set[str] = set()
-        for content in contents:
-            if content:
-                text = str(content)
-                if text not in seen:
-                    seen.add(text)
-                    sources.append(text)
-        return sources

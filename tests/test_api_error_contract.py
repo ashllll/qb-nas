@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 import pytest
@@ -14,7 +15,7 @@ from fastapi import FastAPI
 
 from magnet_harvester.api.error_contract import install_error_handlers
 from magnet_harvester.config import settings
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 from tests.fixtures import make_test_app
 
 SECRET = "unit-test-key-a1"
@@ -25,6 +26,8 @@ def client(monkeypatch):
     # 这一组锁的是 strict（必须 key）下的错误体；N23 默认 trusted 见
     # tests/test_auth_trust_model.py。
     monkeypatch.setattr(settings, "AUTH_MODE", "strict")
+    # 这里测的是错误体形状，不是授权：用显式开发开关让 strict + 未配 key 也能进路由。
+    monkeypatch.setattr(settings, "ALLOW_INSECURE_WRITE_API", True)
     app, ctx, _ = make_test_app()
     install_error_handlers(app)
     with asgi_client(app) as c:
@@ -111,23 +114,28 @@ def test_validation_error_names_the_field(client):
     assert "url" in body["detail"]
 
 
-def test_unhandled_exception_becomes_contract_500():
+def test_unhandled_exception_returns_id_without_leaking_details(caplog):
     app = FastAPI()
     install_error_handlers(app)
 
     @app.get("/boom")
     async def boom():
-        raise RuntimeError("disk exploded while writing /app/.env.tmp")
+        raise RuntimeError("disk exploded while writing /tmp/secret.db")
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     client = httpx.AsyncClient(base_url="http://testserver", transport=transport)
-    resp = asyncio.run(client.get("/boom"))
-    asyncio.run(client.aclose())
+    with caplog.at_level(logging.ERROR, logger="magnet_harvester.api.error_contract"):
+        resp = asyncio.run(client.get("/boom"))
+        asyncio.run(client.aclose())
 
     assert resp.status_code == 500
     body = resp.json()
     _assert_contract(body)
     assert body["code"] == "internal_error"
-    # 原因不能被吞掉：异常类型与消息要能帮人定位
-    assert "RuntimeError" in body["detail"]
-    assert "disk exploded" in body["detail"]
+    # 路径与异常文本只进日志；正文只留编号，编号能在日志里找到对应堆栈
+    assert "/tmp/secret.db" not in resp.text
+    assert "RuntimeError" not in resp.text
+    error_id = body["detail"].rsplit("错误编号 ", 1)[-1].rstrip("）")
+    assert error_id in body["hint"]
+    assert error_id in caplog.text
+    assert "RuntimeError" in caplog.text

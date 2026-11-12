@@ -71,8 +71,9 @@ class UserActionExecutor:
         # 避免「已提交 N 个」与实际受理数不符、被跳过的条目毫无反馈
         eligible: list[str] = []
         skipped = 0
+        stored = await self._store.get_many(hashes)
         for h in hashes:
-            item = await self._store.get(h)
+            item = stored.get(h)
             if item is not None and item.status in {TaskStatus.pending, TaskStatus.error}:
                 eligible.append(h)
             else:

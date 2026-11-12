@@ -68,20 +68,26 @@ struct LaunchAgent {
         return result == 0
     }
 
-    static func plistMatchesBinary() -> Bool {
-        guard let data = try? Data(contentsOf: paths.plist),
+    static func plistMatchesBinary(at plistURL: URL, expected: String) -> Bool {
+        guard let data = try? Data(contentsOf: plistURL),
               let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
               let args = obj["ProgramArguments"] as? [String], let first = args.first else { return false }
-        return first == paths.binary.path
+        return first == expected
     }
 
+    /// 登录项是否指向当前这份 app 的可执行文件；旧版安装可能指向下载/构建目录，目录删掉后就不自启了。
+    static func plistMatchesBinary() -> Bool {
+        plistMatchesBinary(at: paths.plist, expected: targetBinaryPath)
+    }
+
+    /// 显式接收可执行文件路径：安装时写入的是复制后的 bundle，而不是用户双击的那份临时副本。
     @discardableResult
-    static func install() -> Bool {
+    static func install(binaryPath: String) -> Bool {
         let paths = self.paths
         do {
             try FileManager.default.createDirectory(at: paths.agentsDir, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: paths.supportDir, withIntermediateDirectories: true)
-            guard let data = plistData(binaryPath: targetBinaryPath) else { return false }
+            guard let data = plistData(binaryPath: binaryPath) else { return false }
             try data.write(to: paths.plist, options: [.atomic])
         } catch {
             return false

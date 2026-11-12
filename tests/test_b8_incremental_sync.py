@@ -16,9 +16,9 @@ from __future__ import annotations
 import pytest
 
 from magnet_harvester.bus import NullBus
-from magnet_harvester.models import MagnetItem, TaskStatus
+from magnet_harvester.models import SYNC_ACTIVE_STATUSES, MagnetItem, TaskStatus
 from magnet_harvester.qbit_client.sync_state import QBitSyncState
-from magnet_harvester.services.qbit_sync import _SYNC_ACTIVE_STATUSES, QBitSyncLoop
+from magnet_harvester.services.qbit_sync import QBitSyncLoop
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.transitions import DownloadTransitions
 
@@ -76,7 +76,7 @@ def _seed_error_items(store: AsyncItemStore, count: int) -> list[str]:
 async def _sync_rounds(store, loop, qbit, rounds: int) -> None:
     for _ in range(rounds):
         snapshot, removed = await qbit.poll_torrent_snapshot_with_removed()
-        tracked = await store.list(status=_SYNC_ACTIVE_STATUSES, limit=1000)
+        tracked = await store.list(status=SYNC_ACTIVE_STATUSES, limit=1000)
         await loop._reconcile_batch(tracked, snapshot, removed)
 
 
@@ -121,7 +121,7 @@ async def test_58_error_items_stay_in_sync_through_three_deltas_without_state():
 
     await _sync_rounds(store, loop, qbit, rounds=4)
 
-    error_total = await store.count_items(status=TaskStatus.error.value)
+    error_total = len(await store.list(status=TaskStatus.error.value, limit=1000))
     assert error_total == 0, "增量不带 state 不能把种子打成失败"
     assert qbit.rid_calls == [0, 1, 2, 3], (
         f"整个过程中不应出现额外的全量补取（缓存合并已保留 state）：{qbit.rid_calls}"

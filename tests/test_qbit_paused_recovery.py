@@ -14,8 +14,8 @@ from __future__ import annotations
 import pytest
 
 from magnet_harvester.bus import MessageBus
-from magnet_harvester.models import MagnetItem, TaskStatus
-from magnet_harvester.services.qbit_sync import _SYNC_ACTIVE_STATUSES, QBitSyncLoop
+from magnet_harvester.models import SYNC_ACTIVE_STATUSES, MagnetItem, TaskStatus
+from magnet_harvester.services.qbit_sync import QBitSyncLoop
 from magnet_harvester.store import AsyncItemStore, SQLiteItemStore
 from magnet_harvester.transitions import DownloadTransitions
 
@@ -57,7 +57,7 @@ def _seed_error_items(store: SQLiteItemStore, count: int) -> list[str]:
 
 def test_paused_is_tracked_by_sync():
     """paused 必须在同步活跃列表里，否则恢复后状态就冻住了。"""
-    assert TaskStatus.paused.value in _SYNC_ACTIVE_STATUSES
+    assert TaskStatus.paused.value in SYNC_ACTIVE_STATUSES
 
 
 @pytest.mark.asyncio
@@ -76,7 +76,7 @@ async def test_legacy_error_items_recover_to_paused(tmp_path):
         downloads=downloads,
     )
 
-    tracked = await store.list(status=_SYNC_ACTIVE_STATUSES, limit=50000)
+    tracked = await store.list(status=SYNC_ACTIVE_STATUSES, limit=50000)
     assert len(tracked) == 58, "error 条目必须在同步扫描范围内，否则永远改不回来"
 
     await loop._reconcile_batch(tracked, snapshot, set())
@@ -85,7 +85,7 @@ async def test_legacy_error_items_recover_to_paused(tmp_path):
     assert len(recovered) == 58
     assert all(item.error_msg is None for item in recovered)
     assert all(item.torrent_state == "stoppedDL" for item in recovered)
-    assert await store.count_items(status=TaskStatus.error.value) == 0
+    assert await store.list(status=TaskStatus.error.value, limit=1000) == []
 
 
 @pytest.mark.asyncio
@@ -112,7 +112,7 @@ async def test_paused_item_follows_qb_when_download_resumes(tmp_path):
         downloads=DownloadTransitions(store=store, bus=bus),
     )
 
-    tracked = await store.list(status=_SYNC_ACTIVE_STATUSES, limit=100)
+    tracked = await store.list(status=SYNC_ACTIVE_STATUSES, limit=100)
     assert [item.hash for item in tracked] == [hash_key]
     await loop._reconcile_batch(tracked, snapshot, set())
 

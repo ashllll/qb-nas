@@ -9,27 +9,17 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
-from magnet_harvester.bus import Event, EventType, MessageBus
+from magnet_harvester.bus import MessageBus
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.models import TaskStatus
 from magnet_harvester.store import ItemStore
 from magnet_harvester.transitions import DownloadTransitions
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
 
-_MAX_STORE_ITEMS = 50000
-
-# 非终态 — qBittorrent 同步只关心已提交到 qB 的活跃条目。
-# paused 必须在内：用户在 qB 里恢复下载后，库里要从「已暂停」跟着变成下载中；
-# error 也在内：qB 侧状态可能被修好（历史上被误判成 error 的条目靠下一轮同步自愈）。
-_SYNC_ACTIVE_STATUSES = [
-    TaskStatus.adding.value,
-    TaskStatus.queued.value,
-    TaskStatus.downloading.value,
-    TaskStatus.paused.value,
-    TaskStatus.error.value,
-]
+# 每轮取多少条做对账。分页 + 游标让 50k 活跃条目也不会每轮从头重扫，
+# 单轮 60s 超时只跳过本页剩余，下一轮从断点继续。
+_SYNC_PAGE_SIZE = 2000
 
 
 class QBitSyncClient(Protocol):
@@ -61,6 +51,7 @@ class SyncBackoffPolicy:
 @dataclass
 class _ReconcileProgress:
     processed: int = 0
+    last_hash: str | None = None
 
 
 class QBitSyncLoop:
@@ -88,19 +79,21 @@ class QBitSyncLoop:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._downloads = downloads or DownloadTransitions(store=store, bus=bus)
+        self._sync_cursor: str | None = None
+        # qB 的「本轮删除」只在这一轮返回；分页时被删的尾部条目可能不在当前页，
+        # 攒到它被翻到再消费，整轮走完（游标回 None）才清空。
+        self._removed_pending: set[str] = set()
 
     async def start(self):
         async with self._lock:
             if self._task is not None and not self._task.done():
                 return
             self._stop_event.clear()
-            if self._task_manager is not None:
-                self._task = self._task_manager.create(
-                    self._run(),
-                    name="qbit-sync-loop",
-                )
-                return
-            self._task = BGTaskManager.spawn(self._run(), name="qbit-sync-loop")
+            self._task = BGTaskManager.spawn(
+                self._run(),
+                task_manager=self._task_manager,
+                name="qbit-sync-loop",
+            )
 
     async def stop(self):
         self._stop_event.set()
@@ -153,32 +146,20 @@ class QBitSyncLoop:
 
     async def _sync_round(self, qbit: QBitSyncClient, store: ItemStore) -> None:
         snapshot, removed_hashes = await qbit.poll_torrent_snapshot_with_removed()
-        tracked_items = await store.list(
-            status=_SYNC_ACTIVE_STATUSES,
-            limit=_MAX_STORE_ITEMS,
+        self._removed_pending.update(str(hash_key).lower() for hash_key in removed_hashes)
+        tracked_items = await store.list_for_sync(
+            after_hash=self._sync_cursor,
+            limit=_SYNC_PAGE_SIZE,
         )
-        if len(tracked_items) >= _MAX_STORE_ITEMS:
-            log.error("tracked items 达到截断上限 %d，部分 item 可能未被同步", len(tracked_items))
-            await self._bus.emit(
-                Event(
-                    EventType.ERROR,
-                    {
-                        "error": "store_limit_reached",
-                        "message": (
-                            f"tracked items 达到截断上限 {_MAX_STORE_ITEMS}，"
-                            "超过上限的 item 将不被同步"
-                        ),
-                        "count": len(tracked_items),
-                    },
-                )
-            )
         if not tracked_items:
+            self._sync_cursor = None
+            self._removed_pending.clear()
             return
 
         progress = _ReconcileProgress()
         try:
             await asyncio.wait_for(
-                self._reconcile_batch(tracked_items, snapshot, removed_hashes, progress),
+                self._reconcile_batch(tracked_items, snapshot, self._removed_pending, progress),
                 timeout=60.0,
             )
         except asyncio.TimeoutError:
@@ -188,6 +169,17 @@ class QBitSyncLoop:
                 progress.processed,
                 remaining,
             )
+        finally:
+            # 页未满才算走完；页满/超时都从最后一条继续，避免尾部永远轮不到。
+            page_exhausted = progress.processed >= len(tracked_items)
+            self._sync_cursor = (
+                progress.last_hash
+                if progress.last_hash is not None
+                and (not page_exhausted or len(tracked_items) >= _SYNC_PAGE_SIZE)
+                else None
+            )
+            if self._sync_cursor is None:
+                self._removed_pending.clear()
 
     async def _reconcile_batch(
         self,
@@ -205,6 +197,7 @@ class QBitSyncLoop:
             torrent = snapshot.get(hash_key.lower())
             is_removed = hash_key.lower() in removed_hashes
 
+            handled = False
             try:
                 await self._downloads.reconcile_snapshot(
                     hash_key,
@@ -212,15 +205,19 @@ class QBitSyncLoop:
                     torrent,
                     was_removed=is_removed,
                 )
+                handled = True
             except Exception as e:
                 log.error(
                     "reconcile_download_snapshot 失败 for %s: %s",
                     hash_key,
                     e,
                 )
+            if handled:
+                removed_hashes.discard(hash_key.lower())
 
             if progress is not None:
                 progress.processed += 1
+                progress.last_hash = hash_key
 
             if self._stop_event.is_set():
                 break

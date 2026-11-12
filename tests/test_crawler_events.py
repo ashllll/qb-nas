@@ -16,6 +16,7 @@ import pytest
 
 from magnet_harvester.config import CrawlerConfig
 from magnet_harvester.crawler import MagnetCrawler
+from magnet_harvester.page_fetch import PageFetch
 
 MAGNET_HEX_A = "magnet:?xt=urn:btih:" + "a" * 40 + "&dn=Alpha.1080p"
 MAGNET_HEX_B = "magnet:?xt=urn:btih:" + "b" * 40 + "&dn=Beta.2160p"
@@ -43,7 +44,9 @@ class StubFetcher:
     async def close(self) -> None:
         return None
 
-    async def fetch(self, url, *, allow_browser=True):  # pragma: no cover - 走查器被替换
+    async def fetch(
+        self, url, *, allow_browser=True, browser_first=False
+    ):  # pragma: no cover - 走查器被替换
         raise AssertionError("本测试不应真的取页")
 
 
@@ -92,7 +95,7 @@ class ScriptedCrawler(MagnetCrawler):
         self._scripted = events
         self._delay_by_url = delay_by_url
         super().__init__(
-            config=config or CrawlerConfig(concurrency=2),
+            config=config or CrawlerConfig(),
             target_admission=StubAdmission(),
             fetcher=StubFetcher(),
             **kwargs,
@@ -312,3 +315,72 @@ async def test_result_extraction_does_not_block_event_loop():
     # 阈值只用来抓「整段解析卡在事件循环里」：真阻塞时心跳会停在 0–1；
     # 机器负载高时 2ms 心跳本身也会抖，留出余量避免假红。
     assert heartbeat >= 5
+
+
+class TwoStageFetcher:
+    """第一次返回 HTTP 壳页，browser_first 时返回浏览器渲染后的页面。"""
+
+    def __init__(self, http_html: str, browser_html: str) -> None:
+        self.http_html = http_html
+        self.browser_html = browser_html
+        self.calls: list[tuple[str, bool]] = []
+
+    async def start(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+    async def fetch(self, url, *, allow_browser=True, browser_first=False):
+        self.calls.append((url, browser_first))
+        return PageFetch(
+            url=url,
+            status=200,
+            html=self.browser_html if browser_first else self.http_html,
+            via="browser" if browser_first else "http",
+            elapsed_ms=2,
+        )
+
+
+@pytest.mark.asyncio
+async def test_spa_shell_with_nav_links_finds_magnets_after_one_browser_retry():
+    """带导航链接的 Vue/React 壳页：HTTP 0 详情链接，浏览器渲染后直接拿到内联磁力。"""
+    root = "https://site.test/list"
+    shell = (
+        "<html><head><script>render()</script></head>"
+        '<body><a href="/about">about</a><div id="app"></div></body></html>'
+    )
+    rendered = f'<html><body><a href="{MAGNET_HEX_A}">Alpha</a></body></html>'
+    fetcher = TwoStageFetcher(shell, rendered)
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(max_detail_links=20),
+        target_admission=StubAdmission(),
+        fetcher=fetcher,
+    )
+
+    events = await collect(crawler, root)
+
+    found = [event for event in events if event["type"] == "found"]
+    assert len(found) == 1 and found[0]["item"]["hash"] == "A" * 40
+    assert events[-1]["total"] == 1
+    assert events[-1]["metrics"]["browser_used"] is True
+    assert fetcher.calls == [(root, False), (root, True)], "根页只重取一次"
+
+
+@pytest.mark.asyncio
+async def test_pure_static_site_keeps_http_and_finds_magnets():
+    """纯静态页没有 <script>，不该为它开浏览器。"""
+    root = "https://site.test/list"
+    static_html = f'<html><body><a href="{MAGNET_HEX_A}">Alpha</a></body></html>'
+    fetcher = TwoStageFetcher(static_html, static_html)
+    crawler = MagnetCrawler(
+        config=CrawlerConfig(max_detail_links=20),
+        target_admission=StubAdmission(),
+        fetcher=fetcher,
+    )
+
+    events = await collect(crawler, root)
+
+    assert [event for event in events if event["type"] == "found"]
+    assert events[-1]["metrics"]["browser_used"] is False
+    assert fetcher.calls == [(root, False)]

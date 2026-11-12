@@ -42,6 +42,9 @@ RUN set -eux; \
 # （那会多一层、多一份体积，且掩盖「运行时到底以谁的身份写卷」这个问题）。
 COPY --chown=1000:1001 magnet_harvester ./magnet_harvester
 COPY --chown=1000:1001 static ./static
+# 分类关键词规则不在 pip 包里，KEYWORD_FILE 指向 /app/config/category_keywords.json；
+# 少了它容器里的 KeywordRule 永久失效（只剩 StudioRule/FallbackRule）。
+COPY --chown=1000:1001 config ./config
 
 # 构建来源：ARG/ENV 放在 COPY 之后，避免每次 commit 变化把上面的 pip 依赖层缓存打穿。
 # 镜像标签与容器环境都带它，线上镜像因此能对回确切 commit（docker image inspect / printenv GIT_COMMIT）。

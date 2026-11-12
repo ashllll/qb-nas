@@ -75,21 +75,21 @@ class TestSQLiteItemStore:
         """Updating fields should persist changes."""
         store.add(sample_item)
         result = store.update("TESTHASH001", category="电视剧", progress=0.5)
-        assert result is True
+        assert result is not None and result.category == "电视剧"
 
         updated = store.get("TESTHASH001")
         assert updated is not None
         assert updated.category == "电视剧"
         assert updated.progress == 0.5
 
-    def test_update_nonexistent_returns_false(self, store):
-        """Updating a nonexistent item should return False."""
-        assert store.update("NONEXISTENT", category="电影") is False
+    def test_update_nonexistent_returns_none(self, store):
+        """Updating a nonexistent item should return None."""
+        assert store.update("NONEXISTENT", category="电影") is None
 
-    def test_update_unknown_field_returns_false(self, store, sample_item):
-        """Updating with an unknown field should return False."""
+    def test_update_unknown_field_returns_none(self, store, sample_item):
+        """Updating with an unknown field should return None."""
         store.add(sample_item)
-        assert store.update("TESTHASH001", invalid_field="value") is False
+        assert store.update("TESTHASH001", invalid_field="value") is None
 
     def test_remove(self, store, sample_item):
         """Removing an item should delete it from the database."""
@@ -288,20 +288,6 @@ class TestSQLiteItemStore:
         assert len(matches) == 2
         assert "ABCDEF123456" in matches
         assert "ABCDEF789012" in matches
-
-    def test_add_batch(self, store):
-        """add_batch should add multiple items and return the count of new additions."""
-        items = [
-            MagnetItem(hash=f"B{i:03d}", name=f"Batch {i}", magnet=f"magnet:?xt=urn:btih:B{i:03d}")
-            for i in range(5)
-        ]
-        added = store.add_batch(items)
-        assert added == 5
-        assert store.count == 5
-
-        # Adding same batch again should add 0
-        added_again = store.add_batch(items)
-        assert added_again == 0
 
     def test_clear(self, store):
         """Clear should remove all items from the database."""

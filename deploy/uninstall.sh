@@ -34,6 +34,15 @@ while [ $# -gt 0 ]; do
     *) die "不认识的参数：$1" ;;
   esac
 done
+# 删除前先校验根目录：下面会 rm -rf "$PREFIX/app" 和（--purge 时）整个 "$PREFIX"，
+# --prefix /、/vol3 或带 .. 的路径会变成删主机目录。必须在任何 rm 之前拦下。
+case "$PREFIX" in
+  /*/*) : ;;
+  *) die "--prefix 要指向具体安装目录（至少两级绝对路径，如 /vol3/1000/qb-nas），收到：$PREFIX" ;;
+esac
+case "$PREFIX" in
+  */../*|*/..|*..) die "--prefix 不能包含 ..：$PREFIX" ;;
+esac
 COMPOSE="$PREFIX/compose.yaml"
 printf 'qb-nas 中心服务 · 卸载\n  根目录 %s\n  容器   %s\n' "$PREFIX" "$CONTAINER"
 if [ "$PURGE" = "1" ]; then
@@ -66,7 +75,6 @@ rm -f "$COMPOSE"
 info "已删 $PREFIX/app、compose.yaml"
 step "4/4 结果"
 if [ "$PURGE" = "1" ]; then
-  [ -n "$PREFIX" ] && [ "$PREFIX" != "/" ] || die "拒绝删除 $PREFIX"
   rm -rf "$PREFIX"
   info "已删除整个 ${PREFIX}（含容器数据目录）"
 else

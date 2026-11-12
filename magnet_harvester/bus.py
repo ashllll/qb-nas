@@ -29,7 +29,6 @@ class EventType(str, Enum):
     CLASSIFY_ALL_DONE = "classify_all_done"
     DOWNLOAD_START = "download_start"
     DOWNLOAD_RESULT = "download_result"
-    DOWNLOAD_DONE = "download_done"
     ERROR = "error"
     STORE_CHANGED = "store_changed"
     ITEMS_CLEARED = "items_cleared"

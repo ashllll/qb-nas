@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,24 +22,31 @@ from magnet_harvester.page_fetch import (
     PageFetcher,
     _looks_like_empty_shell,
 )
+from magnet_harvester.utils.url_validator import CrawlTargetAdmission
 
 
 class FakeResponse:
-    def __init__(self, status: int, html: str, url: str = "https://site.test/x") -> None:
+    def __init__(
+        self,
+        status: int,
+        html: str,
+        url: str = "https://site.test/x",
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status = status
         self.html_content = html
         self.text = html
         self.url = url
-        self.headers: dict[str, str] = {}
+        self.headers = headers or {}
 
 
 class FakeHttpSession:
     def __init__(self, responder) -> None:
         self.responder = responder
-        self.calls: list[tuple[str, float | None]] = []
+        self.calls: list[dict] = []
 
-    async def get(self, url: str, timeout: float | None = None):
-        self.calls.append((url, timeout))
+    async def get(self, url: str, timeout: float | None = None, follow_redirects: bool = True):
+        self.calls.append({"url": url, "timeout": timeout, "follow_redirects": follow_redirects})
         result = self.responder(url)
         if isinstance(result, Exception):
             raise result
@@ -128,8 +136,19 @@ async def test_http_success_never_touches_browser():
     page = await fetcher.fetch("https://site.test/list")
     assert page.ok
     assert page.via == "http"
-    assert fetcher.browser_used is False
     assert "browser" not in browsers
+
+
+@pytest.mark.asyncio
+async def test_browser_first_skips_http_entirely():
+    fetcher, https, browsers, _ = make_fetcher(
+        lambda url: FakeResponse(200, "<html>http</html>"),
+        lambda url: FakeResponse(200, "<html>rendered</html>"),
+    )
+    page = await fetcher.fetch("https://site.test/list", browser_first=True)
+    assert page.ok and page.via == "browser"
+    assert https == {}
+    assert browsers["browser"].calls[0]["url"] == "https://site.test/list"
 
 
 @pytest.mark.asyncio
@@ -141,7 +160,6 @@ async def test_challenge_page_escalates_to_browser():
     page = await fetcher.fetch("https://site.test/list")
     assert page.ok
     assert page.via == "browser"
-    assert fetcher.browser_used is True
     assert browsers["browser"].calls[0]["url"] == "https://site.test/list"
 
 
@@ -164,7 +182,6 @@ async def test_browser_failure_reports_reason_not_exception():
     page = await fetcher.fetch("https://site.test/list")
     assert page.reason is FailureReason.BROWSER_UNAVAILABLE
     assert "playwright exploded" in page.message
-    assert fetcher.browser_failures == 1
 
 
 @pytest.mark.asyncio
@@ -256,24 +273,156 @@ async def test_browser_disabled_by_config_keeps_blocked_reason():
     assert "browser" not in browsers
 
 
-@pytest.mark.asyncio
-async def test_redirect_to_private_address_is_rejected():
-    """跟随重定向后必须重新准入：公开页 302 到 127.0.0.1 不能放行。"""
+class RecordingAdmission:
+    def __init__(self) -> None:
+        self.urls: list[str] = []
 
-    class BlockingAdmission:
+    async def admit(self, url: str) -> str:
+        self.urls.append(url)
+        return url
+
+
+@pytest.mark.asyncio
+async def test_redirect_to_private_address_is_rejected_before_the_hop():
+    """公开页 302 到 127.0.0.1：第二跳必须先准入，且请求根本不发出。"""
+
+    class BlockingAdmission(RecordingAdmission):
         async def admit(self, url: str) -> str:
+            await super().admit(url)
             if "127.0.0.1" in url:
                 raise ValueError("URL resolves to a private address")
             return url
 
-    fetcher, _, _, _ = make_fetcher(
-        lambda url: FakeResponse(200, "<html>moved</html>", url="http://127.0.0.1:9000/x"),
+    admission = BlockingAdmission()
+    fetcher, holders, _, _ = make_fetcher(
+        lambda url: FakeResponse(
+            302,
+            "",
+            url=url,
+            headers={"location": "http://127.0.0.1:9000/x"},
+        ),
         browser_fallback=False,
     )
-    fetcher._target_admission = BlockingAdmission()
+    fetcher._target_admission = admission
     page = await fetcher.fetch("https://site.test/list")
     assert page.reason is FailureReason.UNSAFE_URL
     assert "private" in page.message
+    assert [call["url"] for call in holders["ctx"]._session.calls] == ["https://site.test/list"]
+    assert admission.urls == ["http://127.0.0.1:9000/x"]
+
+
+@pytest.mark.asyncio
+async def test_relative_redirect_is_resolved_and_followed_without_client_redirects():
+    def responder(url: str):
+        if url == "https://site.test/list":
+            return FakeResponse(302, "", url=url, headers={"Location": "/details/1"})
+        return FakeResponse(200, "<html>ok</html>", url=url)
+
+    fetcher, holders, _, _ = make_fetcher(responder)
+    page = await fetcher.fetch("https://site.test/list")
+    assert page.ok
+    calls = holders["ctx"]._session.calls
+    assert [call["url"] for call in calls] == [
+        "https://site.test/list",
+        "https://site.test/details/1",
+    ]
+    assert all(call["follow_redirects"] is False for call in calls)
+
+
+@pytest.mark.asyncio
+async def test_cross_site_redirect_admits_the_new_host_and_requests_it():
+    admission = RecordingAdmission()
+    fetcher, holders, _, _ = make_fetcher(
+        lambda url: (
+            FakeResponse(
+                302,
+                "",
+                url=url,
+                headers={"location": "https://other.test/page"},
+            )
+            if url == "https://site.test/list"
+            else FakeResponse(200, "<html>ok</html>", url=url)
+        )
+    )
+    fetcher._target_admission = admission
+    page = await fetcher.fetch("https://site.test/list")
+    assert page.ok
+    assert [call["url"] for call in holders["ctx"]._session.calls] == [
+        "https://site.test/list",
+        "https://other.test/page",
+    ]
+    assert admission.urls == ["https://other.test/page"]
+
+
+@pytest.mark.asyncio
+async def test_https_to_http_redirect_is_allowed_when_admitted():
+    admission = RecordingAdmission()
+    fetcher, holders, _, _ = make_fetcher(
+        lambda url: (
+            FakeResponse(302, "", url=url, headers={"location": "http://site.test/page"})
+            if url == "https://site.test/list"
+            else FakeResponse(200, "<html>ok</html>", url=url)
+        )
+    )
+    fetcher._target_admission = admission
+    page = await fetcher.fetch("https://site.test/list")
+    assert page.ok
+    assert [call["url"] for call in holders["ctx"]._session.calls] == [
+        "https://site.test/list",
+        "http://site.test/page",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_redirect_limit_stops_before_the_sixth_hop():
+    seen: list[str] = []
+
+    def responder(url: str):
+        seen.append(url)
+        return FakeResponse(302, "", url=url, headers={"location": f"/hop{len(seen)}"})
+
+    fetcher, holders, _, _ = make_fetcher(responder)
+    page = await fetcher.fetch("https://site.test/list")
+    assert page.reason is FailureReason.HTTP_ERROR
+    assert "上限: 5" in page.message
+    assert len(seen) == 6
+    assert [call["url"] for call in holders["ctx"]._session.calls][-1] == "https://site.test/hop5"
+
+
+@pytest.mark.asyncio
+async def test_redirect_without_location_is_an_http_error():
+    fetcher, holders, _, _ = make_fetcher(
+        lambda url: FakeResponse(302, "", url=url),
+        browser_fallback=False,
+    )
+    page = await fetcher.fetch("https://site.test/list")
+    assert page.reason is FailureReason.HTTP_ERROR
+    assert page.message == "HTTP 302 缺少 Location"
+    assert len(holders["ctx"]._session.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_redirect_chain_500_retries_the_whole_chain_from_the_original_url():
+    rounds = {"n": 0}
+
+    def responder(url: str):
+        if url == "https://site.test/list":
+            rounds["n"] += 1
+            return FakeResponse(302, "", url=url, headers={"location": f"/round{rounds['n']}"})
+        if url.endswith("/round1"):
+            return FakeResponse(500, "<html>boom</html>", url=url)
+        return FakeResponse(200, "<html>ok</html>", url=url)
+
+    fetcher, holders, _, sleeps = make_fetcher(responder)
+    page = await fetcher.fetch("https://site.test/list")
+    assert page.ok
+    assert [call["url"] for call in holders["ctx"]._session.calls] == [
+        "https://site.test/list",
+        "https://site.test/round1",
+        "https://site.test/list",
+        "https://site.test/round2",
+    ]
+    assert len(sleeps) == 1
 
 
 def test_empty_shell_detection():
@@ -302,3 +451,91 @@ async def test_host_rate_limiter_spaces_requests():
     finally:
         module.asyncio.sleep = original
     assert waits, "同一站点的连续请求必须被拉开间隔"
+
+
+class RecordingRoute:
+    def __init__(self, url: str) -> None:
+        self.request = SimpleNamespace(url=url)
+        self.continued = False
+        self.aborted = False
+
+    async def continue_(self) -> None:
+        self.continued = True
+
+    async def abort(self) -> None:
+        self.aborted = True
+
+
+class RecordingPage:
+    def __init__(self) -> None:
+        self.handler = None
+
+    async def route(self, pattern: str, handler) -> None:
+        self.handler = handler
+
+
+@pytest.mark.asyncio
+async def test_browser_subrequests_admit_each_origin_once():
+    resolved: list[tuple[str, int]] = []
+
+    async def resolver(host: str, port: int) -> list[str]:
+        resolved.append((host, port))
+        return ["93.184.216.34"]
+
+    admission = CrawlTargetAdmission(resolver=resolver)
+    fetcher, _, _, _ = make_fetcher(lambda url: FakeResponse(200, "<html>ok</html>"))
+    fetcher._target_admission = admission
+    page = RecordingPage()
+    await fetcher._guard_page_setup(page)
+    for target in (
+        "https://site.test/a.js",
+        "https://site.test/b.css",
+        "https://site.test/c.png",
+        "https://other.test/x.js",
+    ):
+        route = RecordingRoute(target)
+        await page.handler(route)
+        assert route.continued and not route.aborted
+
+    assert resolved == [("site.test", 443), ("other.test", 443)]
+
+
+@pytest.mark.asyncio
+async def test_browser_exception_is_retried_once():
+    calls: list[str] = []
+
+    def responder(url: str):
+        calls.append(url)
+        if len(calls) == 1:
+            raise RuntimeError("playwright exploded")
+        return FakeResponse(200, "<html>rendered</html>")
+
+    fetcher, _, _, sleeps = make_fetcher(
+        lambda url: FakeResponse(200, "<html>http</html>"),
+        responder,
+    )
+    page = await fetcher.fetch("https://site.test/list", browser_first=True)
+    assert page.ok and page.via == "browser"
+    assert len(calls) == 2
+    assert sleeps, "浏览器重试前要有退避"
+
+
+@pytest.mark.asyncio
+async def test_browser_fetch_respects_host_rate_limiter():
+    class RecordingLimiter:
+        def __init__(self) -> None:
+            self.waits: list[str] = []
+
+        async def wait(self, host: str) -> float:
+            self.waits.append(host)
+            return 0.0
+
+    fetcher, _, _, _ = make_fetcher(
+        lambda url: FakeResponse(200, "<html>http</html>"),
+        lambda url: FakeResponse(200, "<html>rendered</html>"),
+    )
+    limiter = RecordingLimiter()
+    fetcher._limiter = limiter
+    await fetcher.fetch("https://site.test/a", browser_first=True)
+    await fetcher.fetch("https://site.test/b", browser_first=True)
+    assert limiter.waits == ["site.test", "site.test"]

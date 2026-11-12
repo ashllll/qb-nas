@@ -12,6 +12,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: auto-merge-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
 jobs:
   merge:
     if: >-
@@ -19,6 +23,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Squash-merge the green PR
         uses: actions/github-script@v7
@@ -45,6 +50,11 @@ jobs:
               );
               if (labels.includes('agent') || data.head.ref.startsWith('factory/')) {
                 core.info(`PR #${pr.number} is agent-generated; skip auto-merge`);
+                continue;
+              }
+              // gates 跑完后 PR 又推了新提交：这次绿灯不代表当前 head，等下一轮 gates。
+              if (data.head.sha !== run.head_sha) {
+                core.info(`PR #${pr.number} head ${data.head.sha} is newer than tested ${run.head_sha}; skip`);
                 continue;
               }
               if (data.mergeable === false) {

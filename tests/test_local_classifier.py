@@ -85,20 +85,6 @@ def test_unknown_default():
     assert result["category"] == "其他"
 
 
-def test_batch_classify():
-    clf = LocalClassifier()
-    items = [
-        {"index": 0, "name": "Game.of.Thrones.S01E01"},
-        {"index": 1, "name": "Taylor.Swift.Midnights.FLAC"},
-        {"index": 2, "name": "Avatar.2022.2160p"},
-    ]
-    results = clf.classify_sync_batch(items)
-    assert len(results) == 3
-    assert results[0]["category"] == "电视剧"
-    assert results[1]["category"] == "音乐"
-    assert results[2]["category"] == "其他"
-
-
 def test_reload_rules_uses_updated_keyword_file(tmp_path):
     rules_file = tmp_path / "category_keywords.json"
     rules_file.write_text(
@@ -132,6 +118,83 @@ def test_reload_rules_uses_updated_keyword_file(tmp_path):
     assert clf.classify_one("NewKey.Release")["category"] == "游戏"
 
 
+def _write_keyword_file(rules_file, keywords):
+    rules_file.write_text(json.dumps({"keywords": keywords}), encoding="utf-8")
+
+
+def test_reload_failure_keeps_old_keywords(tmp_path):
+    """半截 JSON → reload failed，旧关键词规则原样保留并继续生效。"""
+    rules_file = tmp_path / "category_keywords.json"
+    _write_keyword_file(
+        rules_file, [{"keyword": "OldKey", "category": "电影", "save_path": "电影"}]
+    )
+    clf = LocalClassifier(keyword_rules_file=rules_file)
+    assert clf.classify_one("OldKey.Release")["category"] == "电影"
+
+    rules_file.write_text('{"keywords": [{"keyword": "OldKey"', encoding="utf-8")
+    result = clf.reload_rules()
+
+    assert result == {
+        "status": "failed",
+        "rules_reloaded": 1,
+        "failed_rules": ["KeywordRule"],
+    }
+    assert clf.classify_one("OldKey.Release")["category"] == "电影"
+    # 未缓存的名称同样靠旧规则命中，证明规则表没有被清空
+    assert clf.classify_one("OldKey.ParseCheck")["category"] == "电影"
+
+
+def test_reload_after_fix_applies_new_keywords(tmp_path):
+    """修正文件后 reload 成功：新关键词生效，旧关键词回落为其他。"""
+    rules_file = tmp_path / "category_keywords.json"
+    _write_keyword_file(
+        rules_file, [{"keyword": "OldKey", "category": "电影", "save_path": "电影"}]
+    )
+    clf = LocalClassifier(keyword_rules_file=rules_file)
+    assert clf.classify_one("OldKey.Release")["category"] == "电影"
+
+    rules_file.write_text("{", encoding="utf-8")
+    assert clf.reload_rules()["status"] == "failed"
+
+    _write_keyword_file(
+        rules_file, [{"keyword": "NewKey", "category": "游戏", "save_path": "游戏"}]
+    )
+    assert clf.reload_rules() == {"status": "reloaded", "rules_reloaded": 2}
+    assert clf.classify_one("NewKey.Release")["category"] == "游戏"
+    assert clf.classify_one("OldKey.Release")["category"] == "其他"
+
+
+def test_reload_with_empty_keywords_clears_old_rules(tmp_path):
+    """{"keywords": []} 是合法配置：reload 成功，旧关键词被清空。"""
+    rules_file = tmp_path / "category_keywords.json"
+    _write_keyword_file(
+        rules_file, [{"keyword": "OldKey", "category": "电影", "save_path": "电影"}]
+    )
+    clf = LocalClassifier(keyword_rules_file=rules_file)
+    assert clf.classify_one("OldKey.Release")["category"] == "电影"
+
+    _write_keyword_file(rules_file, [])
+    assert clf.reload_rules() == {"status": "reloaded", "rules_reloaded": 2}
+    assert clf.classify_one("OldKey.Release")["category"] == "其他"
+
+
+def test_reload_with_missing_file_keeps_old_rules(tmp_path):
+    """文件被删 → reload failed，旧规则仍生效。"""
+    rules_file = tmp_path / "category_keywords.json"
+    _write_keyword_file(
+        rules_file, [{"keyword": "OldKey", "category": "电影", "save_path": "电影"}]
+    )
+    clf = LocalClassifier(keyword_rules_file=rules_file)
+    assert clf.classify_one("OldKey.Release")["category"] == "电影"
+
+    rules_file.unlink()
+    result = clf.reload_rules()
+
+    assert result["status"] == "failed"
+    assert result["failed_rules"] == ["KeywordRule"]
+    assert clf.classify_one("OldKey.ParseCheck")["category"] == "电影"
+
+
 if __name__ == "__main__":
     test_tv_series()
     test_anime()
@@ -142,5 +205,4 @@ if __name__ == "__main__":
     test_variety()
     test_movie_default()
     test_unknown_default()
-    test_batch_classify()
     print("=== LocalClassifier tests passed! ===")

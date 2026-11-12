@@ -40,7 +40,7 @@ The narrow dependency set a qBittorrent hot-swap needs: current client, crawl pi
 
 ### Event versioning
 
-Every bus/WebSocket event payload carries `updated_at` (naive-local `datetime.now()` ISO string; lexicographic order == chronological order). The frontend `seenAt` version table drops late-arriving stale events so they cannot overwrite newer state.
+Every bus/WebSocket event payload carries `updated_at` (UTC-aware ISO string from `utils/timeutil.utc_now()`, with `+00:00`; lexicographic order == chronological order). The frontend `seenAt` version table drops late-arriving stale events so they cannot overwrite newer state.
 
 ### Local classification
 

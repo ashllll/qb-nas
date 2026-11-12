@@ -72,6 +72,13 @@ root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)
 case "$root" in /vol3/*) ok "docker 根在 ${root}（镜像/容器层在存储空间 3）" ;; *) bad "docker 根在 $root" ;; esac
 db="$PREFIX/data/magnet_items.db"
 if [ -f "$db" ]; then ok "SQLite 存在：${db}（$(du -h "$db" | cut -f1)）"; else note "还没有 ${db}（还没收到第一条数据时属正常）"; fi
+# 镜像里必须带分类关键词规则：它不在 pip 包里，漏 COPY 时容器内 KeywordRule 静默失效
+kw_n=$(docker exec "$CONTAINER" python -c 'import json; print(len(json.load(open("/app/config/category_keywords.json"))["keywords"]))' 2>/dev/null || echo 0)
+if [ "${kw_n:-0}" -ge 1 ] 2>/dev/null; then
+  ok "镜像内含分类关键词规则：/app/config/category_keywords.json（${kw_n} 条）"
+else
+  bad "镜像内缺 /app/config/category_keywords.json：容器里 KeywordRule 永久失效"
+fi
 
 # 7. 容器层只读：配置结构上不可能落进镜像层
 ro=$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$CONTAINER" 2>/dev/null || echo false)

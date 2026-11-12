@@ -9,8 +9,8 @@
 覆盖范围：
 
 - HTTP MockTransport / FakeQbit、模拟爬虫、NullBus/RecordingBus 下的单元与集成测试
-- URL 校验 / SSRF 防护、分类规则链、状态转换与事件、桥接提交与 GID 持久化、状态同步，以及旧 qB 辅助模块
-- API 认证与路由、WebSocket 广播与握手认证、剪贴板监控
+- URL 校验 / SSRF 防护、分类规则链、状态转换与事件、aria2 桥接提交与 GID 持久化、状态同步，以及旧 qB 辅助模块
+- API 认证与路由、WebSocket 广播/反压与首帧认证、Mac Agent ingest
 
 **能证明**：逻辑正确性、边界处理、并发与回滚语义、协议字段完整性。
 

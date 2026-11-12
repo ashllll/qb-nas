@@ -7,13 +7,8 @@ from typing import Protocol
 
 from magnet_harvester.config import settings
 from magnet_harvester.models import TaskStatus
+from magnet_harvester.services.probe import CachedProbe
 from magnet_harvester.store import ItemStore
-
-
-class StoreLike(Protocol):
-    @property
-    def count(self) -> int: ...
-    def stats(self): ...
 
 
 class QBitLike(Protocol):
@@ -60,6 +55,7 @@ class ObservabilitySnapshot:
         broadcaster: BroadcasterLike | None = None,
         error_handler: ErrorHandlerLike | None = None,
         classifier: ClassifierLike | None = None,
+        probe: CachedProbe | None = None,
     ):
         self._store = store
         self._qbit = qbit
@@ -67,16 +63,19 @@ class ObservabilitySnapshot:
         self._broadcaster = broadcaster
         self._error_handler = error_handler
         self._classifier = classifier
+        # qB 连不上时 ping 会重试十几秒，而 /api/health 的 healthcheck 只等 4 秒：
+        # 缓存 10 秒、单次最多 1.5 秒，容器不会因为一次探测慢被判 unhealthy。
+        self._probe = probe or CachedProbe(ttl=10.0, timeout=1.5)
 
     def replace_qbit_client(self, new_qbit: QBitLike) -> None:
         self._qbit = new_qbit
+        # 旧客户端的探测结果不代表新客户端，别让热换配置后还显示旧的离线状态
+        self._probe.invalidate()
 
     async def system_status(self) -> dict:
-        try:
-            qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
-        except (asyncio.TimeoutError, Exception):
-            qbit_ok = False
-        by_status = (await self._store.stats()).by_status
+        qbit_ok = await self._probe.read(self._qbit.ping)
+        store_stats = await self._store.stats()
+        by_status = store_stats.by_status
         tracked = sum(
             by_status.get(status.value, 0)
             for status in (TaskStatus.adding, TaskStatus.queued, TaskStatus.downloading)
@@ -86,17 +85,14 @@ class ObservabilitySnapshot:
         return {
             "qbittorrent": "online" if qbit_ok else "offline",
             "classifier": "local_rules",
-            "items_count": await self._store.count(),
+            "items_count": store_stats.total,
             "tracked_downloads": tracked,
             "qbit_stats": qbit_stats,
             "disk_space": await asyncio.to_thread(settings.check_disk_space),
         }
 
     async def health(self) -> dict:
-        try:
-            qbit_ok = await asyncio.wait_for(self._qbit.ping(), timeout=5.0)
-        except (asyncio.TimeoutError, Exception):
-            qbit_ok = False
+        qbit_ok = await self._probe.read(self._qbit.ping)
         classifier_ok = False
         if self._classifier is not None:
             try:

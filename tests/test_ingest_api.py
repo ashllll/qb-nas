@@ -8,6 +8,7 @@ import base64
 from fastapi import FastAPI
 
 from magnet_harvester.api.ingest_routes import router as ingest_router
+from magnet_harvester.api.routes import router as api_router
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.context.app_context import (
@@ -16,12 +17,12 @@ from magnet_harvester.context.app_context import (
     CoreServices,
     RuntimeState,
 )
-from magnet_harvester.jobs import JobStore
+from magnet_harvester.jobs import CrawlJob, JobStatus, JobStore
 from magnet_harvester.models import TaskStatus
 from magnet_harvester.services.ingest import IngestService
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
 from magnet_harvester.transitions import ClassificationTransitions, DiscoveryTransitions
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 
 HEX = "0123456789ABCDEF0123456789ABCDEF01234567"
 HEX_B32 = base64.b32encode(bytes.fromhex(HEX)).decode()
@@ -183,6 +184,55 @@ def test_status_and_jobs_after_job_finishes(tmp_path):
     assert status["recent_items"][0]["status"] == TaskStatus.pending.value
     assert jobs["counts"]["done"] == 1
     assert single["job_id"] == started["job_id"]
+
+
+def test_url_ingest_without_executor_reports_error_not_accepted(tmp_path):
+    app, _ctx = make_app(tmp_path)  # 没装后台执行器
+
+    with asgi_client(app) as client:
+        resp = post_ingest(client, "url", ROOT_URL)
+
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["ok"] is False
+    assert body["status"] == "error"
+    assert "后台执行器" in body["reason"]
+
+
+def test_page_crawl_maps_executor_failure_to_503(tmp_path):
+    app, _ctx = make_app(tmp_path)
+    app.include_router(api_router)
+
+    with asgi_client(app) as client:
+        failed = client.post(
+            "/api/crawl",
+            json={"url": ROOT_URL, "depth": 1},
+            headers={"X-API-Key": API_KEY},
+        )
+        rejected = client.post(
+            "/api/crawl",
+            json={"url": "http://127.0.0.1:8899/admin", "depth": 1},
+            headers={"X-API-Key": API_KEY},
+        )
+
+    assert failed.status_code == 503
+    assert "后台执行器" in failed.json()["detail"]
+    assert rejected.status_code == 422
+
+
+def test_retry_reports_executor_failure_as_503(tmp_path):
+    app, ctx = make_app(tmp_path)
+    ctx.app_services.ingest._jobs.create(
+        CrawlJob(job_id="job-done", url=ROOT_URL, status=JobStatus.done)
+    )
+
+    with asgi_client(app) as client:
+        failed = client.post("/api/v1/jobs/job-done/retry", headers={"X-API-Key": API_KEY})
+        missing = client.post("/api/v1/jobs/job-missing/retry", headers={"X-API-Key": API_KEY})
+
+    assert failed.status_code == 503
+    assert "后台执行器" in failed.json()["detail"]
+    assert missing.status_code == 404
 
 
 def test_health_needs_no_key_and_hides_credentials(tmp_path):

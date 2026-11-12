@@ -9,7 +9,7 @@ import pytest
 
 from magnet_harvester.bus import EventType, MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
-from magnet_harvester.jobs import JobStatus, JobStore
+from magnet_harvester.jobs import CrawlJob, JobStatus, JobStore
 from magnet_harvester.models import IngestKind, IngestRequest, TaskStatus
 from magnet_harvester.services.ingest import IngestService
 from magnet_harvester.store import AsyncItemStore, InMemoryItemStore
@@ -260,6 +260,33 @@ async def test_same_url_while_running_reuses_job(tmp_path):
 
 
 # ── 重启续跑 ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_auto_start_failure_is_reported_not_accepted(tmp_path):
+    service, _store, jobs, _bus = build(tmp_path)  # 没装后台执行器
+
+    result = await service.ingest_url(ROOT_URL, source="mac")
+
+    assert result["ok"] is False
+    assert result["status"] == "error"
+    assert "后台执行器" in result["reason"]
+    job = jobs.get(result["job_id"])
+    assert job is not None and job.status == JobStatus.queued
+
+
+@pytest.mark.asyncio
+async def test_retry_reports_executor_failure(tmp_path):
+    service, _store, jobs, _bus = build(tmp_path)
+    jobs.create(CrawlJob(job_id="job-done", url=ROOT_URL, status=JobStatus.done))
+
+    result = await service.retry_job("job-done")
+
+    assert result["ok"] is False
+    assert result["status"] == "error"
+    assert "后台执行器" in result["reason"]
+    requeued = jobs.get("job-done")
+    assert requeued is not None and requeued.status == JobStatus.queued
 
 
 @pytest.mark.asyncio

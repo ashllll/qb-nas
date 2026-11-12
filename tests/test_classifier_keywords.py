@@ -2,6 +2,7 @@
 测试 LocalClassifier + KeywordCategoryRecognizer 集成
 """
 
+import asyncio
 import sys
 import os
 
@@ -27,7 +28,7 @@ def test_keyword_rule_in_batch():
         {"index": 0, "name": "Deep Ocean [National Geographic 2024] 2160p"},
         {"index": 1, "name": "Avatar.2022.2160p.BluRay"},
     ]
-    results = clf.classify_sync_batch(items)
+    results = asyncio.run(clf.classify_stream_batch(items))
     assert results[0]["category"] == "纪录片"
     assert results[0]["save_path"] == "纪录片"
     assert results[1]["category"] == "电影"

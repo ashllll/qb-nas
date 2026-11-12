@@ -26,7 +26,7 @@ from magnet_harvester.bus import Event, EventType, MessageBus
 from magnet_harvester.classifier.local_classifier import LocalClassifier
 from magnet_harvester.config import settings
 from magnet_harvester.context.app_context import BackgroundTaskSpawner
-from magnet_harvester.jobs import CrawlJob, JobStatus, JobStore
+from magnet_harvester.jobs import AsyncJobStore, CrawlJob, JobStatus, JobStore
 from magnet_harvester.magnet_parser import parse_magnet
 from magnet_harvester.models import IngestKind, IngestRequest, MagnetItem, TaskStatus
 from magnet_harvester.store import ItemStore
@@ -37,18 +37,6 @@ from magnet_harvester.utils.url_validator import URLValidationError, validate_cr
 from magnet_harvester.utils.bg_tasks import BGTaskManager
 
 log = logging.getLogger(__name__)
-
-_INGEST_ERROR_REASONS = {
-    "no_magnet",
-    "blocked",
-    "timeout",
-    "http_error",
-    "parse_error",
-    "unsafe_url",
-    "browser_unavailable",
-    # 取页层没给结构化原因时的兜底，UI 直接显示原始消息
-    "crawl_error",
-}
 
 # 一条任务最多留多少条错误明细（站点被限流时错误会成百上千，只留最近的）
 _MAX_JOB_ERRORS = 20
@@ -74,6 +62,9 @@ class IngestService:
     ):
         self._store = store
         self._jobs = jobs
+        # 同步查询接口（路由直接调用）继续走 JobStore；async 路径统一经这里丢线程池，
+        # 否则每条 found/progress 的落盘都会卡住同一条 loop 上的 qB 同步与 WS 推送。
+        self._jobs_async = AsyncJobStore(jobs)
         self._classifier = classifier
         self._crawler = crawler
         self._bus = bus
@@ -89,6 +80,9 @@ class IngestService:
         self._event_locks: dict[str, asyncio.Lock] = {}
         self._event_locks_guard = asyncio.Lock()
         self._MAX_EVENT_LOCKS = 1024
+        # 「查同网址任务 + 建任务」必须在同一个临界区：落盘改走线程池后，两步之间会
+        # 让出事件循环，并发上报会各自查到空、各建一个任务（以前同步调用天然原子）。
+        self._job_create_lock = asyncio.Lock()
 
     # ── 上报入口 ──────────────────────────
 
@@ -129,7 +123,7 @@ class IngestService:
         value_hash: str,
         source: str,
     ) -> dict:
-        previous = self._jobs.get_event(event_id)
+        previous = await self._jobs_async.get_event(event_id)
         if previous is not None:
             if previous.value_hash and previous.value_hash != value_hash:
                 log.warning(
@@ -158,7 +152,7 @@ class IngestService:
         else:
             result = await self.ingest_url(req.value, source=source, batch_id=event_id)
 
-        self._jobs.record_event(
+        await self._jobs_async.record_event(
             event_id=event_id,
             kind=req.kind.value,
             value_hash=value_hash,
@@ -235,13 +229,6 @@ class IngestService:
         await self._classify_one(item.hash, item.name)
         return {"ok": True, "status": "accepted", "item_id": normalized, "reason": ""}
 
-    async def ingest_magnet(self, item: MagnetItem) -> bool:
-        """已在别处解析好的条目入库并分类（供 pipeline.ingest 复用）。"""
-        added = await self._discovery.found(item)
-        if added:
-            await self._classify_one(item.hash, item.name)
-        return added
-
     async def ingest_url(
         self,
         url: str,
@@ -264,28 +251,36 @@ class IngestService:
                 "reason": f"不安全的网址：{exc}",
             }
 
-        active = self._jobs.find_active_by_url(url)
-        if active is not None:
-            return {
-                "ok": True,
-                "status": "accepted",
-                "job_id": active.job_id,
-                "reason": "该网址正在抓取，复用同一任务",
-            }
+        async with self._job_create_lock:
+            active = await self._jobs_async.find_active_by_url(url)
+            if active is not None:
+                return {
+                    "ok": True,
+                    "status": "accepted",
+                    "job_id": active.job_id,
+                    "reason": "该网址正在抓取，复用同一任务",
+                }
 
-        job = CrawlJob(
-            job_id=uuid.uuid4().hex,
-            batch_id=batch_id or uuid.uuid4().hex,
-            url=url,
-            depth=max(1, min(int(depth or self._job_depth), self._max_depth())),
-            status=JobStatus.queued,
-            source=source,
-            message="等待抓取",
-        )
-        self._jobs.create(job)
+            job = CrawlJob(
+                job_id=uuid.uuid4().hex,
+                batch_id=batch_id or uuid.uuid4().hex,
+                url=url,
+                depth=max(1, min(int(depth or self._job_depth), self._max_depth())),
+                status=JobStatus.queued,
+                source=source,
+                message="等待抓取",
+            )
+            await self._jobs_async.create(job)
         await self._emit_job(job)
-        if auto_start:
-            self.start_job(job.job_id)
+        if auto_start and not self.start_job(job.job_id):
+            # 任务已入库（还排在队里，重启/重试都能捡回来），但后台执行器没起来，
+            # 不能让调用方以为它在跑。
+            return {
+                "ok": False,
+                "status": "error",
+                "job_id": job.job_id,
+                "reason": "任务已排队，但后台执行器没能启动，稍后可在任务列表里重试",
+            }
         return {"ok": True, "status": "accepted", "job_id": job.job_id, "reason": ""}
 
     # ── 任务执行 ──────────────────────────
@@ -310,7 +305,7 @@ class IngestService:
     async def resume_pending(self) -> int:
         """服务启动时把中断的任务重新排上，返回续跑数量。"""
         try:
-            job_ids = self._jobs.claim_resumable(max_attempts=self._max_attempts)
+            job_ids = await self._jobs_async.claim_resumable(max_attempts=self._max_attempts)
         except Exception:
             log.exception("读取待续跑任务失败")
             return 0
@@ -332,12 +327,12 @@ class IngestService:
         self._running.clear()
 
     async def retry_job(self, job_id: str) -> dict:
-        job = self._jobs.get(job_id)
+        job = await self._jobs_async.get(job_id)
         if job is None:
             return {"ok": False, "status": "rejected", "reason": "任务不存在"}
         if job.status in JobStatus.ACTIVE:
             return {"ok": True, "status": "accepted", "job_id": job_id, "reason": "任务仍在进行中"}
-        self._jobs.update(
+        await self._jobs_async.update(
             job_id,
             status=JobStatus.queued,
             reason="",
@@ -345,10 +340,16 @@ class IngestService:
             attempts=0,
             finished_at="",
         )
-        updated = self._jobs.get(job_id)
+        updated = await self._jobs_async.get(job_id)
         if updated is not None:
             await self._emit_job(updated)
-        self.start_job(job_id)
+        if not self.start_job(job_id):
+            return {
+                "ok": False,
+                "status": "error",
+                "job_id": job_id,
+                "reason": "任务已重新排队，但后台执行器没能启动，稍后再试",
+            }
         return {"ok": True, "status": "accepted", "job_id": job_id, "reason": "已重新排队"}
 
     async def _run_job(self, job_id: str) -> None:
@@ -364,7 +365,7 @@ class IngestService:
             self._running.pop(job_id, None)
 
     async def _run_job_inner(self, job_id: str) -> None:
-        job = self._jobs.get(job_id)
+        job = await self._jobs_async.get(job_id)
         if job is None:
             return
         if job.status == JobStatus.running:
@@ -374,7 +375,7 @@ class IngestService:
         async with self._semaphore:
             started_wall = time.monotonic()
             job = (
-                self._jobs.update(
+                await self._jobs_async.update(
                     job_id,
                     status=JobStatus.running,
                     started_at=iso_utc(utc_now()),
@@ -407,7 +408,7 @@ class IngestService:
                         else:
                             counters["duplicates"] += 1
                         job = (
-                            self._jobs.update(
+                            await self._jobs_async.update(
                                 job_id,
                                 **counters,
                                 first_item_ms=first_item_ms,
@@ -424,7 +425,9 @@ class IngestService:
                             if metrics.get("browser_used"):
                                 browser_used = True
                         counters["pages"] = max(counters["pages"], int(msg.get("pages") or 0))
-                        job = self._jobs.update(job_id, pages=counters["pages"]) or job
+                        job = (
+                            await self._jobs_async.update(job_id, pages=counters["pages"])
+                        ) or job
                     elif kind == "error":
                         entry = {
                             "msg": str(msg.get("msg") or msg.get("message") or "抓取出错"),
@@ -438,7 +441,7 @@ class IngestService:
                         if len(errors) > _MAX_JOB_ERRORS:
                             del errors[: len(errors) - _MAX_JOB_ERRORS]
                         job = (
-                            self._jobs.update(
+                            await self._jobs_async.update(
                                 job_id,
                                 errors=errors,
                                 # reason 只放原因代码（机器判读）；具体消息在 errors[]，中文在 reason_label
@@ -455,7 +458,7 @@ class IngestService:
                         if done_metrics.get("browser_used"):
                             browser_used = True
             except asyncio.CancelledError:
-                self._jobs.update(
+                await self._jobs_async.update(
                     job_id,
                     status=JobStatus.queued,
                     message="服务关闭，重启后继续",
@@ -469,7 +472,7 @@ class IngestService:
                 elapsed_ms = int((time.monotonic() - started_wall) * 1000)
 
             if fatal:
-                final = self._jobs.update(
+                final = await self._jobs_async.update(
                     job_id,
                     status=JobStatus.error,
                     reason=fatal,
@@ -481,7 +484,7 @@ class IngestService:
                 reason = ""
                 if counters["found"] == 0:
                     reason = errors[-1]["reason"] if errors else "no_magnet"
-                final = self._jobs.update(
+                final = await self._jobs_async.update(
                     job_id,
                     status=JobStatus.done,
                     reason=reason,
@@ -554,8 +557,8 @@ class IngestService:
     # ── 快照 ──────────────────────────────
 
     async def status_snapshot(self, *, jobs_limit: int = 10) -> dict:
-        counts = self._jobs.counts()
-        recent_jobs = [job.as_dict() for job in self._jobs.list(limit=jobs_limit)]
+        counts = await self._jobs_async.counts()
+        recent_jobs = [job.as_dict() for job in await self._jobs_async.list(limit=jobs_limit)]
         try:
             recent_items = [item.model_dump() for item in await self._store.recent(5)]
         except Exception:
@@ -568,7 +571,7 @@ class IngestService:
             )
         return {
             "ok": True,
-            "last_event_at": self._jobs.last_event_at(),
+            "last_event_at": await self._jobs_async.last_event_at(),
             "jobs": recent_jobs,
             "job_counts": counts,
             "recent_items": recent_items,
@@ -582,7 +585,7 @@ class IngestService:
                     "reason": record.reason,
                     "created_at": record.created_at,
                 }
-                for record in self._jobs.recent_events(8)
+                for record in await self._jobs_async.recent_events(8)
             ],
         }
 
@@ -598,8 +601,6 @@ class IngestService:
     def _normalize_reason(cls, reason, message: str = "") -> str:
         """统一失败原因的取值：取页层给了结构化原因就用它，否则按消息猜一个。"""
         text = str(reason or "").strip()
-        if text in _INGEST_ERROR_REASONS:
-            return text
         if text:
             return text
         lowered = (message or "").lower()

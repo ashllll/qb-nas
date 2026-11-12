@@ -136,7 +136,6 @@ class MagnetCrawler:
     ):
         self._config = config if config is not None else settings.crawler
         self._started = False
-        self._active_walkers: set[MagnetPageWalker] = set()
         self._session_metrics: ContextVar[CrawlMetrics | None] = ContextVar(
             "crawl_session_metrics",
             default=None,
@@ -183,11 +182,6 @@ class MagnetCrawler:
         """关闭长期持有的 HTTP/浏览器会话。"""
         await self._fetcher.close()
         self._started = False
-        if self._target_admission is not None and hasattr(self._target_admission, "close"):
-            try:
-                await self._target_admission.close()
-            except Exception as e:
-                log.warning(f"关闭 CrawlTargetAdmission 时出错: {e}")
         log.info("取页引擎已关闭")
 
     async def crawl(self, url: str, depth: int = 1) -> AsyncGenerator[dict, None]:
@@ -285,7 +279,8 @@ class MagnetCrawler:
         await asyncio.gather(session_task, return_exceptions=True)
 
     def _make_event_queue(self) -> asyncio.Queue[dict | None]:
-        return asyncio.Queue(maxsize=max(32, min(self._config.concurrency, 8) * 8))
+        # 64 只是背压缓冲：真实并发在 PageFetcher 的 per_host_concurrency。
+        return asyncio.Queue(maxsize=64)
 
     def _build_walker(self, root_url: str, depth: int) -> MagnetPageWalker:
         return MagnetPageWalker(
@@ -305,14 +300,12 @@ class MagnetCrawler:
     ) -> None:
         # 保存 CrawlMetrics 引用, 防止 finally 块中 ContextVar 已被外层设为 None
         metrics: CrawlMetrics = self._current_metrics()
-        walker: MagnetPageWalker | None = None
         cancelled = False
         try:
             await events.put(
                 {"type": "progress", "msg": "正在取页...", "url": root_url, "depth": depth}
             )
             walker = self._build_walker(root_url, depth)
-            self._active_walkers.add(walker)
             async for item in walker.stream():
                 if item.get("kind") != "page":
                     continue
@@ -360,8 +353,6 @@ class MagnetCrawler:
                     }
                 )
                 await events.put(None)
-            if walker is not None:
-                self._active_walkers.discard(walker)
 
     async def _handle_walker_page(
         self,

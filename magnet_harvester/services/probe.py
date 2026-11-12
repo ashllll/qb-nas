@@ -26,9 +26,10 @@ class CachedProbe:
         # 免得 /api/v1/health 回一个 reason: null，界面只能说「离线」。
         self._reason: str | None = None
 
-    @property
-    def last_value(self) -> bool:
-        return self._value
+    def invalidate(self) -> None:
+        """丢掉缓存值：底层客户端被热替换后，旧结果不再代表新客户端。"""
+        self._checked_at = 0.0
+        self._reason = None
 
     @property
     def last_reason(self) -> str | None:

@@ -57,7 +57,9 @@ async def test_build_runtime_wires_all_components(monkeypatch):
     assert ctx.app_services.action_executor is not None, "action_executor missing"
     assert ctx.runtime.qbit_sync is not None, "qbit_sync missing"
     assert ctx.runtime.qbit_runtime.transaction_lock is not None, "transaction_lock missing"
-    assert ctx.runtime.error_handler is not None, "error_handler missing"
+    from magnet_harvester.errors import ErrorHandler
+
+    assert isinstance(ctx.runtime.error_handler, ErrorHandler), "error_handler missing"
     assert ctx.app_services.observability is not None, "observability missing"
     assert ctx.app_services.item_queries is not None, "item_queries missing"
     assert ctx.runtime.api_key is not None, "api_key missing"

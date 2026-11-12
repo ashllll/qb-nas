@@ -66,8 +66,7 @@ class KeywordRule:
     def reload(self) -> bool:
         if not self._reloadable:
             return False
-        self._recognizer.reload()
-        return True
+        return self._recognizer.reload()
 
 
 class StudioRule:

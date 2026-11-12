@@ -120,14 +120,6 @@ class ObservabilityLike(Protocol):
 
 
 class ItemQueryLike(Protocol):
-    async def get_stats(self) -> dict: ...
-    async def list_items(
-        self,
-        *,
-        category: str | None = None,
-        status: str = "all",
-        limit: int = 20,
-    ) -> dict: ...
     async def page_items(
         self,
         *,

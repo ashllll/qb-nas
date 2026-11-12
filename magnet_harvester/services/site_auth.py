@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 
@@ -51,38 +50,6 @@ def build_browser_cookies(site_cookies: dict[str, str]) -> list[dict]:
         if not domain or not cookie_str:
             continue
         cookies.extend(_parse_cookie_string(cookie_str, domain))
-    return cookies
-
-
-def get_cookies_for_url(url: str, site_cookies: dict[str, str]) -> list[dict]:
-    """返回匹配目标 URL 域名的 cookie 列表（Playwright 格式），精确匹配优先。"""
-    if not site_cookies:
-        return []
-
-    try:
-        domain = urlparse(url).hostname or ""
-    except ValueError as e:
-        log.debug("URL 解析失败 domain=%s: %s", url, e)
-        return []
-    except Exception as e:
-        log.warning("get_cookies_for_url 非预期异常: %s", e)
-        return []
-
-    exact_cookies: list[dict] = []
-    wildcard_cookies: list[dict] = []
-    for site_domain, cookie_str in site_cookies.items():
-        if not site_domain or not cookie_str:
-            continue
-        site_domain = site_domain.lstrip(".")
-        # 域名匹配：精确匹配或子域名匹配
-        if domain == site_domain:
-            exact_cookies.extend(_parse_cookie_string(cookie_str, domain))
-        elif domain.endswith("." + site_domain):
-            wildcard_cookies.extend(_parse_cookie_string(cookie_str, domain))
-
-    cookies = exact_cookies + wildcard_cookies
-    if cookies:
-        log.info(f"已注入 {len(cookies)} 个 cookie 到 {domain}")
     return cookies
 
 

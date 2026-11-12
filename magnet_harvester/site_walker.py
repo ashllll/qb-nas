@@ -158,6 +158,19 @@ class MagnetPageWalker:
         level_urls = (
             extract_detail_links(root.html, root.url, limit=self._max_links) if followable else []
         )
+        # 0 个详情链接 + 有 <script>：典型 SPA 壳。HTTP 拿到的导航链接再多也没用，
+        # 整页在浏览器里渲染一次再抽链接；只对根页做一次，不逐页试。
+        if (
+            followable
+            and not level_urls
+            and self._config.browser_fallback
+            and "<script" in (root.html or "").lower()
+        ):
+            log.info("根页只有脚本没有详情链接，改用浏览器重取一次: %s", root.url)
+            retried = await self._fetch_root(force_browser=True)
+            if retried.ok:
+                root = retried
+                level_urls = extract_detail_links(root.html, root.url, limit=self._max_links)
         root_event = root.as_event()
         root_event["is_root"] = True
         # 根页常常只是列表页：告诉调用方「这一页没有磁力但有 N 个详情页」，
@@ -208,7 +221,7 @@ class MagnetPageWalker:
             self._admitted_hosts.add(host)
             return admitted
 
-    async def _fetch_root(self) -> WalkerPage:
+    async def _fetch_root(self, *, force_browser: bool = False) -> WalkerPage:
         try:
             admitted = await self._admit(self.root_url)
         except Exception as exc:
@@ -217,7 +230,9 @@ class MagnetPageWalker:
                 reason=FailureReason.UNSAFE_URL,
                 message=str(exc)[:300],
             )
-        return WalkerPage.from_fetch(await self._fetch(admitted, is_root=True))
+        return WalkerPage.from_fetch(
+            await self._fetch(admitted, is_root=True, force_browser=force_browser)
+        )
 
     def _allow_browser(self, *, is_root: bool = False) -> bool:
         return self._browser_all or is_root
@@ -226,7 +241,9 @@ class MagnetPageWalker:
         self, url: str, *, is_root: bool = False, force_browser: bool = False
     ) -> PageFetch:
         allow = True if force_browser else self._allow_browser(is_root=is_root)
-        page = await self._fetcher.fetch(url, allow_browser=allow)
+        # 根页确认要 JS 后，详情页直接走浏览器：不必每页先付一次 HTTP 失败。
+        browser_first = force_browser or (self._browser_all and not is_root)
+        page = await self._fetcher.fetch(url, allow_browser=allow, browser_first=browser_first)
         if is_root and page.ok and page.via == "browser":
             self._browser_all = True
         if page.ok and not is_root:

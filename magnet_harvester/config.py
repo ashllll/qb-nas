@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from dotenv import dotenv_values
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+from pydantic_settings.sources import DotEnvSettingsSource
 
 log = logging.getLogger(__name__)
 
@@ -67,12 +70,10 @@ class ConfigPersistError(OSError):
 class CrawlerConfig:
     timeout: int = 30
     max_depth: int = 2
-    concurrency: int = 6
     max_detail_links: int = 200
     headless: bool = True
     http_first: bool = True
     disable_resources: bool = True
-    block_ads: bool = True
     # 默认不做分辨率过滤：产品要求「多条全收」，1080p/720p 也是有效资源。
     allowed_resolutions: tuple[str, ...] = ()
     wait_until: str = "load"
@@ -86,7 +87,6 @@ class CrawlerConfig:
     remove_consent_popups: bool = True
     # — v0.9.0 新增 —
     max_retries: int = 1
-    check_robots_txt: bool = False
     # — HTTP 优先取页（v3.1） —
     browser_fallback: bool = True
     http_impersonate: str = "chrome"
@@ -100,7 +100,6 @@ class CrawlerConfig:
     def __post_init__(self) -> None:
         self.timeout = max(1, int(self.timeout))
         self.max_depth = max(1, int(self.max_depth))
-        self.concurrency = max(1, int(self.concurrency))
         self.max_detail_links = max(0, int(self.max_detail_links))
         self.delay_before_return_html = max(0.0, float(self.delay_before_return_html))
         self.scroll_delay = max(0.0, float(self.scroll_delay))
@@ -171,16 +170,27 @@ class QBitConfig:
     auto_create_dirs: bool = True
 
 
-@dataclass
-class ServiceConfig:
-    host: str = "127.0.0.1"
-    port: int = 8899
-
-
 # ── 主配置 ──────────────────────────────
 
 
 StoreBackend = Literal["sqlite", "memory"]
+
+
+class _LiteralEnvFileSource(DotEnvSettingsSource):
+    """读 .env 时关闭 `${VAR}` 展开：配置值（尤其密码）必须逐字符原样读回。
+
+    dotenv 没有关掉 interpolation 的「转义写法」，写 `$` 只能靠读侧别展开。
+    """
+
+    def _read_env_file(self, file_path: Path) -> dict[str, str | None]:
+        values = dotenv_values(
+            file_path, encoding=self.env_file_encoding or "utf8", interpolate=False
+        )
+        if self.env_ignore_empty:
+            values = {key: value for key, value in values.items() if value != ""}
+        if not self.case_sensitive:
+            values = {key.lower(): value for key, value in values.items()}
+        return values
 
 
 class Settings(BaseSettings):
@@ -199,12 +209,10 @@ class Settings(BaseSettings):
 
     CRAWLER_TIMEOUT: int = 30
     CRAWLER_MAX_DEPTH: int = 2
-    CRAWLER_CONCURRENCY: int = 6
     CRAWLER_MAX_DETAIL_LINKS: int = 200
     CRAWLER_HEADLESS: bool = True
     CRAWLER_HTTP_FIRST: bool = True
     CRAWLER_DISABLE_RESOURCES: bool = True
-    CRAWLER_BLOCK_ADS: bool = True
     # 空 = 不做分辨率过滤（详情页 1080p/720p 也要收，多条全收）
     CRAWLER_ALLOWED_RESOLUTIONS: str = ""
     CRAWLER_WAIT_UNTIL: str = "load"
@@ -218,7 +226,6 @@ class Settings(BaseSettings):
     CRAWLER_REMOVE_CONSENT_POPUPS: bool = True
     CRAWLER_MAX_RETRIES: int = 1
     CRAWLER_RETRY_BACKOFF: float = 0.4
-    CRAWLER_CHECK_ROBOTS_TXT: bool = False
     CRAWLER_BROWSER_FALLBACK: bool = True
     CRAWLER_HTTP_IMPERSONATE: str = "chrome"
     CRAWLER_PER_HOST_MIN_INTERVAL: float = 0.15
@@ -283,14 +290,22 @@ class Settings(BaseSettings):
 
         def merged_source() -> dict[str, object]:
             env_values = dict(env_settings() or {})
-            file_values = dict(dotenv_settings() or {})
+            file_values = dict(file_settings() or {})
             merged: dict[str, object] = dict(env_values)
-            for key, value in file_values.items():
+            for raw_key, value in file_values.items():
+                key = raw_key.upper()
                 if key in DEPLOYMENT_PINNED_KEYS:
                     merged.setdefault(key, value)  # 环境优先，文件只补缺
                 else:
                     merged[key] = value  # 文件优先（含界面可写键）
             return merged
+
+        # 只换读法（不展开 ${VAR}），file/encoding 沿用 pydantic 已解析的 _env_file
+        file_settings = _LiteralEnvFileSource(
+            settings_cls,
+            env_file=dotenv_settings.env_file,
+            env_file_encoding=dotenv_settings.env_file_encoding,
+        )
 
         return (init_settings, merged_source, file_secret_settings)
 
@@ -301,7 +316,6 @@ class Settings(BaseSettings):
         self._env_file_override = str(env_file_override) if env_file_override else None
         self._qbit_config: Optional[QBitConfig] = None
         self._crawler_config: Optional[CrawlerConfig] = None
-        self._service_config: Optional[ServiceConfig] = None
 
     # ── 配置事实源自检（启动日志 + 证据） ──────────────────────────────
 
@@ -472,12 +486,10 @@ class Settings(BaseSettings):
             self._crawler_config = CrawlerConfig(
                 timeout=self.CRAWLER_TIMEOUT,
                 max_depth=self.CRAWLER_MAX_DEPTH,
-                concurrency=self.CRAWLER_CONCURRENCY,
                 max_detail_links=self.CRAWLER_MAX_DETAIL_LINKS,
                 headless=self.CRAWLER_HEADLESS,
                 http_first=self.CRAWLER_HTTP_FIRST,
                 disable_resources=self.CRAWLER_DISABLE_RESOURCES,
-                block_ads=self.CRAWLER_BLOCK_ADS,
                 allowed_resolutions=self._parse_csv_tuple(
                     self.CRAWLER_ALLOWED_RESOLUTIONS, default=()
                 ),
@@ -492,7 +504,6 @@ class Settings(BaseSettings):
                 remove_consent_popups=self.CRAWLER_REMOVE_CONSENT_POPUPS,
                 max_retries=self.CRAWLER_MAX_RETRIES,
                 retry_backoff=self.CRAWLER_RETRY_BACKOFF,
-                check_robots_txt=self.CRAWLER_CHECK_ROBOTS_TXT,
                 browser_fallback=self.CRAWLER_BROWSER_FALLBACK,
                 http_impersonate=self.CRAWLER_HTTP_IMPERSONATE,
                 per_host_min_interval=self.CRAWLER_PER_HOST_MIN_INTERVAL,
@@ -501,15 +512,6 @@ class Settings(BaseSettings):
                 allow_fake_ip=self.CRAWLER_ALLOW_FAKE_IP,
             )
         return self._crawler_config
-
-    @property
-    def service(self) -> ServiceConfig:
-        if self._service_config is None:
-            self._service_config = ServiceConfig(
-                host=self.SERVICE_HOST,
-                port=self.SERVICE_PORT,
-            )
-        return self._service_config
 
     def build_qbit_config(
         self,
@@ -520,7 +522,7 @@ class Settings(BaseSettings):
         """Build a fully validated candidate without mutating live settings."""
         candidate_host = self.QBIT_HOST if host is None else host.strip()
         candidate_username = self.QBIT_USERNAME if username is None else username.strip()
-        candidate_password = self.QBIT_PASSWORD if password is None else password.strip()
+        candidate_password = self.QBIT_PASSWORD if password is None else password
 
         if not candidate_host:
             raise ValueError("qBittorrent 主机地址不能为空")
@@ -558,9 +560,18 @@ class Settings(BaseSettings):
         self._write_env_values(path, updates)
         log.info("qBittorrent 配置已落盘：%s（600，同目录临时文件 + 原子替换）", path)
 
+    @field_validator("AUTH_MODE")
+    @classmethod
+    def _normalize_auth_mode(cls, value: object) -> str:
+        """只认 trusted / strict（去空白、转小写）；拼错就启动失败，不悄悄退回信任模式。"""
+        normalized = str(value or "").strip().lower()
+        if normalized not in {"trusted", "strict"}:
+            raise ValueError("AUTH_MODE 只能是 trusted 或 strict")
+        return normalized
+
     def auth_mode_normalized(self) -> str:
-        """AUTH_MODE 的唯一解释：只认 strict，其余一律 trusted（默认）。"""
-        return "strict" if str(self.AUTH_MODE or "").strip().lower() == "strict" else "trusted"
+        """AUTH_MODE 已由 field_validator 归一，这里只做读取。"""
+        return self.AUTH_MODE
 
     def validate_security_posture(self) -> None:
         """启动自检：先报配置事实源，再拒绝无鉴权的对外写接口。
@@ -588,6 +599,11 @@ class Settings(BaseSettings):
                 )
             return
 
+        if not self.API_KEY.strip() and not self.ALLOW_INSECURE_WRITE_API:
+            log.warning(
+                "AUTH_MODE=strict 且未配置 API_KEY：所有写接口返回 401（fail-closed）。"
+                "请在 config/.env 配置 API_KEY；仅本地开发可临时设 ALLOW_INSECURE_WRITE_API=true。"
+            )
         if loopback or self.API_KEY.strip() or self.ALLOW_INSECURE_WRITE_API:
             return
         raise RuntimeError(
@@ -739,13 +755,14 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _format_env_value(value: str) -> str:
+        # 只用 python-dotenv 双引号转义表认识的序列（\\ \" \n \r \t）；
+        # `$` 原样写出，读侧由 _LiteralEnvFileSource 关掉 ${VAR} 展开。
         escaped = (
             value.replace("\\", "\\\\")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
             .replace('"', '\\"')
-            .replace("$", "\\$")
         )
         return f'"{escaped}"'
 

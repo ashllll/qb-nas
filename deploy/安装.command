@@ -44,7 +44,8 @@ SRC=${QB_NAS_SRC:-$(git -C "$DIR/.." rev-parse --show-toplevel 2>/dev/null || ec
 COMMIT=$(git -C "$SRC" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 printf '  源码：%s\n  构建标记：%s\n' "$SRC" "$COMMIT"
 "${SSH[@]}" "mkdir -p /vol3/1000/qb-nas-bootstrap/src" || fail "NAS 上建临时目录失败"
-RSYNC=(rsync -a --delete --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '.ruff_cache/' --exclude 'tests/' --exclude 'docs/' --exclude '.env' --exclude '.env.*')
+RSYNC=(rsync -a --delete --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '.ruff_cache/' --exclude 'tests/' --exclude 'docs/' --exclude '.env' --exclude '.env.*' \
+  --exclude '.agents/' --exclude '.planning/' --exclude '.reasonix/' --exclude 'qb-nas/' --exclude '.codegraph/' --exclude '.context/' --exclude '.codebase-memory/' --exclude 'research/' --exclude 'scripts/factory/')
 "${RSYNC[@]}" "$SRC/" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/" || fail "传代码失败"
 rsync -a "./" "$NAS_USER@$NAS_HOST:/vol3/1000/qb-nas-bootstrap/src/deploy/" || fail "传安装脚本失败"
 "${SSH[@]}" "bash /vol3/1000/qb-nas-bootstrap/src/deploy/install.sh --source /vol3/1000/qb-nas-bootstrap/src --commit '$COMMIT' --prefix '$PREFIX'" 2>&1

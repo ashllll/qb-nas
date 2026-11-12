@@ -17,24 +17,19 @@
 | `Sources/Core/Installer.swift` | 自安装（复制到 ~/Applications + 登录项）与卸载脚本 |
 | `Sources/Core/MenuModel.swift` | 菜单文案纯函数（在线/离线/暂停/没 key/最近结果） |
 | `Sources/App/*` | AppKit 菜单栏、状态图标、SwiftUI 设置/自检/安装窗口、无头模式 |
-| `Sources/Tests/main.swift` | 58 项纯逻辑自测 |
+| `Sources/Tests/main.swift` | 61 项纯逻辑自测 |
 | `build.sh` | 一条命令出 `.app`（swiftc + iconutil + ad-hoc 签名），不需要 Xcode 工程 |
 | `Tools/make_icon.swift` | 生成 AppIcon.icns |
 
 ## 构建与自测
 
 ```bash
-cd 代码/mac_agent
+cd mac_agent
 ./build.sh                 # → build/NAS 剪贴板代理.app
 swiftc -O -swift-version 5 Sources/Core/*.swift Sources/Tests/main.swift -o build/selftest && ./build/selftest
 ```
 
-端到端验收（真剪贴板 + 假 NAS + 无头模式，46 项断言）在公共工具：
-
-```bash
-cd ../../../../.blueprint-tmp/公共工具     # 即 $BLUEPRINT_TOOLS
-./验收Mac代理.sh
-```
+端到端验收（真剪贴板 + 假 NAS + 无头模式）依赖本机另行保留的公共工具脚本，不在本仓库内；仓库内可验证的是 61 项 Swift 自测与 Python 闸门。
 
 ## 行为细节（做的时候定下的规则）
 

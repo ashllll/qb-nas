@@ -14,7 +14,7 @@ import pytest
 from magnet_harvester.api.error_contract import install_error_handlers
 from magnet_harvester.bus import MessageBus
 from magnet_harvester.models import MagnetItem, TaskStatus
-from tests._client import asgi_client
+from tests.fixtures import asgi_client
 from tests.fixtures import make_test_app
 
 SECRET = "delete-item-key"

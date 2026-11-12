@@ -44,19 +44,30 @@ class FakeAdmission:
 
 
 class FakeFetcher:
-    def __init__(self, pages: dict[str, PageFetch], delays: dict[str, float] | None = None) -> None:
+    def __init__(
+        self,
+        pages: dict[str, PageFetch],
+        delays: dict[str, float] | None = None,
+        browser_pages: dict[str, PageFetch] | None = None,
+    ) -> None:
         self.pages = pages
         self.delays = delays or {}
+        self.browser_pages = browser_pages or {}
         self.calls: list[str] = []
         self.allow_browser_calls: list[tuple[str, bool]] = []
+        self.browser_first_calls: list[tuple[str, bool]] = []
 
-    async def fetch(self, url: str, *, allow_browser: bool = True) -> PageFetch:
+    async def fetch(
+        self, url: str, *, allow_browser: bool = True, browser_first: bool = False
+    ) -> PageFetch:
         self.calls.append(url)
         self.allow_browser_calls.append((url, allow_browser))
+        self.browser_first_calls.append((url, browser_first))
         delay = self.delays.get(url, 0)
         if delay:
             await asyncio.sleep(delay)
-        return self.pages.get(
+        source = self.browser_pages if browser_first and url in self.browser_pages else self.pages
+        return source.get(
             url, PageFetch(url=url, status=404, reason=FailureReason.HTTP_ERROR, message="HTTP 404")
         )
 
@@ -298,6 +309,47 @@ async def test_detail_root_does_not_expand_related_links():
     related = "".join(f'<a href="/torrents/details/{i}">rel</a>' for i in range(200, 205))
     fetcher = FakeFetcher({root: ok(root, related)})
     events = [event async for event in make_walker(fetcher, root=root).stream()]
+    assert len(events) == 1
+    assert events[0]["detail_links"] == 0
+    assert fetcher.calls == [root]
+
+
+SPA_SHELL_HTML = """
+<html><head><script src="/static/app.js"></script></head>
+<body><div id="app"></div><a href="/about">about</a></body></html>
+"""
+
+
+@pytest.mark.asyncio
+async def test_spa_shell_is_refetched_in_browser_once_then_walked():
+    """根页 0 个详情链接但有脚本：浏览器渲染一次再抽链接，之后详情页不再先付 HTTP。"""
+    root = "https://site.test/torrents/search/4/x"
+    details = [f"https://site.test/torrents/details/{i}" for i in (101, 102, 103)]
+    pages = {root: ok(root, SPA_SHELL_HTML)}
+    pages.update({url: ok(url, "") for url in details})
+    fetcher = FakeFetcher(
+        pages,
+        browser_pages={root: PageFetch(url=root, status=200, html=LIST_HTML, via="browser")},
+    )
+
+    events = [event async for event in make_walker(fetcher).stream()]
+
+    assert events[0]["url"] == root and events[0]["detail_links"] == 3
+    assert len(events) == 4, "根页只交付一次，三个详情页各一次"
+    assert fetcher.calls.count(root) == 2, "根页只多取一次，不能每轮重试"
+    assert [flag for url, flag in fetcher.browser_first_calls if url == root] == [False, True]
+    assert all(fetcher.calls.count(url) == 1 for url in details)
+    assert all(flag for url, flag in fetcher.browser_first_calls if url != root)
+
+
+@pytest.mark.asyncio
+async def test_static_page_without_detail_links_is_not_refetched():
+    """没有脚本的静态空列表页就是真的空，不该再开浏览器。"""
+    root = "https://site.test/torrents/search/4/x"
+    fetcher = FakeFetcher({root: ok(root, '<html><body><a href="/about">about</a></body></html>')})
+
+    events = [event async for event in make_walker(fetcher).stream()]
+
     assert len(events) == 1
     assert events[0]["detail_links"] == 0
     assert fetcher.calls == [root]

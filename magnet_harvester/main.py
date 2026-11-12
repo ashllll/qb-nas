@@ -14,7 +14,7 @@ from magnet_harvester.api.error_contract import install_error_handlers
 from magnet_harvester.api.ingest_routes import router as ingest_router
 from magnet_harvester.api.pages import STATIC_DIR, router as pages_router
 from magnet_harvester.api.routes import router as api_router
-from magnet_harvester.api.security import install_security_guard
+from magnet_harvester.api.security import install_security_guard, install_security_headers
 from magnet_harvester.api.websocket import router as ws_router
 from magnet_harvester.assembly import build_runtime
 from magnet_harvester.config import settings
@@ -48,24 +48,16 @@ async def lifespan(app: FastAPI):
 
     runtime = build_runtime()
     app.state.ctx = runtime.ctx
-    try:
-        await runtime.start()
-    except Exception:
-        log.exception("runtime.start() 失败")
-        # 验证核心存储服务是否可用：store 不可用为致命错误，应阻止启动
-        try:
-            await runtime.ctx.core.store.count()
-        except Exception:
-            log.critical("核心存储 store 不可用，无法启动")
-            raise
-        log.warning("runtime.start() 部分失败，继续以降级模式运行")
+    # 启动步骤内部已各自降级（爬虫/qB/续跑失败只退掉对应功能）；走到这里还抛异常，
+    # 说明后台同步循环起不来——带着「页面正常但永不同步」的状态跑，比启动失败更难查。
+    await runtime.start()
 
     # 下载中心桥接连接检查（可降级：离线时服务仍可运行）。
     # 限时 3 秒：桥接离线时 ping 会内部重试十几秒，启动不该被它拖住。
     qbit_ok = False
     try:
         qbit_ok = await asyncio.wait_for(runtime.ctx.core.qbit.ping(), timeout=3.0)
-    except (asyncio.TimeoutError, Exception):
+    except Exception:
         log.warning("下载中心桥接连接检查失败（降级运行：入库照常，手动下载需下载中心在线）")
 
     disk_info = settings.check_disk_space()
@@ -87,6 +79,8 @@ install_error_handlers(app)
 _configure_cors(app)
 # Host（DNS rebinding）与跨源写（CSRF）在入口统一挡；详见 api/security.py
 install_security_guard(app)
+# 安全头最后装：作为最外层，护栏自己产生的 403/404 也带上头
+install_security_headers(app)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(pages_router)

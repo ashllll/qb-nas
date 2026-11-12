@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -60,6 +60,49 @@ class SecurityGuardMiddleware:
             return
 
         await self.app(scope, receive, send)
+
+
+# 只放不依赖脚本模型的指令：严格 script-src 要等页面拆掉内联脚本/事件属性（见 #61）。
+# frame-ancestors 同时覆盖点击劫持；X-Frame-Options 兼容旧浏览器。
+_SECURITY_HEADERS = {
+    "content-security-policy": (
+        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+    ),
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+class SecurityHeadersMiddleware:
+    """给所有 HTTP 响应补基线安全头；WS 握手不经过这里。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in _SECURITY_HEADERS.items():
+                    if name not in headers:
+                        headers[name] = value
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+def install_security_headers(app) -> None:
+    """装上安全响应头；重复调用安全。"""
+    if getattr(app.state, "security_headers_installed", False):
+        return
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.state.security_headers_installed = True
 
 
 def install_security_guard(app) -> None:

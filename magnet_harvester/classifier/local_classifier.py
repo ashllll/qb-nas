@@ -129,19 +129,25 @@ class LocalClassificationEngine:
             self._cache_hits = 0
             self._cache_misses = 0
 
-    def reload_rules(self) -> int:
-        """Reload file-backed rules in the chain, returning the count reloaded.
+    def reload_rules(self) -> dict:
+        """Reload file-backed rules in the chain.
 
-        规则变更后旧分类结果可能失效，因此先清空缓存。
+        返回 ``{"rules_reloaded": N, "failed_rules": [...]}``。任何可重载规则失败时
+        保留旧规则与缓存（旧结果仍然有效），只透出失败规则名。
         """
         reloaded = 0
+        failed: List[str] = []
         for rule in self._rule_chain:
             reload_rule = getattr(rule, "reload", None)
-            if reload_rule is not None and reload_rule():
+            if reload_rule is None:
+                continue
+            if reload_rule():
                 reloaded += 1
-        if reloaded:
+            else:
+                failed.append(type(rule).__name__)
+        if reloaded and not failed:
             self.clear_cache()
-        return reloaded
+        return {"rules_reloaded": reloaded, "failed_rules": failed}
 
 
 class LocalClassifier:
@@ -183,21 +189,16 @@ class LocalClassifier:
         return results
 
     # ── 便捷方法 ──────────────────────────
-
-    def classify_sync_batch(self, items: list[dict]) -> list[dict]:
-        """同步批量分类（非协程版本）"""
-        return [self._engine.classify_name(item.get("name", "")) for item in items]
-
     def classify_one(self, name: str) -> dict:
         """单条分类"""
         return self._engine.classify_name(name)
 
     def reload_rules(self) -> dict:
-        """Reload file-backed local classification rules."""
-        return {
-            "status": "reloaded",
-            "rules_reloaded": self._engine.reload_rules(),
-        }
+        """Reload file-backed local classification rules; failures are surfaced."""
+        engine_result = self._engine.reload_rules()
+        if engine_result["failed_rules"]:
+            return {"status": "failed", **engine_result}
+        return {"status": "reloaded", "rules_reloaded": engine_result["rules_reloaded"]}
 
     # ── 缓存统计/清理（委托真实 engine 缓存） ────
 

@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         core.onCapture = { [weak self] item in self?.flashCapture(item) }
 
         handOffToInstalledCopyIfNeeded()
+        repairLoginItemIfNeeded()
         setUpStatusItem()
         core.start()
         log.info("UI 启动 · 已安装=\(Installer.isInstalled) · 登录项=\(LaunchAgent.isInstalled()) · key=\(settings.keySourceDescription)")
@@ -49,6 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSWorkspace.shared.open(Installer.paths.app)
         }
         exit(0)
+    }
+
+    /// 旧版安装写进 plist 的可能是下载/构建目录的路径（原目录删掉后开机不自启）：
+    /// 启动时发现它不指向当前 app 就重写一次，不再让用户重装。
+    private func repairLoginItemIfNeeded() {
+        guard Installer.isInstalled, LaunchAgent.isInstalled(), !LaunchAgent.plistMatchesBinary() else { return }
+        let ok = LaunchAgent.install(binaryPath: LaunchAgent.targetBinaryPath)
+        log.info("登录项指向旧路径，已尝试修正（\(ok ? "成功" : "失败")）：\(LaunchAgent.targetBinaryPath)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -166,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             LaunchAgent.uninstall()
             log.info("登录项已移除")
         } else {
-            let ok = LaunchAgent.install()
+            let ok = LaunchAgent.install(binaryPath: LaunchAgent.targetBinaryPath)
             log.info("登录项写入\(ok ? "成功" : "失败")")
             if !ok { showSimpleAlert(title: "没能写入登录项", message: "请稍后再试；也可以用「卸载」清干净后重新安装。") }
         }
@@ -187,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let self else { return false }
                 if want {
                     guard Installer.isInstalled else { self.showInstallPrompt(); return false }
-                    return LaunchAgent.install()
+                    return LaunchAgent.install(binaryPath: LaunchAgent.targetBinaryPath)
                 } else {
                     LaunchAgent.uninstall()
                     return false
