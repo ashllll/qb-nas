@@ -1,2 +1,6 @@
-npx lint-staged
-npm run check
+#!/usr/bin/env sh
+# 只检查 staged 改动；全量门禁由 CI 与 scripts/preflight.sh 负责。
+if [ -x node_modules/.bin/lint-staged ] && [ -x node_modules/.bin/prettier ]; then
+  node_modules/.bin/lint-staged
+fi
+exec bash scripts/preflight.sh --staged

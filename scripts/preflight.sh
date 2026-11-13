@@ -45,6 +45,13 @@ if [[ "$MODE" == staged ]]; then
   fi
 fi
 
+PY_VERSION="$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+if [[ "$PY_VERSION" != "3.11" ]]; then
+  printf '检测到 Python %s，项目按 3.11 验证（.python-version）。\n' "${PY_VERSION:-unknown}" >&2
+  printf '重建：uv sync --extra dev --locked；或 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/pip install ruff pytest pytest-asyncio pytest-cov\n' >&2
+  exit 1
+fi
+
 step "ruff check"
 "$RUFF" check "${TARGETS[@]}"
 

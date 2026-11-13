@@ -2,7 +2,7 @@
 
 对非平凡架构优化、并发修复和跨模块缺陷，固定使用以下流程：
 
-1. **读取上下文**：先读 `CONTEXT.md`、相关 ADR、当前工作区 diff；结构查询优先使用代码知识图谱，工具不可用时再使用 `rg`。
+1. **读取上下文**：先读 `CONTEXT.md`、相关 ADR、当前工作区 diff；结构查询用 `rg`/`grep`/`read`（本仓库不依赖代码图工具）。
 2. **设计 seam**：用 `codebase-design` 明确 module、interface、adapter 和不变量；测试只落在调用方真实使用的公开 interface。
 3. **TDD 垂直切片**：一次只处理一个行为，记录 RED 命令与失败原因，再做最小 GREEN；行为稳定后才 refactor。
 4. **实现执行器**：非平凡实现优先委派给本地 Claude Code，限定文件、验收标准和验证命令；认证或工具不可用时由 Codex 直接实施，并记录降级原因。
