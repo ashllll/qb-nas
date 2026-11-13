@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi&logoColor=white">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
   <img alt="Platform" src="https://img.shields.io/badge/NAS-fnOS%20%2F%20Docker-4B5563">
@@ -251,6 +251,7 @@ rules:
 
 ```text
 qb-nas/
+├── .python-version             # 3.11（uv 与 CI 固定）
 ├── magnet_harvester/          # FastAPI 服务（assembly 统一装配，无模块级可变全局）
 │   ├── main.py  assembly.py  config.py  models.py
 │   ├── crawler.py  site_walker.py  page_fetch.py  magnet_parser.py
@@ -266,8 +267,8 @@ qb-nas/
 ├── deploy/                    # install.sh / verify.sh / uninstall.sh / Dockerfile
 ├── doc/  docs/                # 历史规格、ADR、验收记录、assets/、本地工作区说明
 ├── LICENSE                    # MIT
-├── scripts/                   # preflight.sh（本地闸门）、smoke_production.py
-├── tests/                     # 111 个测试文件、903 个用例（pytest + pytest-asyncio）
+├── scripts/                   # preflight.sh（本地闸门）、worktree.sh、smoke_production.py
+├── tests/                     # pytest + pytest-asyncio；数量以 CI 输出为准
 └── .github/workflows/         # gates.yml：ruff/format/pytest+覆盖率、Docker 构建、mac 自测
 ```
 
@@ -281,11 +282,13 @@ cp .env.example .env              # 填 Aria2 桥接连接信息
 python run.py                     # http://localhost:8899
 
 # 机器闸门（与 CI 同一套）
-bash scripts/preflight.sh         # uv lock --check + ruff + pytest --cov
+bash scripts/preflight.sh         # uv lock --check + ruff check/format + pytest --cov
 bash scripts/preflight.sh --fast  # 只跑 lint/format
 ```
 
-- 测试基线：`python -m pytest -q` → **903 passed**；覆盖率 **85.5%**（门槛 79%）；`ruff check` / `ruff format --check` 全绿。
+> Python 固定为 3.11（`.python-version`）；3.15 下 curl_cffi/Playwright 有已知 SIGSEGV。`uv sync` 会按该文件建 venv，`scripts/preflight.sh` 会拒绝其他版本。
+
+- 测试基线：`python -m pytest -q` 全绿、覆盖率 ≥ 79%（门槛在 `pyproject.toml`）；具体数字以 CI 的 pytest 输出为准，`ruff check` / `ruff format --check` 全绿。
 - CI：push `main` / `stage/**` 与 PR 到 `main` 时由 GitHub Actions 跑三个 job：测试与覆盖率、Docker 镜像构建、mac_agent Swift 自测（runner 内建 `.venv` 与 Chromium）。
 - 真实链路验证：`deploy/verify.sh`（容器/挂载/配置/自愈）与 `scripts/smoke_production.py`（真下载中心、真站点）；自动化测试不能替代它们。
 
